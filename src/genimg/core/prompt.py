@@ -6,11 +6,13 @@ This module handles prompt validation, optimization via Ollama, and caching.
 
 import subprocess
 import threading
+import time
 import warnings
 from collections.abc import Callable
 
 from genimg.core.config import Config, get_config
 from genimg.core.prompts_loader import get_optimization_template
+from genimg.logging_config import get_logger, log_prompts
 from genimg.utils.cache import PromptCache, get_cache
 from genimg.utils.exceptions import (
     APIError,
@@ -18,6 +20,11 @@ from genimg.utils.exceptions import (
     RequestTimeoutError,
     ValidationError,
 )
+
+logger = get_logger(__name__)
+
+# Max prompt length for logging (large so prompts are effectively never truncated)
+_PROMPT_LOG_MAX = 50_000
 
 # Loaded from prompts.yaml; kept as name for backward compatibility and tests
 OPTIMIZATION_TEMPLATE = get_optimization_template()
@@ -202,7 +209,15 @@ def optimize_prompt_with_ollama(
     if not force_refresh:
         cached = cache.get(prompt, model, reference_hash)
         if cached:
+            logger.debug("Cache hit for model=%s", model)
+            logger.info("Optimized (from cache) model=%s", model)
             return cached
+
+    logger.debug("Cache miss for model=%s running Ollama timeout=%s", model, timeout)
+    logger.info("Optimizing prompt model=%s", model)
+    if log_prompts():
+        truncated = prompt if len(prompt) <= _PROMPT_LOG_MAX else prompt[:_PROMPT_LOG_MAX] + "..."
+        logger.info("Original prompt: %s", truncated)
 
     # Check if Ollama is available
     if not check_ollama_available():
@@ -218,8 +233,19 @@ def optimize_prompt_with_ollama(
     )
     optimization_prompt = system_part + "\n\nOriginal prompt: " + prompt + "\n\nImproved prompt:"
 
+    start_time = time.time()
     if cancel_check is None:
-        return _run_ollama_sync(prompt, model, reference_hash, timeout, optimization_prompt, cache)
+        result = _run_ollama_sync(
+            prompt, model, reference_hash, timeout, optimization_prompt, cache
+        )
+        elapsed = time.time() - start_time
+        logger.info("Optimized in %.1fs model=%s", elapsed, model)
+        if log_prompts():
+            truncated = (
+                result if len(result) <= _PROMPT_LOG_MAX else result[:_PROMPT_LOG_MAX] + "..."
+            )
+            logger.info("Optimized prompt: %s", truncated)
+        return result
 
     # Run with cancellation support: subprocess in a thread, main thread polls cancel_check
     result_holder: list[tuple[str, str] | None] = [None]
@@ -300,6 +326,13 @@ def optimize_prompt_with_ollama(
     if not optimized:
         raise APIError("Ollama returned an empty response")
     cache.set(prompt, model, optimized, reference_hash)
+    elapsed = time.time() - start_time
+    logger.info("Optimized in %.1fs model=%s", elapsed, model)
+    if log_prompts():
+        truncated = (
+            optimized if len(optimized) <= _PROMPT_LOG_MAX else optimized[:_PROMPT_LOG_MAX] + "..."
+        )
+        logger.info("Optimized prompt: %s", truncated)
     return optimized
 
 
@@ -396,6 +429,8 @@ def optimize_prompt(
             model = config.default_optimization_model
         cached = cache.get(prompt, model, reference_hash)
         if cached:
+            logger.debug("Cache hit for model=%s", model)
+            logger.info("Optimized (from cache) model=%s", model)
             return cached
 
     # Perform optimization (force_refresh when caller disabled cache for this request)

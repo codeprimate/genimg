@@ -18,6 +18,7 @@ from PIL import Image
 
 from genimg.core.config import Config, get_config
 from genimg.core.reference import create_image_data_url
+from genimg.logging_config import get_logger, log_prompts
 from genimg.utils.exceptions import (
     APIError,
     CancellationError,
@@ -25,6 +26,11 @@ from genimg.utils.exceptions import (
     RequestTimeoutError,
     ValidationError,
 )
+
+logger = get_logger(__name__)
+
+# Max prompt length for logging (large so prompts are effectively never truncated)
+_PROMPT_LOG_MAX = 50_000
 
 
 def _format_from_content_type(content_type: str) -> str:
@@ -73,9 +79,21 @@ def _do_generate_image_request(
     reference_image_b64: str | None,
 ) -> GenerationResult:
     """Perform the HTTP request and parse response; used by generate_image (and by worker when cancellable)."""
+    logger.debug(
+        "API request url=%s model=%s timeout=%s",
+        url,
+        model,
+        timeout,
+    )
     start_time = time.time()
     response = requests.post(url, headers=headers, json=payload, timeout=timeout)
     generation_time = time.time() - start_time
+    logger.debug(
+        "API response status=%s content_type=%s time=%.2fs",
+        response.status_code,
+        response.headers.get("content-type", ""),
+        generation_time,
+    )
 
     if response.status_code == 401:
         raise APIError(
@@ -212,6 +230,16 @@ def generate_image(
     if timeout is None:
         timeout = config.generation_timeout
 
+    has_ref = reference_image_b64 is not None
+    logger.info(
+        "Generating image model=%s has_reference=%s",
+        model,
+        has_ref,
+    )
+    if log_prompts():
+        truncated = prompt if len(prompt) <= _PROMPT_LOG_MAX else prompt[:_PROMPT_LOG_MAX] + "..."
+        logger.info("Prompt (used): %s", truncated)
+
     url = f"{config.openrouter_base_url}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -229,9 +257,15 @@ def generate_image(
 
     if cancel_check is None:
         try:
-            return _do_generate_image_request(
+            result = _do_generate_image_request(
                 url, headers, payload, timeout, model, prompt, reference_image_b64
             )
+            logger.info(
+                "Generated in %.1fs model=%s",
+                result.generation_time,
+                result.model_used,
+            )
+            return result
         except requests.exceptions.Timeout as e:
             raise RequestTimeoutError(
                 f"Request timed out after {timeout} seconds. "
@@ -293,4 +327,10 @@ def generate_image(
     if exc_holder[0] is not None:
         raise exc_holder[0]
     assert result_holder[0] is not None
-    return result_holder[0]
+    result = result_holder[0]
+    logger.info(
+        "Generated in %.1fs model=%s",
+        result.generation_time,
+        result.model_used,
+    )
+    return result

@@ -37,6 +37,12 @@ from genimg import (
     validate_prompt,
 )
 from genimg.core.config import DEFAULT_IMAGE_MODEL
+from genimg.logging_config import get_logger, log_prompts
+
+logger = get_logger(__name__)
+
+# Max prompt length for logging (large so prompts are effectively never truncated)
+_UI_PROMPT_LOG_MAX = 50_000
 
 # Default server port; overridable via GENIMG_UI_PORT
 DEFAULT_UI_PORT = 7860
@@ -273,6 +279,12 @@ def _run_generate_stream(
     if not prompt or not prompt.strip():
         yield _format_status("Enter a prompt to generate.", "warning"), None, True, False, box_value
         return
+    logger.info("Generate requested")
+    if log_prompts():
+        truncated = (
+            prompt if len(prompt) <= _UI_PROMPT_LOG_MAX else prompt[:_UI_PROMPT_LOG_MAX] + "..."
+        )
+        logger.info("Prompt: %s", truncated)
     config = Config.from_env()
     try:
         config.validate()
@@ -353,6 +365,7 @@ def _generate_click_handler(
     opt_mod: str | None,
 ) -> Generator[tuple[Any, ...], None, None]:
     """Generate button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
+    logger.debug("Generate clicked")
     _cancel_event.clear()
     try:
         for status_msg, img_path, gen_on, stop_on, box_val in _run_generate_stream(
@@ -393,6 +406,7 @@ def _optimize_click_handler(
     p: str, ref: Any, opt_mod: str | None
 ) -> Generator[tuple[Any, ...], None, None]:
     """Optimize button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
+    logger.debug("Optimize clicked")
     _cancel_event.clear()
     try:
         for status_msg, opt_text, opt_on, stop_on, gen_on in _run_optimize_only_stream(
@@ -455,6 +469,12 @@ def _run_optimize_only_stream(
     if not prompt_ok:
         yield _format_status("Enter a prompt to optimize.", "warning"), "", True, False, False
         return
+    logger.info("Optimize requested")
+    if log_prompts():
+        truncated = (
+            prompt if len(prompt) <= _UI_PROMPT_LOG_MAX else prompt[:_UI_PROMPT_LOG_MAX] + "..."
+        )
+        logger.info("Prompt: %s", truncated)
     config = Config.from_env()
     try:
         config.validate()

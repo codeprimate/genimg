@@ -7,6 +7,10 @@ redundant API calls when the same prompt is optimized multiple times.
 
 import hashlib
 
+from genimg.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class PromptCache:
     """In-memory cache for optimized prompts."""
@@ -47,6 +51,8 @@ class PromptCache:
             The cached optimized prompt, or None if not found
         """
         key = self._generate_key(prompt, model, reference_hash)
+        hit = key in self._cache
+        logger.debug("Cache get model=%s hit=%s", model, hit)
         return self._cache.get(key)
 
     def set(
@@ -67,6 +73,7 @@ class PromptCache:
         """
         key = self._generate_key(prompt, model, reference_hash)
         self._cache[key] = optimized_prompt
+        logger.debug("Cache set model=%s", model)
 
     def clear(self) -> None:
         """Clear all cached prompts."""

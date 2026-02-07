@@ -182,6 +182,19 @@ genimg generate "a landscape" --output out.png --quiet
 # Output: out.png
 ```
 
+**Verbosity and logging:**
+
+- Default: activity and performance are logged (e.g. "Generating image", "Generated in X.Xs").
+- `-v` (info): also log prompt text (original and optimized).
+- `-vv` (verbose): also log API calls, cache hits/misses, and other debug detail.
+- Set `GENIMG_VERBOSITY=0` (default), `1`, or `2` in the environment to control logging when no `-v` flag is passed; CLI flags override the env var.
+
+```bash
+genimg generate "a cat" --no-optimize -o out.png -v    # show prompts in logs
+genimg generate "a cat" --no-optimize -o out.png -vv   # full debug logs
+GENIMG_VERBOSITY=1 genimg generate "a cat" -o out.png # same as -v
+```
+
 ### As a Python Library
 
 ```python
@@ -209,6 +222,10 @@ optimized = optimize_prompt("a mountain landscape")
 print(f"Optimized prompt: {optimized}")
 
 result = generate_image(prompt=optimized)
+
+# Control logging verbosity (0=default activity/performance, 1=+prompts, 2=+API/cache)
+from genimg import set_verbosity
+set_verbosity(1)  # or set GENIMG_VERBOSITY=1 in the environment
 ```
 
 ## Prompt Optimization

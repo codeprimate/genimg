@@ -50,6 +50,9 @@ cp .env.example .env
 - `GENIMG_UI_HOST` — Server host binding (default: 127.0.0.1; use 0.0.0.0 for LAN access)
 - `GENIMG_UI_SHARE` — Create public share link (set to "1" or "true" for gradio.live link)
 
+**Optional (Logging):**
+- `GENIMG_VERBOSITY` — Logging verbosity: `0` (default), `1` (also log prompts), `2` (verbose: API/cache). CLI `-v`/`-vv` override.
+
 **Optional (Testing):**
 - `GENIMG_RUN_INTEGRATION_TESTS` — Enable integration tests (set to "1" to opt-in; default: disabled)
 

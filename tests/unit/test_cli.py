@@ -579,3 +579,89 @@ class TestGenerateCommand:
             # Verify the API key was set before validation
             config.set_api_key.assert_called_once_with(test_api_key)
             config.validate.assert_called_once()
+
+    @patch("genimg.cli.commands.configure_logging")
+    @patch("genimg.cli.commands.get_verbosity_from_env", return_value=0)
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_verbose_flag_calls_configure_logging(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        _mock_optimize: MagicMock,
+        _mock_generate: MagicMock,
+        mock_get_verbosity: MagicMock,
+        mock_configure_logging: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """-v and -vv call configure_logging with verbose_level 1 and 2."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+        result_obj = MagicMock()
+        result_obj.image_data = b"data"
+        result_obj.format = "png"
+        result_obj.generation_time = 1.0
+        result_obj.model_used = "test/model"
+        result_obj.prompt_used = "x"
+        result_obj.had_reference = False
+        _mock_generate.return_value = result_obj
+        out_file = tmp_path / "out.png"
+
+        result = _run_cli("--prompt", "x", "--no-optimize", "--out", str(out_file), "-v")
+        assert result.exit_code == 0
+        mock_configure_logging.assert_called_once()
+        call_kw = mock_configure_logging.call_args[1]
+        assert call_kw["verbose_level"] == 1
+        assert call_kw["quiet"] is False
+
+        mock_configure_logging.reset_mock()
+        mock_get_verbosity.return_value = 0
+        result2 = _run_cli("--prompt", "x", "--no-optimize", "--out", str(out_file), "-v", "-v")
+        assert result2.exit_code == 0
+        mock_configure_logging.assert_called_once()
+        call_kw2 = mock_configure_logging.call_args[1]
+        assert call_kw2["verbose_level"] == 2
+        assert call_kw2["quiet"] is False
+
+    @patch("genimg.cli.commands.configure_logging")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_quiet_calls_configure_logging_with_quiet_true(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        _mock_optimize: MagicMock,
+        _mock_generate: MagicMock,
+        mock_configure_logging: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--quiet calls configure_logging(..., quiet=True)."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+        result_obj = MagicMock()
+        result_obj.image_data = b"data"
+        result_obj.format = "png"
+        result_obj.generation_time = 1.0
+        result_obj.model_used = "test/model"
+        result_obj.prompt_used = "x"
+        result_obj.had_reference = False
+        _mock_generate.return_value = result_obj
+        out_file = tmp_path / "out.png"
+
+        result = _run_cli("--prompt", "x", "--no-optimize", "--out", str(out_file), "--quiet")
+        assert result.exit_code == 0
+        mock_configure_logging.assert_called_once()
+        call_kw = mock_configure_logging.call_args[1]
+        assert call_kw["quiet"] is True

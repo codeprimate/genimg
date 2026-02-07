@@ -196,6 +196,7 @@ Library polls `cancel_check()` every 250ms; raises `CancellationError` when True
 - `GENIMG_DEFAULT_MODEL` - Default image model (default: `bytedance-seed/seedream-4.5`)
 - `GENIMG_OPTIMIZATION_MODEL` - Ollama model (default: `svjack/gpt-oss-20b-heretic`)
 - `GENIMG_UI_PORT`, `GENIMG_UI_HOST`, `GENIMG_UI_SHARE` - UI launch options
+- `GENIMG_VERBOSITY` - Logging verbosity: `0` (default: activity/performance), `1` (also prompts), `2` (verbose: API/cache). CLI `-v`/`-vv` override.
 - `GENIMG_RUN_INTEGRATION_TESTS` - Enable integration tests (set to `1`)
 
 See `.env.example` for full reference.

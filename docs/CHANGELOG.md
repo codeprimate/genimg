@@ -8,32 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial project structure with src/ layout
-- Core modules for configuration, prompt handling, image generation, and reference images
-- Utility modules for caching and custom exceptions
-- Virtual environment setup (.venv/)
-- Comprehensive configuration via pyproject.toml
-- Requirements files for core and development dependencies
-- Complete documentation suite (README, AGENT, DECISIONS, DEVELOPMENT, EXAMPLES, CHANGELOG, PROJECT_INIT)
-- Makefile for development tasks
-- Pre-commit hooks configuration
-- Environment variable template (.env.example)
-- Entry point and CLI stub: `genimg` console script and `genimg generate` (Click); `__main__.py` for `python -m genimg`
-- `genimg-ui` console script stub (prints "not yet implemented")
-- Unit test suite: 107 tests, ~91% coverage (config, prompt, image_gen, reference, cache, exceptions, prompts_loader)
-- Code review document (docs/CODE_REVIEW.md) and foundation sanity-check before CLI implementation
+- (none)
+
+## [0.9.2] - 2026-02-07
+
+### Added
+- Structured logging throughout the codebase. Default level shows activity and performance (e.g. "Generating image", "Optimized in X.Xs"); use `-v` to also log prompts, `-vv` for API/cache and other debug detail.
+- CLI verbosity: `-v` / `--verbose` (repeatable: `-vv` for verbose). `--quiet` sets log level to WARNING (no activity/performance logs).
+- Environment variable `GENIMG_VERBOSITY` (0, 1, or 2) for library and UI; CLI flags override.
+- Library API: `set_verbosity(level)` and `configure_logging(verbose_level, quiet)` in `genimg` for controlling log level and prompt logging from Python.
 
 ### Changed
-- Prompt templates (e.g. optimization) are loaded from `src/genimg/prompts.yaml` instead of being hardcoded in `prompt.py`
+- (none)
 
 ### Fixed
-- N/A (initial release)
+- (none)
 
-### Known Issues
-- Gradio UI not yet implemented (stub exits with message)
-- Full CLI behavior not yet implemented (`genimg generate` is a stub; wiring to library pending)
-- Cancellation supported via optional `cancel_check` on `optimize_prompt` / `generate_image` (see DECISIONS ADR-010)
-- Development scripts and sample data not yet created
+---
 
 ## Version History
 

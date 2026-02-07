@@ -28,6 +28,7 @@ from genimg.cli.handlers import (
     run_with_error_handling,
 )
 from genimg.cli.utils import default_output_path
+from genimg.logging_config import configure_logging, get_verbosity_from_env
 
 
 @click.group(
@@ -81,6 +82,13 @@ def cli(ctx: click.Context) -> None:
     is_flag=True,
     help="Minimize progress messages; only print result path or errors.",
 )
+@click.option(
+    "--verbose",
+    "-v",
+    "verbose_count",
+    count=True,
+    help="Increase verbosity: -v also show prompts, -vv show API/cache detail.",
+)
 def generate(
     prompt: str,
     model: str | None,
@@ -91,10 +99,15 @@ def generate(
     save_prompt: Path | None,
     api_key: str | None,
     quiet: bool,
+    verbose_count: int,
 ) -> None:
     """Generate an image from a text prompt (optionally with optimization and reference)."""
     # Reset cancel event for this run (in case CLI is invoked again in same process)
     reset_cancellation()
+
+    # Apply logging verbosity: CLI flags override GENIMG_VERBOSITY
+    verbose_level = min(verbose_count, 2) if verbose_count > 0 else get_verbosity_from_env()
+    configure_logging(verbose_level=verbose_level, quiet=quiet)
 
     def do_generate() -> None:
         # 1. Load and validate config
@@ -248,6 +261,9 @@ def generate(
 def ui(port: int | None, host: str | None, share: bool | None, api_key: str | None) -> None:
     """Launch the Gradio web UI for image generation."""
     from genimg.ui.gradio_app import launch as launch_ui
+
+    # Apply logging verbosity from env so UI logs respect GENIMG_VERBOSITY
+    configure_logging(verbose_level=get_verbosity_from_env(), quiet=False)
 
     # Set API key in environment if provided via CLI so the UI can pick it up
     if api_key is not None:

@@ -9,7 +9,10 @@ from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
+from genimg.logging_config import get_logger
 from genimg.utils.exceptions import ConfigurationError
+
+logger = get_logger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -79,6 +82,7 @@ class Config:
         Raises:
             ConfigurationError: If configuration is invalid
         """
+        logger.debug("Validating config")
         if not self.openrouter_api_key:
             raise ConfigurationError(
                 "OpenRouter API key is required. "

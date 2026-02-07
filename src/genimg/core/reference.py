@@ -8,12 +8,16 @@ for use with image generation APIs.
 import base64
 import hashlib
 import io
+import time
 from pathlib import Path
 
 from PIL import Image
 
 from genimg.core.config import Config, get_config
+from genimg.logging_config import get_logger
 from genimg.utils.exceptions import ImageProcessingError, ValidationError
+
+logger = get_logger(__name__)
 
 # Supported image formats
 SUPPORTED_FORMATS = {"PNG", "JPEG", "JPG", "WEBP", "HEIC", "HEIF"}
@@ -205,12 +209,26 @@ def resize_image(image: Image.Image, max_pixels: int | None = None) -> Image.Ima
     current_pixels = width * height
 
     if current_pixels <= max_pixels:
+        logger.debug(
+            "Reference image no resize needed dimensions=%dx%d max_pixels=%s",
+            width,
+            height,
+            max_pixels,
+        )
         return image  # No resize needed
 
     # Calculate new dimensions maintaining aspect ratio
     scale_factor = (max_pixels / current_pixels) ** 0.5
     new_width = int(width * scale_factor)
     new_height = int(height * scale_factor)
+    logger.debug(
+        "Reference image resizing %dx%d -> %dx%d max_pixels=%s",
+        width,
+        height,
+        new_width,
+        new_height,
+        max_pixels,
+    )
 
     return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
@@ -319,6 +337,9 @@ def process_reference_image(
     if max_pixels is None:
         max_pixels = (config or get_config()).max_image_pixels
 
+    logger.info("Processing reference image max_pixels=%s", max_pixels)
+    start_time = time.time()
+
     # Normalize data URL to bytes so loading and hashing work
     if isinstance(source, str) and source.strip().startswith("data:"):
         source, parsed_fmt = _parse_data_url(source)
@@ -344,7 +365,17 @@ def process_reference_image(
     image = convert_to_rgb(image)
 
     # Encode to base64 (use JPEG for potentially smaller size)
+    logger.debug("Encoding reference image format=JPEG")
     encoded = encode_image_base64(image, format="JPEG")
+
+    elapsed = time.time() - start_time
+    w, h = image.size
+    logger.info(
+        "Processed reference image in %.2fs dimensions=%dx%d",
+        elapsed,
+        w,
+        h,
+    )
 
     return encoded, image_hash
 
