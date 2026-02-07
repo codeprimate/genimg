@@ -29,11 +29,14 @@ from genimg import (
     NetworkError,
     RequestTimeoutError,
     ValidationError,
+    __version__,
     generate_image,
+    list_ollama_models,
     optimize_prompt,
     process_reference_image,
     validate_prompt,
 )
+from genimg.core.config import DEFAULT_IMAGE_MODEL
 
 # Default server port; overridable via GENIMG_UI_PORT
 DEFAULT_UI_PORT = 7860
@@ -47,6 +50,8 @@ def _load_ui_models() -> tuple[list[str], str, list[str], str]:
     """
     Load image and optimization model lists from ui_models.yaml in the package.
     Returns (image_models, default_image_model, optimization_models, default_optimization_model).
+
+    For optimization models, queries installed Ollama models dynamically.
     """
     try:
         with (
@@ -57,14 +62,28 @@ def _load_ui_models() -> tuple[list[str], str, list[str], str]:
             data = yaml.safe_load(f) or {}
     except FileNotFoundError:
         data = {}
+
+    # Image models from YAML
     image_models: list[str] = data.get("image_models") or []
-    default_image: str = data.get("default_image_model") or "bytedance-seed/seedream-4.5"
-    opt_models: list[str] = data.get("optimization_models") or []
-    default_opt: str = data.get("default_optimization_model") or "svjack/gpt-oss-20b-heretic"
-    if default_opt and default_opt not in opt_models:
-        opt_models = [default_opt] + [m for m in opt_models if m != default_opt]
+    default_image: str = data.get("default_image_model") or DEFAULT_IMAGE_MODEL
     if default_image and default_image not in image_models:
         image_models = [default_image] + [m for m in image_models if m != default_image]
+
+    # Optimization models from installed Ollama models
+    config = Config.from_env()
+    default_opt: str = config.default_optimization_model
+    opt_models: list[str] = list_ollama_models()
+
+    # Ensure default is in the list and appears first
+    if default_opt and default_opt not in opt_models:
+        opt_models = [default_opt] + opt_models
+    elif default_opt and opt_models:
+        # Move default to front
+        opt_models = [default_opt] + [m for m in opt_models if m != default_opt]
+    elif not opt_models:
+        # No Ollama models found, use default only
+        opt_models = [default_opt]
+
     return image_models, default_image, opt_models, default_opt
 
 
@@ -470,7 +489,32 @@ def _build_blocks() -> gr.Blocks:
     image_models, default_image, opt_models, default_opt = _load_ui_models()
 
     with gr.Blocks(title="genimg – AI image generation") as app:
-        gr.Markdown("**AI image generation** with optional prompt optimization (Ollama).")
+        gr.HTML("""
+<div style="text-align: center; margin: 30px 0 40px 0;">
+    <h1 style="
+        font-size: 3.5em;
+        font-weight: 700;
+        margin: 0 0 15px 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        letter-spacing: -0.02em;
+    ">genimg</h1>
+    <p style="
+        font-size: 1.3em;
+        color: #6b7280;
+        margin: 0 0 10px 0;
+        font-weight: 400;
+    ">AI-powered image generation with intelligent prompt optimization</p>
+    <p style="
+        font-size: 0.95em;
+        color: #9ca3af;
+        margin: 0;
+        font-weight: 400;
+    ">Generate stunning images using OpenRouter models • Enhance prompts with local Ollama • Reference images for style transfer</p>
+</div>
+""")
 
         with gr.Row():
             with gr.Column():
@@ -551,6 +595,26 @@ def _build_blocks() -> gr.Blocks:
             inputs=[optimize_cb],
             outputs=[optimized_tab],
         )
+
+        gr.HTML(f"""
+<div style="text-align: center; margin: 40px 0 20px 0; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+    <p style="
+        font-size: 0.9em;
+        color: #9ca3af;
+        margin: 0 0 5px 0;
+    ">genimg v{__version__}</p>
+    <p style="
+        font-size: 0.9em;
+        color: #9ca3af;
+        margin: 0;
+    "><a href="https://github.com/codeprimate/genimg" target="_blank" style="
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 500;
+        transition: color 0.2s;
+    " onmouseover="this.style.color='#764ba2'" onmouseout="this.style.color='#667eea'">GitHub Repository ↗</a></p>
+</div>
+""")
 
     return cast(gr.Blocks, app)
 

@@ -14,9 +14,16 @@ Library usage:
 __version__ = "0.1.0"
 __author__ = "codeprimate"
 
-from genimg.core.config import Config, get_config, set_config
+from genimg.core.config import (
+    DEFAULT_IMAGE_MODEL,
+    DEFAULT_OPENROUTER_BASE_URL,
+    DEFAULT_OPTIMIZATION_MODEL,
+    Config,
+    get_config,
+    set_config,
+)
 from genimg.core.image_gen import GenerationResult, generate_image
-from genimg.core.prompt import optimize_prompt, validate_prompt
+from genimg.core.prompt import list_ollama_models, optimize_prompt, validate_prompt
 from genimg.core.reference import process_reference_image
 from genimg.utils.cache import clear_cache, get_cache, get_cached_prompt
 from genimg.utils.exceptions import (
@@ -35,6 +42,9 @@ __all__ = [
     "CancellationError",
     "Config",
     "ConfigurationError",
+    "DEFAULT_IMAGE_MODEL",
+    "DEFAULT_OPENROUTER_BASE_URL",
+    "DEFAULT_OPTIMIZATION_MODEL",
     "GenerationResult",
     "GenimgError",
     "ImageProcessingError",
@@ -46,6 +56,7 @@ __all__ = [
     "get_cached_prompt",
     "get_cache",
     "get_config",
+    "list_ollama_models",
     "optimize_prompt",
     "process_reference_image",
     "set_config",

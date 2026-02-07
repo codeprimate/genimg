@@ -14,6 +14,11 @@ from genimg.utils.exceptions import ConfigurationError
 # Load environment variables from .env file
 load_dotenv()
 
+# Default configuration constants
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
+DEFAULT_OPTIMIZATION_MODEL = "svjack/gpt-oss-20b-heretic"
+
 
 @dataclass
 class Config:
@@ -21,11 +26,11 @@ class Config:
 
     # API Configuration (openrouter_api_key excluded from repr to avoid leaking secrets)
     openrouter_api_key: str = field(default="", repr=False)
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_base_url: str = DEFAULT_OPENROUTER_BASE_URL
 
     # Model Configuration
-    default_image_model: str = "bytedance-seed/seedream-4.5"
-    default_optimization_model: str = "svjack/gpt-oss-20b-heretic"
+    default_image_model: str = DEFAULT_IMAGE_MODEL
+    default_optimization_model: str = DEFAULT_OPTIMIZATION_MODEL
 
     # Image Processing Configuration
     max_image_pixels: int = 2_000_000  # 2 megapixels

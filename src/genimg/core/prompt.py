@@ -106,6 +106,57 @@ def check_ollama_available() -> bool:
         return False
 
 
+def list_ollama_models() -> list[str]:
+    """
+    List installed Ollama models.
+
+    Returns:
+        List of installed model names. Returns empty list if Ollama is not available.
+
+    Example output parsing:
+        NAME                            ID              SIZE    MODIFIED
+        svjack/gpt-oss-20b-heretic:latest   abc123def456    10 GB   2 days ago
+        llama2:latest                   def456abc789    4 GB    1 week ago
+
+        Returns: ["svjack/gpt-oss-20b-heretic", "llama2"]
+    """
+    if not check_ollama_available():
+        return []
+
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return []
+
+        # Parse output: skip header line, extract model names (first column)
+        lines = result.stdout.strip().split("\n")
+        if len(lines) <= 1:  # Only header or empty
+            return []
+
+        models = []
+        for line in lines[1:]:  # Skip header
+            line = line.strip()
+            if not line:
+                continue
+            # First column is the model name (may include :tag)
+            parts = line.split()
+            if parts:
+                model_name = parts[0]
+                # Strip :latest tag if present for cleaner display
+                if model_name.endswith(":latest"):
+                    model_name = model_name[:-7]
+                models.append(model_name)
+
+        return models
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+
+
 def optimize_prompt_with_ollama(
     prompt: str,
     model: str | None = None,

@@ -9,6 +9,7 @@ from genimg.core.prompt import (
     OPTIMIZATION_TEMPLATE,
     _strip_ollama_thinking,
     check_ollama_available,
+    list_ollama_models,
     optimize_prompt,
     optimize_prompt_with_ollama,
     validate_prompt,
@@ -96,6 +97,64 @@ class TestCheckOllamaAvailable:
         with patch("genimg.core.prompt.subprocess.run") as m:
             m.side_effect = subprocess.TimeoutExpired("ollama", 5)
             assert check_ollama_available() is False
+
+
+@pytest.mark.unit
+class TestListOllamaModels:
+    def test_returns_empty_list_when_ollama_not_available(self):
+        with patch("genimg.core.prompt.check_ollama_available", return_value=False):
+            assert list_ollama_models() == []
+
+    def test_parses_ollama_list_output(self):
+        output = """NAME                            ID              SIZE    MODIFIED
+svjack/gpt-oss-20b-heretic:latest   abc123def456    10 GB   2 days ago
+llama2:latest                   def456abc789    4 GB    1 week ago
+mistral:7b                      ghi789jkl012    4 GB    3 days ago"""
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.run") as m:
+                m.return_value = MagicMock(returncode=0, stdout=output)
+                models = list_ollama_models()
+                assert models == ["svjack/gpt-oss-20b-heretic", "llama2", "mistral:7b"]
+
+    def test_strips_latest_tag(self):
+        output = """NAME                    ID          SIZE    MODIFIED
+model1:latest           abc123      5 GB    1 day ago
+model2:v1               def456      3 GB    2 days ago"""
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.run") as m:
+                m.return_value = MagicMock(returncode=0, stdout=output)
+                models = list_ollama_models()
+                assert models == ["model1", "model2:v1"]
+
+    def test_returns_empty_list_on_nonzero_returncode(self):
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.run") as m:
+                m.return_value = MagicMock(returncode=1, stdout="")
+                assert list_ollama_models() == []
+
+    def test_returns_empty_list_on_header_only(self):
+        output = """NAME                    ID          SIZE    MODIFIED"""
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.run") as m:
+                m.return_value = MagicMock(returncode=0, stdout=output)
+                assert list_ollama_models() == []
+
+    def test_handles_filenotfound(self):
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.run") as m:
+                m.side_effect = FileNotFoundError()
+                assert list_ollama_models() == []
+
+    def test_handles_timeout(self):
+        import subprocess
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.run") as m:
+                m.side_effect = subprocess.TimeoutExpired("ollama", 5)
+                assert list_ollama_models() == []
 
 
 @pytest.mark.unit

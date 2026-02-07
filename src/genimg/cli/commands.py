@@ -30,11 +30,24 @@ from genimg.cli.handlers import (
 from genimg.cli.utils import default_output_path
 
 
-@click.group()
-@click.version_option(version=__version__, package_name="genimg")
-def cli() -> None:
-    """AI image generation with prompt optimization (OpenRouter + Ollama)."""
-    pass
+@click.group(
+    help=f"""AI image generation with prompt optimization (OpenRouter + Ollama).
+
+\b
+Version: {__version__}
+GitHub: https://github.com/codeprimate/genimg
+Documentation: https://github.com/codeprimate/genimg#readme
+Report issues: https://github.com/codeprimate/genimg/issues
+"""
+)
+@click.version_option(
+    version=__version__,
+    package_name="genimg",
+    message="%(prog)s %(version)s\nGitHub: https://github.com/codeprimate/genimg",
+)
+@click.pass_context
+def cli(ctx: click.Context) -> None:
+    ctx.color = True
 
 
 @cli.command()
