@@ -74,6 +74,7 @@ Users must be able to:
 - **As a user**, I can review and edit the optimized prompt before proceeding
 - **As a user**, I can regenerate an optimized prompt if I'm not satisfied with the result
 - **As a user**, I can choose to skip optimization and use my original prompt
+- **As a user**, I can save the optimized prompt to a file for reproducibility and learning
 
 ### 2.3 Reference Images
 
@@ -93,6 +94,7 @@ Users must be able to:
 - **As a user**, I can select which AI models to use for optimization and generation
 - **As a user**, I can configure settings via environment variables or `.env` file
 - **As a user**, I can launch the web UI with custom host, port, and sharing options
+- **As a user**, I can specify where to save the optimized prompt for later reproduction
 
 ---
 
@@ -247,6 +249,42 @@ flowchart TD
 - Provides review/edit capability for optimized prompt
 - Allows regeneration of optimized prompt without starting over
 - Caches optimized prompts to avoid redundant optimization
+- Optionally saves optimized prompt to file for reproducibility
+
+**CLI Usage Examples:**
+
+Basic optimized generation:
+```bash
+genimg generate --prompt "a red car" --model "flux-1.1-pro"
+```
+
+Save optimized prompt for reproduction:
+```bash
+genimg generate \
+  --prompt "a red car" \
+  --model "flux-1.1-pro" \
+  --save-prompt prompts/car_optimized.txt
+```
+
+Later reproduction with saved prompt:
+```bash
+# Use the exact optimized prompt from file
+genimg generate \
+  --prompt "$(cat prompts/car_optimized.txt)" \
+  --model "flux-1.1-pro" \
+  --no-optimize
+```
+
+Batch workflow with prompt versioning:
+```bash
+# Generate image and save optimized prompt with timestamp
+timestamp=$(date +%Y%m%d_%H%M%S)
+genimg generate \
+  --prompt "a red car" \
+  --model "flux-1.1-pro" \
+  --out "outputs/car_${timestamp}.png" \
+  --save-prompt "prompts/car_${timestamp}.txt"
+```
 
 ### 4.3 Reference-Based Generation Workflow
 
@@ -356,6 +394,7 @@ flowchart TD
 - System shall cache optimized prompts to avoid redundant processing
 - System shall allow user to regenerate optimized prompt
 - System shall handle reference image context in optimization
+- System shall allow user to save optimized prompt to a file for reproducibility
 
 #### 5.1.3 Prompt Optimization Behavior
 - Optimization shall add technical detail (lighting, camera specs, composition)
@@ -363,6 +402,15 @@ flowchart TD
 - Optimization shall structure information for consistent interpretation
 - Optimization shall preserve reference image instructions verbatim
 - Optimization shall not remove or alter user's core intent
+
+#### 5.1.4 Optimized Prompt Persistence
+- System shall support saving optimized prompts to file via CLI parameter
+- System shall accept file paths relative to current working directory or absolute paths
+- System shall save optimized prompt as plain text (UTF-8 encoded)
+- System shall only save when optimization is actually performed (not when `--no-optimize` is used)
+- System shall create parent directories if needed when saving
+- System shall report errors if file cannot be written
+- Saved prompt file shall contain only the optimized prompt text (no metadata or formatting)
 
 ### 5.2 Image Generation
 
@@ -474,6 +522,24 @@ flowchart TD
 - System shall preserve prompt cache during session (process-scoped)
 - System shall support environment variable configuration for persistence across invocations
 
+#### 5.6.4 CLI Parameters
+- System shall support `--prompt` or `-p` for text description input (required)
+- System shall support `--model` or `-m` for image generation model selection
+- System shall support `--reference` or `-r` for reference image file path
+- System shall support `--no-optimize` flag to skip prompt optimization
+- System shall support `--out` or `-o` for output image file path
+- System shall support `--optimization-model` for selecting optimization model
+- System shall support `--save-prompt` for saving optimized prompt to file
+  - Accepts relative paths (resolved from current working directory)
+  - Accepts absolute file paths
+  - Only saves when optimization is performed (ignored with `--no-optimize`)
+  - Creates parent directories if they don't exist
+  - Overwrites existing files without warning
+  - Reports errors if file cannot be written
+- System shall support `--quiet` or `-q` for minimal output mode
+
+**Note:** The `--save-prompt` feature is CLI-only. The web UI allows users to copy/paste optimized prompts from the interface but does not automatically save them to files.
+
 ---
 
 ## 6. Data Requirements
@@ -548,7 +614,32 @@ Generated Image (library returns GenerationResult):
 - The `image_data` property provides backward-compatible access to raw bytes
 - CLI and UI layer determine output filename, not the library
 
-#### 6.3.2 Error Information
+#### 6.3.2 Saved Optimized Prompt
+```
+Saved Prompt File:
+  - format: Plain text (UTF-8)
+  - content: Optimized prompt text only
+  - location: User-specified file path (relative to CWD or absolute)
+  - encoding: UTF-8
+  - line_ending: Platform default
+```
+
+**Usage:**
+- Created when `--save-prompt <filepath>` is specified in CLI
+- Only created when optimization is performed (not with `--no-optimize`)
+- File can be used for:
+  - Reproduction of exact generation conditions
+  - Debugging prompt optimization behavior
+  - Learning from optimization patterns
+  - Version control of prompt iterations
+  - Automated workflows requiring consistent prompts
+
+**File Format Example:**
+```
+A photorealistic red sports car positioned at a three-quarter angle, shot with an 85mm lens at f/2.8 during golden hour. The lighting creates warm highlights on the vehicle's curves with soft shadows emphasizing the aerodynamic design. Shallow depth of field with smooth bokeh in the background. Professional automotive photography composition with the car positioned according to the rule of thirds.
+```
+
+#### 6.3.3 Error Information
 ```
 Error:
   - type: NETWORK | API | VALIDATION | TIMEOUT | CANCELLATION
