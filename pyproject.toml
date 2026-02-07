@@ -154,6 +154,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "N806", "SIM117"]  # assert in tests; mock names (Popen); nested with
+"src/genimg/ui/gradio_app.py" = ["SIM117"]  # nested with for Gradio layout clarity
 
 [tool.mypy]
 python_version = "3.10"

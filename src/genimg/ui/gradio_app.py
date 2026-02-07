@@ -431,16 +431,34 @@ def _build_blocks() -> gr.Blocks:
 
         with gr.Row():
             with gr.Column():
-                prompt_tb = gr.Textbox(
-                    label="Prompt",
-                    placeholder="Describe the image you want to generate…",
-                    lines=12,
-                    max_lines=20,
-                )
-                optimize_cb = gr.Checkbox(
-                    label="Optimize prompt with AI (Ollama)",
-                    value=True,
-                )
+                with gr.Tabs():
+                    with gr.Tab("Prompt"):
+                        prompt_tb = gr.Textbox(
+                            label="Prompt",
+                            placeholder="Describe the image you want to generate…",
+                            lines=12,
+                            max_lines=20,
+                        )
+                    with gr.Tab("Optimized Prompt"):
+                        optimize_cb = gr.Checkbox(
+                            label="✨ Enable prompt optimization (Ollama)",
+                            value=True,
+                        )
+                        optimized_tb = gr.Textbox(
+                            label="Optimized prompt (editable)",
+                            placeholder="Click Optimize or run Generate with optimization enabled to fill. Edit then Generate.",
+                            lines=8,
+                            max_lines=12,
+                        )
+                        optimize_btn = gr.Button("Optimize", variant="secondary", interactive=False)
+                        optimization_dd = gr.Dropdown(
+                            label="Optimization model (Ollama)",
+                            value=default_opt,
+                            choices=opt_models,
+                            allow_custom_value=True,
+                            visible=True,
+                            info="Ollama model for prompt optimization.",
+                        )
             with gr.Column():
                 ref_image = gr.Image(
                     label="Reference image",
@@ -459,22 +477,6 @@ def _build_blocks() -> gr.Blocks:
             visible=True,
             info="OpenRouter image model. Type a model ID for another.",
         )
-        optimization_dd = gr.Dropdown(
-            label="Optimization model (Ollama)",
-            value=default_opt,
-            choices=opt_models,
-            allow_custom_value=True,
-            visible=True,
-            info="Ollama model for prompt optimization.",
-        )
-        optimized_tb = gr.Textbox(
-            label="Optimized prompt (editable)",
-            placeholder="Click Optimize or run Generate with 'Optimize prompt' checked to fill. Edit then Generate.",
-            lines=3,
-            max_lines=6,
-        )
-        with gr.Row():
-            optimize_btn = gr.Button("Optimize", variant="secondary", interactive=False)
         status_tb = gr.Textbox(
             label="Status",
             value="",
