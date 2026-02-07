@@ -13,6 +13,7 @@ from genimg.core.image_gen import (
 )
 from genimg.utils.exceptions import (
     APIError,
+    CancellationError,
     NetworkError,
     RequestTimeoutError,
     ValidationError,
@@ -269,3 +270,25 @@ class TestGenerateImageMocked:
             m.side_effect = requests.exceptions.RequestException("other")
             with pytest.raises(NetworkError):
                 generate_image("x", config=config)
+
+    def test_cancel_check_raises_cancellation_error(self):
+        """When cancel_check returns True during request, CancellationError is raised."""
+        import time
+
+        config = Config(openrouter_api_key="sk-ok")
+        call_count = [0]
+
+        def slow_then_cancel():
+            call_count[0] += 1
+            if call_count[0] == 1:
+                time.sleep(0.1)
+            return call_count[0] >= 2
+
+        def blocking_post(*args, **kwargs):
+            time.sleep(10)
+            raise AssertionError("Should have been cancelled")
+
+        with patch("genimg.core.image_gen.requests.post", side_effect=blocking_post):
+            with pytest.raises(CancellationError) as exc_info:
+                generate_image("x", config=config, cancel_check=slow_then_cancel)
+        assert "cancelled" in str(exc_info.value).lower()

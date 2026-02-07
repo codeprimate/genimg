@@ -264,9 +264,42 @@ Each decision record includes:
 
 ---
 
+## ADR-010: Cancellation via cancel_check Callable
+
+**Date**: 2026-02-07
+
+**Decision**: Support cancellation of long-running operations (prompt optimization, image generation) by accepting an optional `cancel_check: Optional[Callable[[], bool]]` on the public entry points. When provided, the library runs the blocking work in a daemon thread and polls `cancel_check()` on the calling thread; if it returns True, the library raises `CancellationError` and (for Ollama) terminates the subprocess.
+
+**Context**: LIBRARY_SPEC requires cancellation "when supported." Optimization (Ollama) and generation (OpenRouter) can run for many seconds; users must be able to interrupt.
+
+**Options Considered**:
+1. **cancel_check callable**: Caller passes a function returning True to cancel; library polls from the main thread. No new types; works with threading.Event (e.g. `lambda: event.is_set()`).
+2. **threading.Event only**: Library creates an event and returns it; caller sets it to cancel. Ties the API to threading.
+3. **Defer cancellation**: Rely on process SIGINT only. Rejected because cancellation was deemed critical.
+
+**Rationale**:
+- cancel_check is interface-agnostic and testable; caller can use an Event, a flag, or CLI SIGINT handler that sets a flag.
+- For Ollama we can actually terminate the subprocess, so resources are released.
+- For OpenRouter we stop waiting and raise; the HTTP request may complete in the background (requests has no synchronous abort). Acceptable.
+
+**Consequences**:
+- `optimize_prompt`, `optimize_prompt_with_ollama`, and `generate_image` accept optional `cancel_check`. When None, behavior is unchanged (no thread).
+- CLI/UI can pass e.g. `cancel_check=lambda: cancel_event.is_set()` and set the event on Ctrl+C.
+- Two unit tests cover cancellation (prompt and image_gen).
+
+**Best practices and practical concerns**:
+- **cancel_check contract**: Callable should return quickly and not raise; the library catches exceptions from cancel_check and ignores them so a buggy callback does not abort the operation.
+- **Poll interval**: 0.25s. Spec asks for cancellation acknowledged within 100ms; worst case is one poll period (250ms). Can be reduced to 0.1s if stricter latency is needed.
+- **Daemon threads**: Workers are daemon threads so process exit is not blocked if the main thread exits (e.g. after raising CancellationError).
+- **Ollama**: On cancel we call `process.terminate()` then `thread.join(timeout=5)`. The subprocess is actually stopped; no lingering work.
+- **OpenRouter**: We only stop waiting and raise; the HTTP request continues in the worker until it completes. No way to abort a synchronous `requests` call from another thread. Thread exits when the request finishes; daemon=True prevents blocking process exit.
+- **Thread accumulation**: Repeated cancel-and-retry can leave a few short-lived worker threads (one per cancelled generation) until their requests complete. Acceptable for CLI; for long-lived servers, document or consider a thread pool if needed.
+- **Python 3.8**: Use `Tuple[str, str]` (typing) not `tuple[str, str]` for return types.
+
+---
+
 ## Future Decisions to Document
 
-- Cancellation mechanism (threading vs asyncio)
 - Batch generation approach
 - Progress reporting strategy
 - Logging configuration

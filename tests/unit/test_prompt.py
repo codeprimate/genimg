@@ -13,7 +13,7 @@ from genimg.core.prompt import (
     validate_prompt,
 )
 from genimg.utils.cache import get_cache
-from genimg.utils.exceptions import APIError, RequestTimeoutError, ValidationError
+from genimg.utils.exceptions import APIError, CancellationError, RequestTimeoutError, ValidationError
 
 
 @pytest.mark.unit
@@ -178,3 +178,35 @@ class TestOptimizePrompt:
     def test_optimization_template_contains_placeholder(self):
         assert "{original_prompt}" in OPTIMIZATION_TEMPLATE
         assert "enhance" in OPTIMIZATION_TEMPLATE.lower()
+
+    def test_cancel_check_raises_cancellation_error(self):
+        """When cancel_check returns True, optimization is cancelled and process is terminated."""
+        import time
+
+        cache = get_cache()
+        cache.clear()
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+        call_count = [0]
+
+        def cancel_after_two():
+            call_count[0] += 1
+            return call_count[0] >= 2
+
+        def blocking_communicate(*args, **kwargs):
+            time.sleep(2)  # Block so main thread can poll and cancel
+            return ("", "")
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
+                proc = MagicMock()
+                proc.communicate = blocking_communicate
+                proc.returncode = 0
+                proc.terminate = MagicMock()
+                Popen.return_value = proc
+                with pytest.raises(CancellationError) as exc_info:
+                    optimize_prompt_with_ollama(
+                        "original", config=config, cancel_check=cancel_after_two
+                    )
+        assert "cancelled" in str(exc_info.value).lower()
+        proc.terminate.assert_called_once()
+        cache.clear()

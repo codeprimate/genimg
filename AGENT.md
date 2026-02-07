@@ -69,6 +69,15 @@ Image Output (saved file or displayed in UI)
 - Base: `GenimgError`
 - Specific: `ValidationError`, `APIError`, `NetworkError`, `CancellationError`, `ConfigurationError`, `ImageProcessingError`
 
+## Implementing the CLI (and UI)
+
+When adding or changing CLI or UI code:
+
+- **Use only the public API.** Import from `genimg` (the package root), e.g. `from genimg import get_config, generate_image, validate_prompt, optimize_prompt, process_reference_image, clear_cache, ...` and the exception classes. Do **not** import from `genimg.core.*` or `genimg.utils.*` in CLI/UI code, except for type hints if strictly needed.
+- **Config:** Use `Config.from_env()` and optionally `config.validate()` before operations; pass `config=` into library calls so behavior is testable and overridable.
+- **Errors:** Map library exceptions to exit codes and user-facing messages (e.g. `ValidationError` → 2, `APIError` / `NetworkError` → 1). See `genimg.utils.exceptions` for the full hierarchy.
+- **Cancellation:** Pass optional `cancel_check: Callable[[], bool]` (e.g. `lambda: cancel_event.is_set()`) to `optimize_prompt` and `generate_image`; when it returns True the library raises `CancellationError` and (for Ollama) terminates the subprocess. CLI can set an event on Ctrl+C and pass it as cancel_check.
+
 ## Python Practices
 
 ### Python Version

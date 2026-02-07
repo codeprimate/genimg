@@ -13,6 +13,7 @@ mypy>=1.5.0
 # Type stubs
 types-requests>=2.31.0
 types-Pillow>=10.0.0
+types-PyYAML>=6.0.0
 
 # Optional: Pre-commit hooks
 pre-commit>=3.5.0

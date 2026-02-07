@@ -5,12 +5,13 @@ This module handles prompt validation, optimization via Ollama, and caching.
 """
 
 import subprocess
-from typing import Optional
+import threading
+from typing import Callable, List, Optional, Tuple, Union
 
 from genimg.core.config import Config, get_config
 from genimg.core.prompts_loader import get_optimization_template
-from genimg.utils.cache import get_cache
-from genimg.utils.exceptions import APIError, RequestTimeoutError, ValidationError
+from genimg.utils.cache import PromptCache, get_cache
+from genimg.utils.exceptions import APIError, CancellationError, RequestTimeoutError, ValidationError
 
 # Loaded from prompts.yaml; kept as name for backward compatibility and tests
 OPTIMIZATION_TEMPLATE = get_optimization_template()
@@ -61,6 +62,7 @@ def optimize_prompt_with_ollama(
     reference_hash: Optional[str] = None,
     timeout: Optional[int] = None,
     config: Optional[Config] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> str:
     """
     Optimize a prompt using Ollama.
@@ -71,6 +73,8 @@ def optimize_prompt_with_ollama(
         reference_hash: Hash of reference image if present (for caching)
         timeout: Timeout in seconds (defaults to config value)
         config: Optional config to use; if None, uses shared config from get_config()
+        cancel_check: Optional callable returning True to cancel; polled during the run.
+            Should return quickly and not raise (exceptions are caught and ignored).
 
     Returns:
         Optimized prompt
@@ -79,6 +83,7 @@ def optimize_prompt_with_ollama(
         ValidationError: If prompt is invalid
         APIError: If Ollama is not available or optimization fails
         RequestTimeoutError: If operation times out
+        CancellationError: If cancel_check returned True
     """
     validate_prompt(prompt)
 
@@ -105,49 +110,124 @@ def optimize_prompt_with_ollama(
     # Prepare the optimization prompt (template loaded from prompts.yaml)
     optimization_prompt = get_optimization_template().format(original_prompt=prompt)
 
-    try:
-        # Run Ollama
-        process = subprocess.Popen(
-            ["ollama", "run", model],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+    if cancel_check is None:
+        return _run_ollama_sync(prompt, model, reference_hash, timeout, optimization_prompt, cache)
 
-        stdout, stderr = process.communicate(input=optimization_prompt, timeout=timeout)
+    # Run with cancellation support: subprocess in a thread, main thread polls cancel_check
+    result_holder: List[Optional[Tuple[str, str]]] = [None]
+    exc_holder: List[Optional[BaseException]] = [None]
+    process_holder: List[Optional[subprocess.Popen[str]]] = [None]
 
-        if process.returncode != 0:
-            raise APIError(
-                f"Ollama optimization failed: {stderr}",
-                status_code=process.returncode,
-                response=stderr,
+    def worker_with_process() -> None:
+        try:
+            process = subprocess.Popen(
+                ["ollama", "run", model],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
             )
+            process_holder[0] = process
+            stdout, stderr = process.communicate(input=optimization_prompt, timeout=timeout)
+            result_holder[0] = (stdout, stderr)
+        except subprocess.TimeoutExpired:
+            if process_holder[0]:
+                process_holder[0].kill()
+            exc_holder[0] = RequestTimeoutError(
+                f"Optimization timed out after {timeout} seconds. "
+                "Try a simpler prompt or increase the timeout."
+            )
+        except BaseException as e:
+            exc_holder[0] = e
 
-        optimized = stdout.strip()
+    thread = threading.Thread(target=worker_with_process, daemon=True)
+    thread.start()
 
-        if not optimized:
-            raise APIError("Ollama returned an empty response")
+    poll_interval = 0.25
+    cancelled = False
+    while True:
+        thread.join(timeout=poll_interval)
+        if not thread.is_alive():
+            break
+        try:
+            if cancel_check():
+                cancelled = True
+                break
+        except Exception:
+            pass  # Don't let a buggy cancel_check break the loop
+    if cancelled:
+        proc = process_holder[0]
+        if proc is not None:
+            proc.terminate()
+            thread.join(timeout=5.0)
+        raise CancellationError("Optimization was cancelled.")
 
-        # Cache the result
-        cache.set(prompt, model, optimized, reference_hash)
+    if exc_holder[0] is not None:
+        raise exc_holder[0]
 
-        return optimized
+    stdout, stderr = result_holder[0] or ("", "")
+    process = process_holder[0]
+    if process is not None and process.returncode != 0:
+        raise APIError(
+            f"Ollama optimization failed: {stderr}",
+            status_code=process.returncode,
+            response=stderr,
+        )
+    optimized = (stdout or "").strip()
+    if not optimized:
+        raise APIError("Ollama returned an empty response")
+    cache.set(prompt, model, optimized, reference_hash)
+    return optimized
 
-    except subprocess.TimeoutExpired as e:
+
+def _run_ollama_communicate(
+    model: str, optimization_prompt: str, timeout: int
+) -> Tuple[str, str]:
+    """Run ollama in a subprocess and return (stdout, stderr). Used by sync and worker."""
+    process = subprocess.Popen(
+        ["ollama", "run", model],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        stdout, stderr = process.communicate(input=optimization_prompt, timeout=timeout)
+    except subprocess.TimeoutExpired:
         process.kill()
         raise RequestTimeoutError(
             f"Optimization timed out after {timeout} seconds. "
             "Try a simpler prompt or increase the timeout."
-        ) from e
+        )
+    if process.returncode != 0:
+        raise APIError(
+            f"Ollama optimization failed: {stderr}",
+            status_code=process.returncode,
+            response=stderr,
+        )
+    return stdout, stderr
 
+
+def _run_ollama_sync(
+    prompt: str,
+    model: str,
+    reference_hash: Optional[str],
+    timeout: int,
+    optimization_prompt: str,
+    cache: PromptCache,
+) -> str:
+    """Run Ollama without cancellation; used when cancel_check is None."""
+    try:
+        stdout, stderr = _run_ollama_communicate(model, optimization_prompt, timeout)
     except FileNotFoundError as e:
         raise APIError(
             "Ollama command not found. Please ensure Ollama is installed and in your PATH."
         ) from e
-
-    except Exception as e:
-        raise APIError(f"Optimization failed: {str(e)}") from e
+    optimized = stdout.strip()
+    if not optimized:
+        raise APIError("Ollama returned an empty response")
+    cache.set(prompt, model, optimized, reference_hash)
+    return optimized
 
 
 def optimize_prompt(
@@ -156,6 +236,7 @@ def optimize_prompt(
     reference_hash: Optional[str] = None,
     enable_cache: bool = True,
     config: Optional[Config] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> str:
     """
     Optimize a prompt (main entry point).
@@ -166,6 +247,8 @@ def optimize_prompt(
         reference_hash: Hash of reference image if present
         enable_cache: Whether to use caching (default: True)
         config: Optional config to use; if None, uses shared config from get_config()
+        cancel_check: Optional callable returning True to cancel; polled during the run.
+            Should return quickly and not raise (exceptions are caught and ignored).
 
     Returns:
         Optimized prompt
@@ -174,6 +257,7 @@ def optimize_prompt(
         ValidationError: If prompt is invalid
         APIError: If optimization fails
         RequestTimeoutError: If operation times out
+        CancellationError: If cancel_check returned True
     """
     validate_prompt(prompt)
 
@@ -193,4 +277,6 @@ def optimize_prompt(
             return cached
 
     # Perform optimization
-    return optimize_prompt_with_ollama(prompt, model, reference_hash, config=config)
+    return optimize_prompt_with_ollama(
+        prompt, model, reference_hash, config=config, cancel_check=cancel_check
+    )

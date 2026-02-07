@@ -4,6 +4,8 @@ Custom exceptions for genimg.
 This module defines all custom exceptions used throughout the application.
 """
 
+from typing import Optional
+
 
 class GenimgError(Exception):
     """Base exception for all genimg errors."""
@@ -46,7 +48,7 @@ class APIError(GenimgError):
 class NetworkError(GenimgError):
     """Raised when a network operation fails."""
 
-    def __init__(self, message: str, original_error: Exception = None) -> None:
+    def __init__(self, message: str, original_error: Optional[Exception] = None) -> None:
         """
         Initialize network error.
 

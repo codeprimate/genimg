@@ -30,8 +30,6 @@ def _infer_format_from_magic(data: bytes) -> Optional[str]:
         return "JPEG"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "WEBP"
-    if data[:6] in (b"GIF87a", b"GIF89a"):
-        return "GIF"
     if data[4:12] in (b"ftypheic", b"ftypheix", b"ftypmif1"):
         return "HEIC"
     return None
