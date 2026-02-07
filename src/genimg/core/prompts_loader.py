@@ -6,12 +6,12 @@ Add new prompt keys there and access them via get_prompt() or specific getters.
 """
 
 import importlib.resources
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
 # Module-level cache for parsed prompts
-_prompts_data: Optional[dict[str, Any]] = None
+_prompts_data: dict[str, Any] | None = None
 
 
 def _load_prompts() -> dict[str, Any]:
@@ -31,7 +31,7 @@ def _load_prompts() -> dict[str, Any]:
     return _prompts_data
 
 
-def get_prompt(key: str, subkey: Optional[str] = None) -> Optional[str]:
+def get_prompt(key: str, subkey: str | None = None) -> str | None:
     """
     Get a prompt string from prompts.yaml.
 

@@ -6,12 +6,17 @@ This module handles prompt validation, optimization via Ollama, and caching.
 
 import subprocess
 import threading
-from typing import Callable, List, Optional, Tuple, Union
+from collections.abc import Callable
 
 from genimg.core.config import Config, get_config
 from genimg.core.prompts_loader import get_optimization_template
 from genimg.utils.cache import PromptCache, get_cache
-from genimg.utils.exceptions import APIError, CancellationError, RequestTimeoutError, ValidationError
+from genimg.utils.exceptions import (
+    APIError,
+    CancellationError,
+    RequestTimeoutError,
+    ValidationError,
+)
 
 # Loaded from prompts.yaml; kept as name for backward compatibility and tests
 OPTIMIZATION_TEMPLATE = get_optimization_template()
@@ -103,11 +108,11 @@ def check_ollama_available() -> bool:
 
 def optimize_prompt_with_ollama(
     prompt: str,
-    model: Optional[str] = None,
-    reference_hash: Optional[str] = None,
-    timeout: Optional[int] = None,
-    config: Optional[Config] = None,
-    cancel_check: Optional[Callable[[], bool]] = None,
+    model: str | None = None,
+    reference_hash: str | None = None,
+    timeout: int | None = None,
+    config: Config | None = None,
+    cancel_check: Callable[[], bool] | None = None,
     force_refresh: bool = False,
 ) -> str:
     """
@@ -163,9 +168,9 @@ def optimize_prompt_with_ollama(
         return _run_ollama_sync(prompt, model, reference_hash, timeout, optimization_prompt, cache)
 
     # Run with cancellation support: subprocess in a thread, main thread polls cancel_check
-    result_holder: List[Optional[Tuple[str, str]]] = [None]
-    exc_holder: List[Optional[BaseException]] = [None]
-    process_holder: List[Optional[subprocess.Popen[str]]] = [None]
+    result_holder: list[tuple[str, str] | None] = [None]
+    exc_holder: list[BaseException | None] = [None]
+    process_holder: list[subprocess.Popen[str] | None] = [None]
 
     def worker_with_process() -> None:
         try:
@@ -231,7 +236,7 @@ def optimize_prompt_with_ollama(
 
 def _run_ollama_communicate(
     model: str, optimization_prompt: str, timeout: int
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Run ollama in a subprocess and return (stdout, stderr). Used by sync and worker."""
     process = subprocess.Popen(
         ["ollama", "run", model],
@@ -260,7 +265,7 @@ def _run_ollama_communicate(
 def _run_ollama_sync(
     prompt: str,
     model: str,
-    reference_hash: Optional[str],
+    reference_hash: str | None,
     timeout: int,
     optimization_prompt: str,
     cache: PromptCache,
@@ -281,11 +286,11 @@ def _run_ollama_sync(
 
 def optimize_prompt(
     prompt: str,
-    model: Optional[str] = None,
-    reference_hash: Optional[str] = None,
+    model: str | None = None,
+    reference_hash: str | None = None,
     enable_cache: bool = True,
-    config: Optional[Config] = None,
-    cancel_check: Optional[Callable[[], bool]] = None,
+    config: Config | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> str:
     """
     Optimize a prompt (main entry point).

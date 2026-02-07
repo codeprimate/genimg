@@ -6,7 +6,6 @@ redundant API calls when the same prompt is optimized multiple times.
 """
 
 import hashlib
-from typing import Dict, Optional
 
 
 class PromptCache:
@@ -14,9 +13,9 @@ class PromptCache:
 
     def __init__(self) -> None:
         """Initialize an empty cache."""
-        self._cache: Dict[str, str] = {}
+        self._cache: dict[str, str] = {}
 
-    def _generate_key(self, prompt: str, model: str, reference_hash: Optional[str] = None) -> str:
+    def _generate_key(self, prompt: str, model: str, reference_hash: str | None = None) -> str:
         """
         Generate a cache key from prompt, model, and optional reference image hash.
 
@@ -35,7 +34,7 @@ class PromptCache:
         key_string = "|".join(key_parts)
         return hashlib.sha256(key_string.encode()).hexdigest()
 
-    def get(self, prompt: str, model: str, reference_hash: Optional[str] = None) -> Optional[str]:
+    def get(self, prompt: str, model: str, reference_hash: str | None = None) -> str | None:
         """
         Retrieve an optimized prompt from cache.
 
@@ -55,7 +54,7 @@ class PromptCache:
         prompt: str,
         model: str,
         optimized_prompt: str,
-        reference_hash: Optional[str] = None,
+        reference_hash: str | None = None,
     ) -> None:
         """
         Store an optimized prompt in cache.
@@ -84,7 +83,7 @@ class PromptCache:
 
 
 # Global cache instance for the application
-_global_cache: Optional[PromptCache] = None
+_global_cache: PromptCache | None = None
 
 
 def get_cache() -> PromptCache:
@@ -107,8 +106,8 @@ def clear_cache() -> None:
 
 
 def get_cached_prompt(
-    prompt: str, model: str, reference_hash: Optional[str] = None
-) -> Optional[str]:
+    prompt: str, model: str, reference_hash: str | None = None
+) -> str | None:
     """
     Return the cached optimized prompt for the given inputs, or None if not cached.
 

@@ -12,7 +12,8 @@ import os
 import tempfile
 import threading
 import time
-from typing import Any, Generator, List, Optional, Tuple
+from collections.abc import Generator
+from typing import Any
 
 import gradio as gr
 import yaml
@@ -20,8 +21,8 @@ import yaml
 from genimg import (
     APIError,
     CancellationError,
-    ConfigurationError,
     Config,
+    ConfigurationError,
     GenimgError,
     ImageProcessingError,
     NetworkError,
@@ -41,7 +42,7 @@ DEFAULT_UI_HOST = "127.0.0.1"
 _cancel_event = threading.Event()
 
 
-def _load_ui_models() -> Tuple[List[str], str, List[str], str]:
+def _load_ui_models() -> tuple[list[str], str, list[str], str]:
     """
     Load image and optimization model lists from ui_models.yaml in the package.
     Returns (image_models, default_image_model, optimization_models, default_optimization_model).
@@ -53,9 +54,9 @@ def _load_ui_models() -> Tuple[List[str], str, List[str], str]:
             data = yaml.safe_load(f) or {}
     except FileNotFoundError:
         data = {}
-    image_models: List[str] = data.get("image_models") or []
+    image_models: list[str] = data.get("image_models") or []
     default_image: str = data.get("default_image_model") or "bytedance-seed/seedream-4.5"
-    opt_models: List[str] = data.get("optimization_models") or []
+    opt_models: list[str] = data.get("optimization_models") or []
     default_opt: str = data.get("default_optimization_model") or "svjack/gpt-oss-20b-heretic"
     if default_opt and default_opt not in opt_models:
         opt_models = [default_opt] + [m for m in opt_models if m != default_opt]
@@ -84,7 +85,7 @@ def _exception_to_message(exc: BaseException) -> str:
     return str(exc) if exc.args else "An unexpected error occurred."
 
 
-def _reference_source_for_process(value: Any) -> Optional[Any]:
+def _reference_source_for_process(value: Any) -> Any | None:
     """
     Get a source suitable for process_reference_image from Gradio Image value.
 
@@ -119,10 +120,10 @@ def _run_generate(
     prompt: str,
     optimize: bool,
     reference_value: Any,
-    model: Optional[str],
-    optimization_model: Optional[str] = None,
-    cancel_check: Optional[Any] = None,
-) -> tuple[Optional[str], Optional[Any], str]:
+    model: str | None,
+    optimization_model: str | None = None,
+    cancel_check: Any | None = None,
+) -> tuple[str | None, Any | None, str]:
     """
     Run the generate flow: validate, optional optimize, generate, return (status, image, status_msg).
 
@@ -145,8 +146,8 @@ def _run_generate(
     except ValidationError as e:
         return None, None, _exception_to_message(e)
 
-    ref_b64: Optional[str] = None
-    ref_hash: Optional[str] = None
+    ref_b64: str | None = None
+    ref_hash: str | None = None
     ref_source = _reference_source_for_process(reference_value)
     if ref_source is not None:
         try:
@@ -196,12 +197,12 @@ def _run_generate(
 def _run_generate_stream(
     prompt: str,
     optimize: bool,
-    optimized_prompt_value: Optional[str],
+    optimized_prompt_value: str | None,
     reference_value: Any,
-    model: Optional[str],
-    optimization_model: Optional[str] = None,
-    cancel_check: Optional[Any] = None,
-) -> Generator[tuple[str, Optional[str], bool, bool, str], None, None]:
+    model: str | None,
+    optimization_model: str | None = None,
+    cancel_check: Any | None = None,
+) -> Generator[tuple[str, str | None, bool, bool, str], None, None]:
     """
     Generate flow: use Optimized prompt box if non-empty (edit-then-generate), else run
     optimize when checkbox on, else use Prompt. Yields (status, img_path, gen_on, stop_on, optimized_box_value).
@@ -223,8 +224,8 @@ def _run_generate_stream(
     except ValidationError as e:
         yield _exception_to_message(e), None, True, False, box_value
         return
-    ref_b64: Optional[str] = None
-    ref_hash: Optional[str] = None
+    ref_b64: str | None = None
+    ref_hash: str | None = None
     ref_source = _reference_source_for_process(reference_value)
     if ref_source is not None:
         try:
@@ -282,8 +283,8 @@ def _generate_click_handler(
     opt: bool,
     opt_text: str,
     ref: Any,
-    mod: Optional[str],
-    opt_mod: Optional[str],
+    mod: str | None,
+    opt_mod: str | None,
 ) -> Generator[tuple[Any, ...], None, None]:
     """Generate button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     _cancel_event.clear()
@@ -323,7 +324,7 @@ def _generate_click_handler(
 
 
 def _optimize_click_handler(
-    p: str, ref: Any, opt_mod: Optional[str]
+    p: str, ref: Any, opt_mod: str | None
 ) -> Generator[tuple[Any, ...], None, None]:
     """Optimize button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     _cancel_event.clear()
@@ -371,8 +372,8 @@ def _prompt_change_handler(text: str) -> tuple[gr.update, gr.update]:
 def _run_optimize_only_stream(
     prompt: str,
     reference_value: Any,
-    optimization_model: Optional[str] = None,
-    cancel_check: Optional[Any] = None,
+    optimization_model: str | None = None,
+    cancel_check: Any | None = None,
 ) -> Generator[tuple[str, str, bool, bool, bool], None, None]:
     """
     Run optimization only; yields (status_msg, optimized_text, optimize_btn_on, stop_btn_on, generate_btn_on).
@@ -393,7 +394,7 @@ def _run_optimize_only_stream(
     except ValidationError as e:
         yield _exception_to_message(e), "", True, False, True
         return
-    ref_hash: Optional[str] = None
+    ref_hash: str | None = None
     ref_source = _reference_source_for_process(reference_value)
     if ref_source is not None:
         try:
@@ -444,7 +445,7 @@ def _build_blocks() -> gr.Blocks:
                     type="filepath",
                     sources=["upload", "clipboard"],
                 )
-        
+
         with gr.Row():
             generate_btn = gr.Button("Generate", variant="primary", interactive=False)
             stop_btn = gr.Button("Stop", interactive=False)
@@ -506,8 +507,8 @@ def _build_blocks() -> gr.Blocks:
 
 
 def launch(
-    server_name: Optional[str] = None,
-    server_port: Optional[int] = None,
+    server_name: str | None = None,
+    server_port: int | None = None,
     share: bool = False,
 ) -> None:
     """

@@ -9,7 +9,6 @@ import base64
 import hashlib
 import io
 from pathlib import Path
-from typing import Optional, Tuple, Union
 
 from PIL import Image
 
@@ -20,7 +19,7 @@ from genimg.utils.exceptions import ImageProcessingError, ValidationError
 SUPPORTED_FORMATS = {"PNG", "JPEG", "JPG", "WEBP", "HEIC", "HEIF"}
 
 
-def _infer_format_from_magic(data: bytes) -> Optional[str]:
+def _infer_format_from_magic(data: bytes) -> str | None:
     """Infer image format from magic bytes. Returns format name (e.g. PNG, JPEG) or None."""
     if len(data) < 12:
         return None
@@ -35,7 +34,7 @@ def _infer_format_from_magic(data: bytes) -> Optional[str]:
     return None
 
 
-def _normalize_format(fmt: Optional[str]) -> Optional[str]:
+def _normalize_format(fmt: str | None) -> str | None:
     """Normalize format to a key present in SUPPORTED_FORMATS (e.g. JPG -> JPEG, image/jpeg -> JPEG)."""
     if not fmt:
         return None
@@ -48,7 +47,7 @@ def _normalize_format(fmt: Optional[str]) -> Optional[str]:
     return u if u in SUPPORTED_FORMATS else None
 
 
-def _parse_data_url(data_url: str) -> Tuple[bytes, Optional[str]]:
+def _parse_data_url(data_url: str) -> tuple[bytes, str | None]:
     """
     Parse a data URL (data:image/xxx;base64,yyy) into raw bytes and MIME format.
 
@@ -74,9 +73,9 @@ def _parse_data_url(data_url: str) -> Tuple[bytes, Optional[str]]:
 
 
 def _load_image_source(
-    source: Union[str, Path, bytes],
-    format_hint: Optional[str] = None,
-) -> Tuple[Image.Image, str]:
+    source: str | Path | bytes,
+    format_hint: str | None = None,
+) -> tuple[Image.Image, str]:
     """
     Load an image from a file path or in-memory bytes.
 
@@ -190,7 +189,7 @@ def load_image(image_path: str) -> Image.Image:
         raise ImageProcessingError(f"Failed to load image: {str(e)}", image_path=image_path) from e
 
 
-def resize_image(image: Image.Image, max_pixels: Optional[int] = None) -> Image.Image:
+def resize_image(image: Image.Image, max_pixels: int | None = None) -> Image.Image:
     """
     Resize an image to fit within a maximum pixel count while maintaining aspect ratio.
 
@@ -291,11 +290,11 @@ def get_image_hash(image_path: str) -> str:
 
 
 def process_reference_image(
-    source: Union[str, Path, bytes],
-    format_hint: Optional[str] = None,
-    max_pixels: Optional[int] = None,
-    config: Optional[Config] = None,
-) -> Tuple[str, str]:
+    source: str | Path | bytes,
+    format_hint: str | None = None,
+    max_pixels: int | None = None,
+    config: Config | None = None,
+) -> tuple[str, str]:
     """
     Process a reference image for API submission.
 

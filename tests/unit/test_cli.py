@@ -25,11 +25,11 @@ def _run_cli(*args: str) -> Result:
 class TestGenerateCommand:
     """Test generate command behavior and exit codes."""
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_required_prompt(
         self,
         mock_config_cls: MagicMock,
@@ -43,11 +43,11 @@ class TestGenerateCommand:
         assert result.exit_code != 0
         assert "prompt" in result.output.lower() or "Missing" in result.output
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_no_optimize_skips_optimization(
         self,
         mock_config_cls: MagicMock,
@@ -84,11 +84,11 @@ class TestGenerateCommand:
         assert call_kw.get("reference_image_b64") is None
         assert out_file.read_bytes() == result_obj.image_data
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_reference_passed_to_generate(
         self,
         mock_config_cls: MagicMock,
@@ -122,9 +122,12 @@ class TestGenerateCommand:
         out_file = tmp_path / "out.png"
 
         result = _run_cli(
-            "--prompt", "a cat",
-            "--reference", str(ref_file),
-            "--out", str(out_file),
+            "--prompt",
+            "a cat",
+            "--reference",
+            str(ref_file),
+            "--out",
+            str(out_file),
         )
 
         assert result.exit_code == 0
@@ -134,11 +137,11 @@ class TestGenerateCommand:
         assert call_args[0] == "optimized prompt"
         assert call_kw["reference_image_b64"] == "base64data"
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_out_used_for_writing(
         self,
         mock_config_cls: MagicMock,
@@ -170,11 +173,11 @@ class TestGenerateCommand:
         assert out_file.read_bytes() == b"imagedata"
         assert str(out_file) in result.output
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_default_path_when_out_omitted(
         self,
         mock_config_cls: MagicMock,
@@ -200,7 +203,7 @@ class TestGenerateCommand:
         mock_generate.return_value = result_obj
 
         default_path = tmp_path / "genimg_20260207_120000.jpeg"
-        with patch("genimg.cli._default_output_path", return_value=str(default_path)):
+        with patch("genimg.cli.commands.default_output_path", return_value=str(default_path)):
             result = _run_cli("--prompt", "x", "--no-optimize")
 
         assert result.exit_code == 0
@@ -208,7 +211,7 @@ class TestGenerateCommand:
         assert default_path.read_bytes() == b"imagedata"
         assert "genimg_" in result.output and ".jpeg" in result.output
 
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.Config")
     def test_validation_error_exit_code(
         self,
         mock_config_cls: MagicMock,
@@ -219,7 +222,7 @@ class TestGenerateCommand:
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
-        with patch("genimg.cli.validate_prompt") as mock_validate:
+        with patch("genimg.cli.commands.validate_prompt") as mock_validate:
             mock_validate.side_effect = ValidationError("Prompt cannot be empty", field="prompt")
 
             result = _run_cli("--prompt", "x", "--no-optimize", "--out", str(tmp_path / "out.png"))
@@ -227,7 +230,7 @@ class TestGenerateCommand:
         assert result.exit_code == 2
         assert "Prompt" in result.output or "empty" in result.output
 
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.Config")
     def test_configuration_error_exit_code(
         self,
         mock_config_cls: MagicMock,
@@ -242,11 +245,11 @@ class TestGenerateCommand:
         assert result.exit_code == 2
         assert "API key" in result.output or "required" in result.output
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_api_error_exit_code(
         self,
         mock_config_cls: MagicMock,
@@ -268,11 +271,11 @@ class TestGenerateCommand:
         assert result.exit_code == 1
         assert "Model" in result.output or "error" in result.output.lower()
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_cancellation_error_exit_code_130(
         self,
         mock_config_cls: MagicMock,
@@ -294,11 +297,11 @@ class TestGenerateCommand:
         assert result.exit_code == 130
         assert "Cancelled" in result.output
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_quiet_only_prints_path(
         self,
         mock_config_cls: MagicMock,
@@ -334,11 +337,11 @@ class TestGenerateCommand:
         assert len(lines) == 1
         assert lines[0] == str(out_file)
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_save_prompt_writes_optimized_prompt(
         self,
         mock_config_cls: MagicMock,
@@ -370,23 +373,29 @@ class TestGenerateCommand:
         prompt_file = tmp_path / "prompts" / "saved.txt"
 
         result = _run_cli(
-            "--prompt", "a cat",
-            "--out", str(out_file),
-            "--save-prompt", str(prompt_file),
+            "--prompt",
+            "a cat",
+            "--out",
+            str(out_file),
+            "--save-prompt",
+            str(prompt_file),
         )
 
         assert result.exit_code == 0
         # Check prompt file was created with parent directory
         assert prompt_file.exists()
-        assert prompt_file.read_text(encoding="utf-8") == "This is the optimized prompt with lots of detail."
+        assert (
+            prompt_file.read_text(encoding="utf-8")
+            == "This is the optimized prompt with lots of detail."
+        )
         # Check success message was shown
         assert "Saved optimized prompt" in result.output
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_save_prompt_not_used_with_no_optimize(
         self,
         mock_config_cls: MagicMock,
@@ -415,10 +424,13 @@ class TestGenerateCommand:
         prompt_file = tmp_path / "prompt.txt"
 
         result = _run_cli(
-            "--prompt", "a cat",
+            "--prompt",
+            "a cat",
             "--no-optimize",
-            "--out", str(out_file),
-            "--save-prompt", str(prompt_file),
+            "--out",
+            str(out_file),
+            "--save-prompt",
+            str(prompt_file),
         )
 
         assert result.exit_code == 0
@@ -426,11 +438,11 @@ class TestGenerateCommand:
         assert not prompt_file.exists()
         mock_optimize.assert_not_called()
 
-    @patch("genimg.cli.generate_image")
-    @patch("genimg.cli.optimize_prompt")
-    @patch("genimg.cli.validate_prompt")
-    @patch("genimg.cli.process_reference_image")
-    @patch("genimg.cli.Config")
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
     def test_save_prompt_error_does_not_fail_generation(
         self,
         mock_config_cls: MagicMock,
@@ -463,9 +475,12 @@ class TestGenerateCommand:
         bad_prompt_file = Path("/nonexistent/directory/prompt.txt")
 
         result = _run_cli(
-            "--prompt", "a cat",
-            "--out", str(out_file),
-            "--save-prompt", str(bad_prompt_file),
+            "--prompt",
+            "a cat",
+            "--out",
+            str(out_file),
+            "--save-prompt",
+            str(bad_prompt_file),
         )
 
         # Generation should succeed despite prompt save failure
@@ -473,4 +488,3 @@ class TestGenerateCommand:
         assert out_file.exists()
         # Warning should be shown
         assert "Could not save prompt" in result.output or "Warning" in result.output
-

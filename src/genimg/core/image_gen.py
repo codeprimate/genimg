@@ -9,8 +9,9 @@ import base64
 import io
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 import requests
 from PIL import Image
@@ -64,12 +65,12 @@ class GenerationResult:
 
 def _do_generate_image_request(
     url: str,
-    headers: Dict[str, str],
-    payload: Dict[str, Any],
+    headers: dict[str, str],
+    payload: dict[str, Any],
     timeout: int,
     model: str,
     prompt: str,
-    reference_image_b64: Optional[str],
+    reference_image_b64: str | None,
 ) -> GenerationResult:
     """Perform the HTTP request and parse response; used by generate_image (and by worker when cancellable)."""
     start_time = time.time()
@@ -162,12 +163,12 @@ def _do_generate_image_request(
 
 def generate_image(
     prompt: str,
-    model: Optional[str] = None,
-    reference_image_b64: Optional[str] = None,
-    api_key: Optional[str] = None,
-    timeout: Optional[int] = None,
-    config: Optional[Config] = None,
-    cancel_check: Optional[Callable[[], bool]] = None,
+    model: str | None = None,
+    reference_image_b64: str | None = None,
+    api_key: str | None = None,
+    timeout: int | None = None,
+    config: Config | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> GenerationResult:
     """
     Generate an image using OpenRouter API.
@@ -216,7 +217,7 @@ def generate_image(
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    content_parts: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+    content_parts: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
     if reference_image_b64:
         image_url = create_image_data_url(reference_image_b64)
         content_parts.append({"type": "image_url", "image_url": {"url": image_url}})
@@ -247,8 +248,8 @@ def generate_image(
             ) from e
 
     # Run with cancellation support: request in a thread, main thread polls cancel_check
-    result_holder: List[Optional[GenerationResult]] = [None]
-    exc_holder: List[Optional[BaseException]] = [None]
+    result_holder: list[GenerationResult | None] = [None]
+    exc_holder: list[BaseException | None] = [None]
 
     def worker() -> None:
         try:

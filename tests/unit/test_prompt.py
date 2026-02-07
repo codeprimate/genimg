@@ -14,7 +14,12 @@ from genimg.core.prompt import (
     validate_prompt,
 )
 from genimg.utils.cache import get_cache
-from genimg.utils.exceptions import APIError, CancellationError, RequestTimeoutError, ValidationError
+from genimg.utils.exceptions import (
+    APIError,
+    CancellationError,
+    RequestTimeoutError,
+    ValidationError,
+)
 
 
 @pytest.mark.unit

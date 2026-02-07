@@ -6,7 +6,6 @@ This module handles API keys, model selection, and other configuration settings.
 
 import os
 from dataclasses import dataclass, field
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -153,7 +152,7 @@ class Config:
 
 
 # Global configuration instance
-_global_config: Optional[Config] = None
+_global_config: Config | None = None
 
 
 def get_config() -> Config:
