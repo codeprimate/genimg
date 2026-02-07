@@ -1,0 +1,32 @@
+{
+  "errors": {
+    "unauthorized": {
+      "error": {
+        "message": "Invalid API key",
+        "type": "invalid_request_error",
+        "code": "invalid_api_key"
+      }
+    },
+    "rate_limit": {
+      "error": {
+        "message": "Rate limit exceeded. Please wait before making more requests.",
+        "type": "rate_limit_error",
+        "code": "rate_limit_exceeded"
+      }
+    },
+    "model_not_found": {
+      "error": {
+        "message": "Model not found or not available",
+        "type": "invalid_request_error",
+        "code": "model_not_found"
+      }
+    },
+    "server_error": {
+      "error": {
+        "message": "Internal server error",
+        "type": "server_error",
+        "code": "internal_error"
+      }
+    }
+  }
+}

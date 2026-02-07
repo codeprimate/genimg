@@ -1,0 +1,16 @@
+{
+  "examples": [
+    {
+      "original": "a red car",
+      "optimized": "A sleek red sports car photographed at golden hour, shot with 85mm lens creating shallow depth of field, parked on coastal highway with ocean backdrop, cinematic lighting with warm sunset tones, professional automotive photography style, high detail, 4k quality"
+    },
+    {
+      "original": "a mountain landscape",
+      "optimized": "A majestic mountain landscape at dawn, snow-capped peaks catching first light, foreground with alpine meadow filled with wildflowers, misty valleys below, dramatic clouds, shot from elevated viewpoint, wide-angle lens, golden hour lighting, professional nature photography, crisp detail, atmospheric perspective"
+    },
+    {
+      "original": "a cozy coffee shop",
+      "optimized": "A cozy coffee shop interior with warm ambient lighting, wooden furniture and vintage decor, steaming cups on rustic tables, soft natural light from large windows, plants adding greenery, comfortable atmosphere, shot with 35mm lens, shallow depth of field, lifestyle photography style, inviting and intimate mood"
+    }
+  ]
+}
