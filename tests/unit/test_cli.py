@@ -333,3 +333,144 @@ class TestGenerateCommand:
         lines = [line.strip() for line in result.output.strip().splitlines()]
         assert len(lines) == 1
         assert lines[0] == str(out_file)
+
+    @patch("genimg.cli.generate_image")
+    @patch("genimg.cli.optimize_prompt")
+    @patch("genimg.cli.validate_prompt")
+    @patch("genimg.cli.process_reference_image")
+    @patch("genimg.cli.Config")
+    def test_save_prompt_writes_optimized_prompt(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """With --save-prompt, the optimized prompt is saved to the specified file."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.optimization_enabled = True
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+
+        mock_optimize.return_value = "This is the optimized prompt with lots of detail."
+
+        result_obj = MagicMock()
+        result_obj.image_data = b"imagedata"
+        result_obj.format = "png"
+        result_obj.generation_time = 1.0
+        result_obj.model_used = "test/model"
+        result_obj.prompt_used = "This is the optimized prompt with lots of detail."
+        result_obj.had_reference = False
+        mock_generate.return_value = result_obj
+
+        out_file = tmp_path / "out.png"
+        prompt_file = tmp_path / "prompts" / "saved.txt"
+
+        result = _run_cli(
+            "--prompt", "a cat",
+            "--out", str(out_file),
+            "--save-prompt", str(prompt_file),
+        )
+
+        assert result.exit_code == 0
+        # Check prompt file was created with parent directory
+        assert prompt_file.exists()
+        assert prompt_file.read_text(encoding="utf-8") == "This is the optimized prompt with lots of detail."
+        # Check success message was shown
+        assert "Saved optimized prompt" in result.output
+
+    @patch("genimg.cli.generate_image")
+    @patch("genimg.cli.optimize_prompt")
+    @patch("genimg.cli.validate_prompt")
+    @patch("genimg.cli.process_reference_image")
+    @patch("genimg.cli.Config")
+    def test_save_prompt_not_used_with_no_optimize(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """With --no-optimize and --save-prompt, no prompt file is created."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+
+        result_obj = MagicMock()
+        result_obj.image_data = b"imagedata"
+        result_obj.format = "png"
+        result_obj.generation_time = 1.0
+        result_obj.model_used = "test/model"
+        result_obj.prompt_used = "a cat"
+        result_obj.had_reference = False
+        mock_generate.return_value = result_obj
+
+        out_file = tmp_path / "out.png"
+        prompt_file = tmp_path / "prompt.txt"
+
+        result = _run_cli(
+            "--prompt", "a cat",
+            "--no-optimize",
+            "--out", str(out_file),
+            "--save-prompt", str(prompt_file),
+        )
+
+        assert result.exit_code == 0
+        # Optimization was skipped, so no prompt file should be created
+        assert not prompt_file.exists()
+        mock_optimize.assert_not_called()
+
+    @patch("genimg.cli.generate_image")
+    @patch("genimg.cli.optimize_prompt")
+    @patch("genimg.cli.validate_prompt")
+    @patch("genimg.cli.process_reference_image")
+    @patch("genimg.cli.Config")
+    def test_save_prompt_error_does_not_fail_generation(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """If saving the prompt fails, a warning is shown but generation proceeds."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.optimization_enabled = True
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+
+        mock_optimize.return_value = "optimized prompt"
+
+        result_obj = MagicMock()
+        result_obj.image_data = b"imagedata"
+        result_obj.format = "png"
+        result_obj.generation_time = 1.0
+        result_obj.model_used = "test/model"
+        result_obj.prompt_used = "optimized prompt"
+        result_obj.had_reference = False
+        mock_generate.return_value = result_obj
+
+        out_file = tmp_path / "out.png"
+        # Use a path that will fail to write (read-only parent)
+        bad_prompt_file = Path("/nonexistent/directory/prompt.txt")
+
+        result = _run_cli(
+            "--prompt", "a cat",
+            "--out", str(out_file),
+            "--save-prompt", str(bad_prompt_file),
+        )
+
+        # Generation should succeed despite prompt save failure
+        assert result.exit_code == 0
+        assert out_file.exists()
+        # Warning should be shown
+        assert "Could not save prompt" in result.output or "Warning" in result.output
+

@@ -142,6 +142,18 @@ genimg generate "a red sports car" --no-optimize --output car.png
 genimg generate "same car but in blue" --reference original.jpg --output blue_car.png
 ```
 
+**Save optimized prompt for reproducibility:**
+
+```bash
+genimg generate "a red car" --output car.png --save-prompt prompts/car.txt
+```
+
+This saves the optimized prompt to a file, allowing you to:
+- Reproduce exact generation conditions later
+- Learn from optimization patterns
+- Version control your prompts
+- Use in automated workflows
+
 **Quiet mode** (machine-readable output, no progress):
 
 ```bash

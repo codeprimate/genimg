@@ -146,6 +146,11 @@ def cli() -> None:
     help="Ollama model for optimization (default from config).",
 )
 @click.option(
+    "--save-prompt",
+    type=click.Path(path_type=Path),
+    help="Save optimized prompt to file (relative to CWD or absolute path).",
+)
+@click.option(
     "--quiet",
     "-q",
     is_flag=True,
@@ -158,6 +163,7 @@ def generate(
     no_optimize: bool,
     out: Path | None,
     optimization_model: str | None,
+    save_prompt: Path | None,
     quiet: bool,
 ) -> None:
     """Generate an image from a text prompt (optionally with optimization and reference)."""
@@ -202,6 +208,22 @@ def generate(
                     config=config,
                     cancel_check=_cancel_check,
                 )
+
+            # Save optimized prompt if requested
+            if save_prompt is not None:
+                try:
+                    # Ensure parent directories exist
+                    save_prompt.parent.mkdir(parents=True, exist_ok=True)
+                    # Write optimized prompt as UTF-8 text
+                    save_prompt.write_text(effective_prompt, encoding="utf-8")
+                    if not quiet:
+                        progress.print_info(f"Saved optimized prompt to {save_prompt}")
+                except OSError as e:
+                    # Report error but don't fail the entire operation
+                    if quiet:
+                        click.echo(f"Warning: Could not save prompt to {save_prompt}: {e}", err=True)
+                    else:
+                        progress.print_warning(f"Could not save prompt to {save_prompt}: {e}")
 
         # 5. Generate image
         result: GenerationResult
