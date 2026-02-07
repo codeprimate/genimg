@@ -1,0 +1,155 @@
+---
+description: Comprehensive code review process for Rails/React application with deep logic analysis
+alwaysApply: false
+---
+
+# Code Review Process
+
+## When to Apply
+Use this rule when performing code reviews, analyzing pull requests, or evaluating code changes. Focus on systematic analysis rather than surface-level checks.
+
+## Phase 1: Context & Impact Analysis
+
+**Identify Changes**: Use `git diff --name-status` and categorize files (models/controllers/views/components/services/workers/policies/tests/migrations).
+
+**Analyze Code Changes**: Examine git diff line-by-line - trace logic paths, identify modified functions, check data structures, conditional logic, and error handling.
+
+**Gather Context**: Use GitHub CLI (`gh pr view`, `gh pr comments`, `gh issue view`) to understand requirements, business impact, and related discussions.
+
+**Map Dependencies**: For each changed component, identify affected code, integration points, and potential ripple effects.
+
+## Phase 2: Deep Code Analysis
+
+**CRITICAL**: Apply systematic logic tracing. For each changed function, ask "What could go wrong?" - trace execution paths, check edge cases, identify race conditions, and validate assumptions.
+
+**Architecture**: Verify Rails conventions, ViewComponent usage, service object extraction, Pundit authorization, and separation of concerns. Flag anti-patterns (fat controllers, god objects, tight coupling).
+
+**Code Quality**: Check StandardRB compliance, naming conventions, method complexity (<25 lines), code duplication, magic numbers, and dead code removal.
+
+**Security**: Verify Pundit policies, input validation, SQL parameterization, XSS prevention, strong parameters. Deep analysis: timing attacks, information disclosure, race conditions, logic flaws.
+
+**Performance**: Check N+1 queries, proper eager loading, background job usage, caching, memory efficiency, resource cleanup.
+
+**Concurrency**: Verify thread safety, transaction isolation, cache invalidation, and concurrent operation safety.
+
+**Error Handling**: Ensure fail-fast for programming errors, retry logic for external systems, transaction rollbacks, and proper error propagation.
+
+**Frontend (React/TypeScript)**: Verify type safety, component patterns, state management, error boundaries, accessibility, and performance optimization.
+
+**Critical Thinking Questions**:
+- What execution paths exist through this code?
+- What edge cases or boundary conditions aren't handled?
+- What could cause race conditions or timing issues?
+- What assumptions are made about inputs or external systems?
+- What happens when dependencies fail or return unexpected data?
+- Are all error conditions properly handled?
+- What invariants should always hold, and are they maintained?
+
+**Deep Analysis Patterns**:
+- Boolean logic: Check && vs || usage, De Morgan's law violations
+- Data flow: Trace how data moves through the system and where corruption could occur
+- State transitions: Verify atomic operations and consistent state changes
+- Resource management: Ensure proper cleanup in all execution paths
+- Exception propagation: Check if exceptions are swallowed or provide proper context
+
+## Phase 3: Testing & Integration Review
+
+**Test Coverage**: Verify unit tests for models/services, integration tests for controllers/workflows, system tests for user features, policy tests for authorization. Identify untested execution paths, boundary conditions, and failure scenarios from logic analysis.
+
+**Test Quality**: Ensure RSpec conventions, proper factory usage, readable/maintainable tests, and efficient performance.
+
+**Breaking Changes**: Check API compatibility, migration safety/reversibility, data integrity constraints, backward compatibility, and feature flag usage for risky changes.
+
+**Integration Impact**: Assess downstream effects, new dependencies, configuration requirements, logging/monitoring needs, and documentation updates.
+
+## Phase 4: Documentation & Deployment
+
+**API Documentation**: Verify RESTful design, versioning, consistent responses, error formatting, rate limiting, and endpoint documentation.
+
+**Code Documentation**: Document complex business logic, new ViewComponents, and configuration changes.
+
+**Deployment**: Identify pre-deployment requirements (env vars, migrations, infrastructure) and post-deployment needs (testing, monitoring, feature activation).
+
+**STOP AND WRITE DOCUMENT**: After completing Phase 4 analysis, **STOP** and create an initial code review document containing all identified issues, findings, and recommendations from Phases 1-4. This document should include all potential issues before validation.
+
+## Phase 5: Issue Validation
+
+**CRITICAL**: This phase analyzes the **document created in Phase 4**, not the code directly. Validate each identified issue **ONE AT A TIME** before finalizing the document. Process each issue completely before moving to the next. **Remove false positives immediately.**
+
+**Validation Process** (repeat for each issue):
+1. Re-examine the evidence: Review code, git diff, and context. Verify the issue exists and isn't a misunderstanding.
+2. Validate the analysis: Question conclusions. Could there be alternative explanations? Is severity accurate?
+3. Trace root causes: Is this a symptom of a larger problem? Are there related issues to group?
+4. Verify impact: Could this occur in production? What are real-world consequences?
+5. Check for false positives: Verify against test coverage, existing patterns, or documented intentional design. **If false positive, remove it.**
+6. Confirm fix recommendations: Validate fixes are correct, complete, and don't introduce new issues.
+
+**Validation Questions** (answer for current issue before moving on):
+- Is this issue real, or did I misunderstand the code? **If misunderstood, remove it.**
+- Is my severity assessment accurate? **If incorrect, update it.**
+- Could this be intentional design? **If intentional, remove it.**
+- Does my proposed fix solve the problem completely? **If wrong, update it.**
+
+**Action Required**: Remove false positives and misunderstandings. Update issues with corrected severity, impact, or fixes. Keep only valid, material issues.
+
+**STOP AND UPDATE DOCUMENT**: After completing Phase 5 validation, **STOP** and update the document created in Phase 4. Remove false positives, correct severity assessments, and update fix recommendations based on validation findings.
+
+## Phase 6: Document Structuring
+
+**CRITICAL**: This phase occurs **after** the document has been updated in Phase 5. Create a **new final review document** with proper structure and formatting based on the validated and updated issues from Phase 5.
+
+**Goal**: Transform the validated issues from the Phase 5 document into a well-structured, actionable final code review document.
+
+**Required Structure**:
+
+1. **Executive Summary**:
+   - Overall assessment: Ready for merge / Needs work / Blocked
+   - Total issue count by severity (Critical/Major/Minor)
+   - Key highlights: Most critical issues, deployment readiness
+   - One-sentence recommendation
+
+2. **Issue Organization**:
+   - Group by category (Security, Performance, Architecture, Testing, etc.)
+   - Within category, order by severity (Critical → Major → Minor)
+   - Number sequentially for reference
+   - Cross-reference related issues
+
+3. **Issue Format** (each issue must include):
+   - **Location**: `[File:Line]` or `[File:LineRange]` with exact code reference
+   - **Severity**: `[Critical/Major/Minor]` with justification
+   - **Description**: Clear, concise problem statement (1-2 sentences)
+   - **Impact**: Real-world consequences (production risk, user impact, technical debt)
+   - **Evidence**: Code snippet or specific reference
+   - **Fix Recommendation**: Specific, actionable solution with code example when helpful
+   - **Priority**: Why this should be addressed now vs. later
+
+4. **Contextual Information**:
+   - PR context: Link to PR, branch, related issues
+   - Change summary: High-level overview
+   - Files changed: List with change types (new/modified/deleted)
+   - Testing status: Coverage assessment and concerns
+
+5. **Recommendations**:
+   - **Before Merge**: Critical and major issues that must be addressed
+   - **Follow-up**: Minor issues or improvements post-merge
+   - **Future Considerations**: Architectural improvements, technical debt, patterns to consider
+
+**Output Format**:
+- Clear headings and hierarchical structure
+- Code blocks with syntax highlighting
+- Bullet points for lists and checklists
+- Line numbers in code references when helpful
+- Critical issues marked prominently
+- Consistent terminology throughout
+
+**Final Quality Checks**:
+- All issues validated (no false positives)
+- Issues grouped logically and easy to navigate
+- Each issue has complete information (location, severity, impact, fix)
+- Language is clear, professional, and constructive
+- Code references are accurate and verifiable
+- No duplicate or redundant issues
+- Document flows logically from summary to details
+- Every issue can be understood and addressed independently
+
+**Prioritization**: Focus on bugs, security issues, regressions, migration risks. Include material issues only. State "No material issues found" if none.

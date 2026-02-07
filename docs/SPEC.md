@@ -1,8 +1,8 @@
 # AI Image Generator - Functional Specification
 
-**Version:** 1.0  
-**Date:** February 6, 2026  
-**Status:** Draft
+**Version:** 1.1  
+**Date:** February 7, 2026  
+**Status:** Implemented (matches v0.1.0)
 
 ---
 
@@ -91,7 +91,8 @@ Users must be able to:
 
 - **As a user**, I can provide my API credentials for external services
 - **As a user**, I can select which AI models to use for optimization and generation
-- **As a user**, I can reuse my settings across multiple sessions
+- **As a user**, I can configure settings via environment variables or `.env` file
+- **As a user**, I can launch the web UI with custom host, port, and sharing options
 
 ---
 
@@ -397,8 +398,9 @@ flowchart TD
 - System shall resize images exceeding size limits
 - System shall maintain aspect ratio during resizing
 - System shall convert images to RGB format as needed
-- System shall encode images appropriately for API transmission
+- System shall encode images as JPEG for API transmission (for smaller payload)
 - System shall enforce maximum resolution constraint (2 megapixels)
+- System shall support data URLs, file paths (str/Path), and raw bytes as input sources
 
 #### 5.3.3 Image Management
 - System shall store uploaded images temporarily during session
@@ -411,7 +413,10 @@ flowchart TD
 - System shall provide cancellation capability for all long-running operations
 - System shall cancel prompt optimization when requested
 - System shall cancel image generation when requested
-- System shall terminate background processes on cancellation
+- System shall use callback-based cancellation (`cancel_check`) for library operations
+- System shall handle SIGINT (Ctrl+C) for CLI cancellation
+- System shall use event-based cancellation for UI operations
+- System shall terminate background threads/processes on cancellation
 - System shall clean up resources after cancellation
 - System shall return to ready state after cancellation
 
@@ -458,14 +463,16 @@ flowchart TD
 #### 5.6.2 Model Configuration
 - System shall allow selection of image generation model
 - System shall allow selection of prompt optimization model
-- System shall maintain list of available optimization models
+- System shall maintain list of available models via `ui_models.yaml` configuration
 - System shall provide reasonable defaults for all models
-- System shall allow model list refresh without restart
+- System shall allow custom model IDs for flexibility
+- System shall support model selection via environment variables (`GENIMG_DEFAULT_MODEL`, `GENIMG_OPTIMIZATION_MODEL`)
 
 #### 5.6.3 Preferences
-- System shall remember model selections during session
+- System shall remember model selections during session (process-scoped)
 - System shall remember optimization preference during session
-- System shall preserve prompt cache during session
+- System shall preserve prompt cache during session (process-scoped)
+- System shall support environment variable configuration for persistence across invocations
 
 ---
 
@@ -523,15 +530,23 @@ Operation State:
 #### 6.3.1 Generated Image
 ```
 Generated Image (library returns GenerationResult):
-  - image: PIL Image (primary; caller saves, converts, or gets bytes as needed)
-  - image_data: binary (bytes, derived from image for backward compatibility)
-  - format: JPEG | PNG (from API)
+  - image: PIL Image (primary output; caller saves, converts format, or gets bytes as needed)
+  - _format: str (format from API: 'jpeg' or 'png', accessed via .format property)
   - generation_time: float (seconds)
   - model_used: string
   - prompt_used: string
   - had_reference: boolean
+  
+  Properties:
+  - format: string (read-only property returning _format)
+  - image_data: bytes (computed property: image encoded in API format for backward compatibility)
 ```
-(Note: dimensions, file_path, filename are obtained by the caller from the PIL image or their own naming logic.)
+
+**Implementation Notes:**
+- The primary output is the PIL Image object (`result.image`)
+- Callers can save with custom format/quality: `result.image.save("out.jpg", "JPEG", quality=90)`
+- The `image_data` property provides backward-compatible access to raw bytes
+- CLI and UI layer determine output filename, not the library
 
 #### 6.3.2 Error Information
 ```
@@ -549,14 +564,17 @@ Error:
 Cache Entry:
   - key: hash(prompt, model, reference_hash)
   - value: optimized_prompt_text
-  - created_at: timestamp (implicit, for debugging)
+  - metadata: implicit (timestamps not stored but cache is process-scoped)
 ```
 
 **Cache Behavior:**
-- In-memory only (session-scoped)
-- Cleared when relevant inputs change
-- No size limits (bounded by session length)
-- No persistence across sessions
+- In-memory only (process-scoped, not session-scoped)
+- Cleared when process exits or via `clear_cache()` API
+- Cache lookup via `get_cached_prompt(prompt, model, reference_hash)`
+- Direct cache access via `get_cache()` for advanced use cases
+- Automatic cache population when `force_refresh=False` (default)
+- No size limits (bounded by process lifetime)
+- No persistence across process invocations
 
 ---
 
@@ -621,20 +639,34 @@ Error:
 
 **Capabilities Required:**
 - Text generation via installed models
-- Streaming output (optional, for progress)
+- Streaming output (not currently used)
 - Model management (list, pull)
 
 **Execution:**
-- Command-line invocation
+- Subprocess execution (`subprocess.Popen`)
+- Threading for cancellation support
 - No authentication required (local service)
 
 **Invocation Format:**
 ```
-Command: ollama run {model} {prompt}
-Stdout: Generated text
+Command: ollama run {model}
+Stdin: Optimization prompt (system template + user prompt)
+Stdout: Generated optimized prompt
 Stderr: Error messages
 Exit code: 0 (success) or non-zero (error)
+Timeout: Managed via threading and process termination
 ```
+
+**Optimization Template:**
+- Loaded from `src/genimg/prompts.yaml` at runtime
+- Contains system instructions for optimization
+- Injected with reference image instructions when applicable
+- Format: `{template}\n\nOriginal prompt: {user_prompt}\n\nImproved prompt:`
+
+**Output Processing:**
+- Strips "Thinking..." blocks from thinking models
+- Strips markdown code fences if present
+- Returns cleaned prompt text
 
 **Model Management:**
 ```
@@ -791,7 +823,7 @@ Effect: Downloads and installs model
 ### 9.3 Assumptions
 
 #### 9.3.1 User Environment
-- **Assumption:** User has Python 3.8+ installed
+- **Assumption:** User has Python 3.10+ installed
 - **Assumption:** User can install Python packages
 - **Assumption:** User has sufficient disk space for temporary files
 - **Assumption:** User has stable internet connection
@@ -813,98 +845,3 @@ Effect: Downloads and installs model
 - **Assumption:** Optimization doesn't fundamentally change user intent
 - **Assumption:** Optimized prompts are generally better than originals
 - **Note:** Effectiveness varies by model and use case
-
----
-
-## 10. Out of Scope
-
-The following capabilities are explicitly excluded from this specification:
-
-### 10.1 Advanced Features
-- Batch generation (multiple images from one prompt)
-- Image editing (modifying existing images)
-- Video generation
-- 3D model generation
-- Animation or GIF creation
-
-### 10.2 Persistence
-- Saving generation history across sessions
-- Prompt library or favorites
-- Image gallery or collection management
-- Export to external services
-
-### 10.3 Collaboration
-- Multi-user support
-- Sharing prompts or images with others
-- Team workspaces
-- Access control or permissions
-
-### 10.4 Advanced Customization
-- Fine-tuning models
-- Training custom models
-- Creating custom optimization templates
-- Advanced parameter control (seeds, guidance, steps)
-
-### 10.5 Comparison & Analysis
-- Side-by-side comparison of models
-- A/B testing of prompts
-- Quality metrics or scoring
-- Style analysis
-
-### 10.6 Integration
-- Plugins for design tools (Figma, Photoshop, etc.)
-- API for programmatic access
-- Webhooks or callbacks
-- Third-party service integration (beyond OpenRouter/Ollama)
-
-### 10.7 Monitoring & Analytics
-- Usage tracking
-- Cost analytics
-- Performance metrics
-- Error analytics
-
----
-
-## Appendix A: Glossary
-
-**AI Model:** A machine learning system capable of generating images from text or image inputs.
-
-**API Key:** Authentication credential required to access external services.
-
-**Base64:** Encoding scheme for representing binary data as text.
-
-**Cache:** Temporary storage of computed results to avoid redundant processing.
-
-**Cancellation:** User action to stop an in-progress operation.
-
-**HEIC/HEIF:** Modern image formats from Apple devices requiring special library support.
-
-**Modality:** Type of data (text, image, audio, etc.) supported by an API.
-
-**NSFW:** "Not Safe For Work" - content that may be inappropriate or explicit.
-
-**Ollama:** Local AI service for running language models.
-
-**OpenRouter:** Service providing unified API access to multiple AI models.
-
-**Optimization:** Process of enhancing a prompt to improve generation results.
-
-**Prompt:** Text description of desired image output.
-
-**Reference Image:** Optional image input to guide generation.
-
-**State Machine:** System for managing application state transitions.
-
-**Timestamp:** Numeric representation of a point in time.
-
----
-
-## Appendix B: Document Revision History
-
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0 | 2026-02-06 | System | Initial specification document |
-
----
-
-**End of Specification**
