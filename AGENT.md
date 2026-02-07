@@ -190,6 +190,7 @@ Library polls `cancel_check()` every 250ms; raises `CancellationError` when True
 
 **Required:**
 - `OPENROUTER_API_KEY` - OpenRouter API key (format: `sk-or-v1-...`)
+  - Can also be provided via CLI: `genimg generate --api-key sk-or-v1-...` or `genimg ui --api-key sk-or-v1-...`
 
 **Optional:**
 - `GENIMG_DEFAULT_MODEL` - Default image model (default: `bytedance-seed/seedream-4.5`)

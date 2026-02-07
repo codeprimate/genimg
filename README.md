@@ -74,6 +74,27 @@ Or set environment variables directly:
 export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
 ```
 
+### CLI API Key Override
+
+You can provide or override the API key via the command line:
+
+```bash
+# Provide API key directly (useful when environment variable is not set)
+genimg generate "a sunset" --api-key sk-or-v1-your-key-here
+
+# Override environment variable for a single run
+genimg generate "a sunset" --api-key sk-or-v1-different-key
+
+# Works with the UI command too
+genimg ui --api-key sk-or-v1-your-key-here
+```
+
+This is useful for:
+- Running without setting environment variables
+- Using different API keys for different projects
+- Automated scripts where keys come from secure vaults
+- Testing with different accounts
+
 ## Usage
 
 ### Web Interface (Gradio)

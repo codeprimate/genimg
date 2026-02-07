@@ -488,3 +488,94 @@ class TestGenerateCommand:
         assert out_file.exists()
         # Warning should be shown
         assert "Could not save prompt" in result.output or "Warning" in result.output
+
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_api_key_option_overrides_config(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        _mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--api-key option overrides the API key from environment."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+        config.set_api_key = MagicMock()
+
+        result_obj = MagicMock()
+        result_obj.image_data = b"imagedata"
+        result_obj.format = "png"
+        result_obj.generation_time = 1.0
+        result_obj.model_used = "test/model"
+        result_obj.prompt_used = "a cat"
+        result_obj.had_reference = False
+        mock_generate.return_value = result_obj
+
+        out_file = tmp_path / "out.png"
+        test_api_key = "sk-or-v1-test-key-12345"
+
+        result = _run_cli(
+            "--prompt",
+            "a cat",
+            "--no-optimize",
+            "--out",
+            str(out_file),
+            "--api-key",
+            test_api_key,
+        )
+
+        assert result.exit_code == 0
+        # Verify set_api_key was called with the provided key
+        config.set_api_key.assert_called_once_with(test_api_key)
+        # Verify validate was still called after setting the key
+        config.validate.assert_called_once()
+
+    @patch("genimg.cli.commands.Config")
+    def test_api_key_option_without_env_var(
+        self,
+        mock_config_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--api-key allows generation even when OPENROUTER_API_KEY env var is not set."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.openrouter_api_key = ""  # Simulate no env var
+        mock_config_cls.from_env.return_value = config
+        config.set_api_key = MagicMock()
+        config.validate.return_value = None
+
+        with patch("genimg.cli.commands.generate_image") as mock_generate:
+            result_obj = MagicMock()
+            result_obj.image_data = b"imagedata"
+            result_obj.format = "png"
+            result_obj.generation_time = 1.0
+            result_obj.model_used = "test/model"
+            result_obj.prompt_used = "test"
+            result_obj.had_reference = False
+            mock_generate.return_value = result_obj
+
+            out_file = tmp_path / "out.png"
+            test_api_key = "sk-or-v1-override-key"
+
+            result = _run_cli(
+                "--prompt",
+                "test",
+                "--no-optimize",
+                "--out",
+                str(out_file),
+                "--api-key",
+                test_api_key,
+            )
+
+            assert result.exit_code == 0
+            # Verify the API key was set before validation
+            config.set_api_key.assert_called_once_with(test_api_key)
+            config.validate.assert_called_once()

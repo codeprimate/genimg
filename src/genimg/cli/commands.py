@@ -71,6 +71,11 @@ def cli(ctx: click.Context) -> None:
     help="Save optimized prompt to file (relative to CWD or absolute path).",
 )
 @click.option(
+    "--api-key",
+    envvar="OPENROUTER_API_KEY",
+    help="OpenRouter API key (overrides OPENROUTER_API_KEY environment variable).",
+)
+@click.option(
     "--quiet",
     "-q",
     is_flag=True,
@@ -84,6 +89,7 @@ def generate(
     out: Path | None,
     optimization_model: str | None,
     save_prompt: Path | None,
+    api_key: str | None,
     quiet: bool,
 ) -> None:
     """Generate an image from a text prompt (optionally with optimization and reference)."""
@@ -93,6 +99,11 @@ def generate(
     def do_generate() -> None:
         # 1. Load and validate config
         config = Config.from_env()
+
+        # Override API key if provided via CLI
+        if api_key is not None:
+            config.set_api_key(api_key)
+
         config.validate()
 
         # 2. Validate prompt
@@ -229,9 +240,18 @@ def generate(
     envvar="GENIMG_UI_SHARE",
     help="Create a public share link (e.g. gradio.live).",
 )
-def ui(port: int | None, host: str | None, share: bool | None) -> None:
+@click.option(
+    "--api-key",
+    envvar="OPENROUTER_API_KEY",
+    help="OpenRouter API key (overrides OPENROUTER_API_KEY environment variable).",
+)
+def ui(port: int | None, host: str | None, share: bool | None, api_key: str | None) -> None:
     """Launch the Gradio web UI for image generation."""
     from genimg.ui.gradio_app import launch as launch_ui
+
+    # Set API key in environment if provided via CLI so the UI can pick it up
+    if api_key is not None:
+        os.environ["OPENROUTER_API_KEY"] = api_key
 
     # Resolve env for share: env var "1" or "true" => True
     share_val = share

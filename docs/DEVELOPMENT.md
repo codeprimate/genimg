@@ -39,6 +39,7 @@ cp .env.example .env
 
 **Required:**
 - `OPENROUTER_API_KEY` — OpenRouter API key (format: `sk-or-v1-...`). Get from https://openrouter.ai/keys
+  - Can also be provided via CLI: `genimg generate --api-key sk-or-v1-...`
 
 **Optional (Image Generation):**
 - `GENIMG_DEFAULT_MODEL` — Default image generation model (default: `bytedance-seed/seedream-4.5`)
@@ -205,6 +206,9 @@ config.validate()  # Raises ConfigurationError if invalid
 # Override programmatically
 config.default_model = "openai/gpt-5-image"
 config.optimization_enabled = True
+
+# Or set API key directly (useful in CLI)
+config.set_api_key("sk-or-v1-your-key-here")
 
 # Pass to operations
 result = generate_image(prompt="...", config=config)

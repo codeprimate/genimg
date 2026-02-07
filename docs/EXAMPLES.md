@@ -134,6 +134,9 @@ genimg generate "a red sports car" --output car.png
 
 # With specific model
 genimg generate "a landscape" --model bytedance-seed/seedream-4.5
+
+# With API key (overrides environment variable)
+genimg generate "a sunset" --api-key sk-or-v1-your-key-here
 ```
 
 ### With Optimization
