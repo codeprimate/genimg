@@ -5,6 +5,7 @@ This package contains CLI implementations using Click.
 Uses only the public API: from genimg import ...
 """
 
+import os
 import signal
 import sys
 import threading
@@ -199,6 +200,42 @@ def generate(
         _run_with_error_handling(do_generate, quiet=quiet)
     finally:
         signal.signal(signal.SIGINT, old_sigint)
+
+
+@cli.command()
+@click.option(
+    "--port",
+    "-p",
+    type=int,
+    default=None,
+    envvar="GENIMG_UI_PORT",
+    help="Port for the Gradio server (default: 7860 or GENIMG_UI_PORT).",
+)
+@click.option(
+    "--host",
+    "host",
+    type=str,
+    default=None,
+    envvar="GENIMG_UI_HOST",
+    help="Host to bind (default: 127.0.0.1 or GENIMG_UI_HOST). Use 0.0.0.0 for LAN.",
+)
+@click.option(
+    "--share",
+    is_flag=True,
+    default=None,
+    envvar="GENIMG_UI_SHARE",
+    help="Create a public share link (e.g. gradio.live).",
+)
+def ui(port: Optional[int], host: Optional[str], share: Optional[bool]) -> None:
+    """Launch the Gradio web UI for image generation."""
+    from genimg.ui.gradio_app import launch as launch_ui
+
+    # Resolve env for share: env var "1" or "true" => True
+    share_val = share
+    if share_val is None:
+        env_share = os.environ.get("GENIMG_UI_SHARE", "").lower()
+        share_val = env_share in ("1", "true", "yes")
+    launch_ui(server_name=host, server_port=port, share=share_val)
 
 
 def main() -> None:

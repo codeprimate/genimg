@@ -68,7 +68,22 @@ Launch the web UI:
 genimg-ui
 ```
 
-Then open your browser to the displayed URL (typically http://localhost:7860).
+Or use the CLI subcommand (e.g. to set port or share):
+
+```bash
+genimg ui
+genimg ui --port 8080
+genimg ui --host 0.0.0.0   # Listen on all interfaces (LAN)
+genimg ui --share          # Create a public gradio.live link
+```
+
+Then open your browser to the displayed URL (default: http://127.0.0.1:7860).
+
+**UI environment variables:**
+
+- `GENIMG_UI_PORT` — Port for the server (default: 7860).
+- `GENIMG_UI_HOST` — Host to bind (default: 127.0.0.1). Use `0.0.0.0` for LAN access.
+- `GENIMG_UI_SHARE` — Set to `1` or `true` to create a public share link.
 
 ### Command Line Interface
 

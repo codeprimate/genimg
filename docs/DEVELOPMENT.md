@@ -131,9 +131,11 @@ def newcommand(arg, option):
 
 Edit `src/genimg/ui/gradio_app.py`:
 
-1. UI components defined in `create_interface()`
-2. Event handlers connected with `.click()`, `.change()`, etc.
-3. Use `gr.update()` to modify component state
+1. UI layout and components are built in `_build_blocks()`.
+2. Event handlers are connected with `.click()`, `.change()`, etc.
+3. Use `gr.update()` to modify component state (e.g. button `interactive`).
+
+**Running the UI:** `genimg-ui` or `genimg ui` (with optional `--port`, `--host`, `--share`). Environment: `GENIMG_UI_PORT` (default 7860), `GENIMG_UI_HOST` (default 127.0.0.1), `GENIMG_UI_SHARE` (set to `1` or `true` for a public link).
 
 ### Adding a New Error Type
 

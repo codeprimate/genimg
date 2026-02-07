@@ -25,12 +25,16 @@
 | **Saving** | No “Save to folder” or file picker. Saving = user uses the component’s download only. |
 | **Prompt** | Single **multiline textbox**. No templates or presets in scope. |
 | **Model** | Image model: from config or one dropdown. Optimization model: from config/env only (no UI in v1). |
+| **Optimized prompt** | **Editable** textbox. User can edit the optimized prompt then click Generate (SPEC: review and edit before proceeding). |
+| **Regenerate prompt** | **Optimize** button runs optimization only and fills the Optimized prompt box; clicking again = regenerate (SPEC: regenerate optimized prompt if not satisfied). |
 
 ---
 
 ## 3. Goals
 
 - Web UI for the same flow as the CLI: prompt → optional optimize → optional reference → generate → view/download.
+- **Edit then generate:** User can run Optimize (or Generate with optimize on), see the optimized prompt in an editable box, edit it, then click Generate to use that text.
+- **Regenerate optimized prompt:** Optimize button runs optimization only; clicking it again runs optimization again (regenerate).
 - Launch via `genimg-ui` (and optionally `genimg ui`).
 - Clear path from “I have an idea” to “I have an image,” with progress, cancellation, and clear errors.
 
@@ -47,22 +51,24 @@
    - **Optimize prompt:** `gr.Checkbox` (default True), label e.g. “Optimize prompt with AI (Ollama).”
    - **Reference image:** `gr.Image` (standard upload + drag-and-drop).
    - **Model:** `gr.Dropdown` (optional, from config).
-4. **Status** — Read-only text: “Optimizing…”, “Generating…”, “Done in X.Xs”, or error message.
-5. **Output** — `gr.Image` for the result (built-in download).
+4. **Optimized prompt** — `gr.Textbox` (editable, multiline). Filled by Optimize button or when Generate runs with optimize on. User can edit then click Generate.
+5. **Optimize** button — Runs optimization only; fills Optimized prompt box. Click again = regenerate.
+6. **Status** — Read-only text: “Optimizing…”, “Generating…”, “Done in X.Xs”, or error message.
+7. **Output** — `gr.Image` for the result (built-in download).
 
 ---
 
 ## 5. State machine and button states
 
-**States:** idle → optimizing (if optimize on) or generating → done | error | cancelled.
+**States:** idle → optimizing (Optimize button or Generate with optimize on) or generating → done | error | cancelled.
 
-| State | Generate | Stop |
-|-------|----------|------|
-| idle | Enabled if prompt non-empty | Disabled |
-| optimizing / generating | Disabled | Enabled |
-| done / error / cancelled | Enabled | Disabled |
+| State | Generate | Optimize | Stop |
+|-------|----------|----------|------|
+| idle | Enabled if prompt non-empty | Enabled if prompt non-empty | Disabled |
+| optimizing / generating | Disabled | Disabled | Enabled |
+| done / error / cancelled | Enabled | Enabled | Disabled |
 
-**Transitions:** idle → optimizing or generating on Generate; optimizing → generating or cancelled or error; generating → done or cancelled or error; done/error/cancelled → idle on next Generate. Empty prompt: stay idle (inline validation or disabled Generate).
+**Transitions:** idle → optimizing on Optimize (optimize-only) or on Generate (if optimize on and box empty); optimizing → generating (Generate flow) or done (Optimize flow) or cancelled or error; generating → done or cancelled or error; done/error/cancelled → idle. Empty prompt: Generate and Optimize disabled (inline validation).
 
 ---
 
@@ -86,12 +92,13 @@ Handler catches `CancellationError` and returns status “Cancelled.” and rest
 
 ## 7. Prompt optimization (in context)
 
-- **Optimize on:** validate → process reference (if any) → `optimize_prompt(..., reference_hash=ref_hash, cancel_check=...)` → use returned string as `effective_prompt` → `generate_image(effective_prompt, ...)`. States: optimizing then generating.
-- **Optimize off:** validate → process reference (if any) → `generate_image(prompt, ...)`. State: generating only.
+- **Generate logic:** If **Optimized prompt** box has content → use it as `effective_prompt` (edit-then-generate; do not run optimize). Else if **Optimize prompt** checkbox on → run `optimize_prompt(...)`, fill Optimized prompt box with result, then `generate_image(effective_prompt, ...)`. Else → use **Prompt** as `effective_prompt`.
+- **Optimize button:** Runs optimization only; fills Optimized prompt box. **Regenerate** = click Optimize again. Same validation and reference handling; supports cancellation via Stop.
+- **Optimize on (no pre-filled box):** validate → process reference (if any) → `optimize_prompt(..., reference_hash=ref_hash, cancel_check=...)` → fill Optimized prompt box → `generate_image(effective_prompt, ...)`. States: optimizing then generating.
+- **Optimize off / use Prompt:** validate → process reference (if any) → `generate_image(prompt, ...)`. State: generating only.
 - **Reference:** one `process_reference_image`; pass `reference_hash` to `optimize_prompt`, `reference_image_b64` to `generate_image`.
 - **Optimization model:** from config; no UI in v1.
 - **Cache:** library may return cached optimized prompt; UI does not show “cached” (same status flow).
-- **Optimize-only (no image):** Deferred; not in v1.
 
 ---
 
