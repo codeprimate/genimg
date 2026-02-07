@@ -9,25 +9,75 @@ import importlib.resources
 from typing import Any
 
 import yaml
+from pydantic import BaseModel, Field, ValidationError
+
+from genimg.utils.exceptions import ConfigurationError
 
 # Module-level cache for parsed prompts
 _prompts_data: dict[str, Any] | None = None
 
 
+class OptimizationPrompt(BaseModel):
+    """Schema for optimization prompt configuration."""
+
+    template: str = Field(..., min_length=1, description="Optimization template string")
+
+
+class PromptsSchema(BaseModel):
+    """Schema for prompts.yaml configuration file."""
+
+    model_config = {"extra": "allow"}  # Allow additional keys for future expansion
+
+    optimization: OptimizationPrompt
+
+
 def _load_prompts() -> dict[str, Any]:
-    """Load and parse prompts.yaml from the package. Cached after first call."""
+    """Load and parse prompts.yaml from the package. Cached after first call.
+
+    Returns:
+        Dictionary of prompt data.
+
+    Raises:
+        ConfigurationError: If YAML is missing, malformed, or fails validation.
+    """
     global _prompts_data
     if _prompts_data is not None:
         return _prompts_data
+
     try:
         with (
             importlib.resources.files("genimg").joinpath("prompts.yaml").open(encoding="utf-8") as f
         ):
             raw = f.read()
-    except FileNotFoundError:
-        _prompts_data = {}
-        return _prompts_data
-    _prompts_data = yaml.safe_load(raw) or {}
+    except FileNotFoundError as e:
+        raise ConfigurationError(
+            "prompts.yaml not found. This file is required and should be bundled with the package."
+        ) from e
+
+    # Parse YAML
+    try:
+        data = yaml.safe_load(raw)
+    except yaml.YAMLError as e:
+        raise ConfigurationError(
+            f"Failed to parse prompts.yaml: {e}. Check YAML syntax and formatting."
+        ) from e
+
+    if data is None:
+        raise ConfigurationError(
+            "prompts.yaml is empty. Expected configuration with 'optimization' section."
+        )
+
+    # Validate structure with Pydantic
+    try:
+        PromptsSchema(**data)
+    except ValidationError as e:
+        errors = "\n".join([f"  - {err['loc'][0]}: {err['msg']}" for err in e.errors()])
+        raise ConfigurationError(
+            f"Invalid prompts.yaml structure:\n{errors}\n"
+            "Expected 'optimization' section with 'template' key."
+        ) from e
+
+    _prompts_data = data
     return _prompts_data
 
 
@@ -57,35 +107,18 @@ def get_optimization_template() -> str:
     Caller appends "Original prompt: <prompt>\\n\\nImproved prompt:" to form the full message.
 
     Returns:
-        The template string. Uses a built-in fallback if prompts.yaml is missing
-        or the key is not present.
+        The template string from prompts.yaml.
+
+    Raises:
+        ConfigurationError: If template is missing or invalid.
     """
     template = get_prompt("optimization", "template")
-    if template and "{reference_image_instruction}" in template:
-        return template
-    # Fallback: visual scene architect (matches reference genimg_gradio_v3 behavior)
-    return """You are a visual scene architect specializing in converting casual scene descriptions into precise, structured image generation prompts.
-When given a user's scene description, rewrite it using this framework in an outline format:
-
-Scene Setup: Establish location, time, lighting conditions, and capture medium (photography style, camera type, or artistic medium)
-Camera Position and Framing: Specify exact camera placement, angle, lens characteristics, and what portions of subjects are visible from this vantage point
-
-Subject Positions: List subjects and their positions in the scene. Detail each subject's location relative to camera and other subjects. Describe what parts are visible and from what angle. Include physical descriptions and attire.
-Key Props: List significant objects and their positions in the scene
-
-Action/Context: Describe what is happening, body language, interactions, or emotional tone
-Technical Specs: Define visual aesthetic, quality characteristics, depth of field, lighting properties, and medium-specific attributes
-
-Key principles:
-- Resolve spatial ambiguities by explicitly stating what the camera sees and doesn't see
-- Clarify relative positions using directional language (foreground/background, left/right, above/below)
-- Specify viewing angles for each subject (frontal, profile, rear, elevated, etc.)
-- Include relevant technical or stylistic constraints
-- Remove redundancy while preserving essential details
-- Preserve the information in the original prompt as best as possible
-
-Transform the user's description into a clear, unambiguous prompt that any image generation system could interpret consistently.
-{reference_image_instruction}
-
-Output ONLY the improved prompt. Do not include explanations, prefixes, or markdown formatting.
-Just output the optimized prompt text directly, following the framework outlined above."""
+    if not template:
+        raise ConfigurationError(
+            "optimization.template not found in prompts.yaml. This key is required."
+        )
+    if "{reference_image_instruction}" not in template:
+        raise ConfigurationError(
+            "optimization.template must contain {reference_image_instruction} placeholder."
+        )
+    return template

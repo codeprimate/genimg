@@ -1,5 +1,6 @@
 """Unit tests for prompt validation and optimization (mocked)."""
 
+import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -308,4 +309,179 @@ class TestOptimizePrompt:
                     )
         assert "cancelled" in str(exc_info.value).lower()
         proc.terminate.assert_called_once()
+        cache.clear()
+
+
+@pytest.mark.unit
+class TestSubprocessCleanup:
+    """Test that subprocess cleanup properly waits for process termination."""
+
+    def test_timeout_calls_wait_after_kill(self):
+        """When timeout occurs, verify kill() is followed by wait()."""
+        import subprocess
+
+        cache = get_cache()
+        cache.clear()
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
+                proc = MagicMock()
+                proc.communicate.side_effect = subprocess.TimeoutExpired("ollama", 10)
+                proc.kill = MagicMock()
+                proc.wait = MagicMock()
+                Popen.return_value = proc
+
+                with pytest.raises(RequestTimeoutError):
+                    optimize_prompt_with_ollama("test", config=config, timeout=10)
+
+                # Verify both kill and wait were called
+                proc.kill.assert_called_once()
+                proc.wait.assert_called_once()
+        cache.clear()
+
+    def test_cancellation_calls_wait_after_terminate(self):
+        """When cancelled, verify terminate() is followed by wait()."""
+        import time
+
+        cache = get_cache()
+        cache.clear()
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+
+        def cancel_immediately():
+            return True
+
+        def blocking_communicate(*args, **kwargs):
+            time.sleep(2)
+            return ("result", "")
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
+                proc = MagicMock()
+                proc.communicate = blocking_communicate
+                proc.terminate = MagicMock()
+                proc.wait = MagicMock()
+                Popen.return_value = proc
+
+                with pytest.raises(CancellationError):
+                    optimize_prompt_with_ollama(
+                        "test", config=config, cancel_check=cancel_immediately
+                    )
+
+                # Verify both terminate and wait were called
+                proc.terminate.assert_called_once()
+                proc.wait.assert_called()
+        cache.clear()
+
+    def test_cancellation_kills_if_terminate_times_out(self):
+        """If terminate() times out, verify kill() and wait() are called."""
+        import subprocess
+        import time
+
+        cache = get_cache()
+        cache.clear()
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+
+        def cancel_immediately():
+            return True
+
+        def blocking_communicate(*args, **kwargs):
+            time.sleep(2)
+            return ("result", "")
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
+                proc = MagicMock()
+                proc.communicate = blocking_communicate
+                proc.terminate = MagicMock()
+                # First wait() times out, second wait() succeeds
+                proc.wait = MagicMock(side_effect=[subprocess.TimeoutExpired("cmd", 5), None])
+                proc.kill = MagicMock()
+                Popen.return_value = proc
+
+                with pytest.raises(CancellationError):
+                    optimize_prompt_with_ollama(
+                        "test", config=config, cancel_check=cancel_immediately
+                    )
+
+                # Verify terminate, wait (timeout), kill, wait sequence
+                proc.terminate.assert_called_once()
+                assert proc.wait.call_count == 2
+                proc.kill.assert_called_once()
+        cache.clear()
+
+
+@pytest.mark.unit
+class TestCancelCheckExceptionHandling:
+    """Test exception handling in cancel_check callback."""
+
+    def test_cancel_check_exception_is_warned_but_not_raised(self):
+        """User exceptions in cancel_check should be warned but not stop optimization."""
+        import time
+
+        cache = get_cache()
+        cache.clear()
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+
+        call_count = [0]
+
+        def buggy_cancel_check():
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise ValueError("Simulated user error in cancel_check")
+            return False
+
+        def slow_communicate(*args, **kwargs):
+            # Sleep to allow cancel_check to be called multiple times
+            time.sleep(0.5)
+            return ("optimized", "")
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
+                proc = MagicMock()
+                proc.communicate = slow_communicate
+                proc.returncode = 0
+                Popen.return_value = proc
+
+                # Suppress expected RuntimeWarning from buggy cancel_check (we are testing it is not raised)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=RuntimeWarning)
+                    result = optimize_prompt_with_ollama(
+                        "test", config=config, cancel_check=buggy_cancel_check
+                    )
+
+                # Should have completed successfully
+                assert result == "optimized"
+
+                # Verify cancel_check was called at least once (it raised exception but was handled)
+                assert call_count[0] >= 1, "cancel_check should be called despite raising exception"
+        cache.clear()
+
+    def test_keyboard_interrupt_in_cancel_check_is_reraised(self):
+        """KeyboardInterrupt in cancel_check should be re-raised, not swallowed."""
+        import time
+
+        cache = get_cache()
+        cache.clear()
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+
+        def cancel_with_keyboard_interrupt():
+            raise KeyboardInterrupt("User pressed Ctrl+C")
+
+        def blocking_communicate(*args, **kwargs):
+            time.sleep(2)
+            return ("result", "")
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
+                proc = MagicMock()
+                proc.communicate = blocking_communicate
+                proc.returncode = 0
+                Popen.return_value = proc
+
+                # KeyboardInterrupt should be re-raised
+                with pytest.raises(KeyboardInterrupt):
+                    optimize_prompt_with_ollama(
+                        "test", config=config, cancel_check=cancel_with_keyboard_interrupt
+                    )
         cache.clear()

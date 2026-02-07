@@ -1,7 +1,12 @@
-gradio>=4.0.0
+# This file is maintained for backwards compatibility.
+# The source of truth for dependencies is pyproject.toml.
+# Generated from pyproject.toml [project.dependencies]
+gradio>=6.0.0,<7
 requests>=2.28.0
 pillow>=10.0.0
 pillow-heif>=0.13.0
 click>=8.1.0
 python-dotenv>=1.0.0
+pyyaml>=6.0.0
 rich>=13.0.0
+pydantic>=2.0.0

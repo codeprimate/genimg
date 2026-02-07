@@ -335,7 +335,13 @@ def _run_generate_stream(
     ts = int(time.time())
     out_path = Path(tempfile.gettempdir()) / f"{ts}.jpg"
     result.image.save(str(out_path), "JPEG", quality=90)
-    yield _format_status(f"Done in {elapsed:.1f}s", "success"), str(out_path), True, False, box_value
+    yield (
+        _format_status(f"Done in {elapsed:.1f}s", "success"),
+        str(out_path),
+        True,
+        False,
+        box_value,
+    )
 
 
 def _generate_click_handler(
@@ -479,7 +485,13 @@ def _run_optimize_only_stream(
             config=config,
             cancel_check=cancel_check,
         )
-        yield _format_status("Optimized. Edit above if needed, then Generate.", "success"), optimized, True, False, True
+        yield (
+            _format_status("Optimized. Edit above if needed, then Generate.", "success"),
+            optimized,
+            True,
+            False,
+            True,
+        )
     except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
         yield _format_status(_exception_to_message(e), "error"), "", True, False, True
 
@@ -545,7 +557,9 @@ def _build_blocks() -> gr.Blocks:
                             visible=True,
                             info="Ollama model for prompt optimization.",
                         )
-                        optimize_btn = gr.Button("Enhance Prompt", variant="secondary", interactive=False)
+                        optimize_btn = gr.Button(
+                            "Enhance Prompt", variant="secondary", interactive=False
+                        )
             with gr.Column():
                 ref_image = gr.Image(
                     label="Reference image",

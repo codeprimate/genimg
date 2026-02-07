@@ -11,7 +11,14 @@ Library usage:
   for "clear cache" or "refresh" behavior; use get_cache() for direct cache access.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("genimg")
+except PackageNotFoundError:
+    # Package is not installed (e.g., running from source in development)
+    __version__ = "0.0.0.dev"
+
 __author__ = "codeprimate"
 
 from genimg.core.config import (

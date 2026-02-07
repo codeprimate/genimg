@@ -6,6 +6,7 @@ This module handles prompt validation, optimization via Ollama, and caching.
 
 import subprocess
 import threading
+import warnings
 from collections.abc import Callable
 
 from genimg.core.config import Config, get_config
@@ -240,6 +241,7 @@ def optimize_prompt_with_ollama(
         except subprocess.TimeoutExpired:
             if process_holder[0]:
                 process_holder[0].kill()
+                process_holder[0].wait()  # Wait for process cleanup
             exc_holder[0] = RequestTimeoutError(
                 f"Optimization timed out after {timeout} seconds. "
                 "Try a simpler prompt or increase the timeout."
@@ -260,12 +262,26 @@ def optimize_prompt_with_ollama(
             if cancel_check():
                 cancelled = True
                 break
-        except Exception:
-            pass  # Don't let a buggy cancel_check break the loop
+        except KeyboardInterrupt:
+            # Re-raise system exceptions to allow proper signal handling
+            raise
+        except Exception as e:
+            # Log user errors but don't break the loop
+            warnings.warn(
+                f"cancel_check raised exception (ignored): {e!r}",
+                category=RuntimeWarning,
+                stacklevel=2,
+            )
     if cancelled:
         proc = process_holder[0]
         if proc is not None:
             proc.terminate()
+            try:
+                proc.wait(timeout=5.0)  # Wait for graceful termination
+            except subprocess.TimeoutExpired:
+                # If process didn't terminate, force kill
+                proc.kill()
+                proc.wait()  # Wait for cleanup after kill
             thread.join(timeout=5.0)
         raise CancellationError("Optimization was cancelled.")
 
@@ -300,6 +316,7 @@ def _run_ollama_communicate(model: str, optimization_prompt: str, timeout: int) 
         stdout, stderr = process.communicate(input=optimization_prompt, timeout=timeout)
     except subprocess.TimeoutExpired as err:
         process.kill()
+        process.wait()  # Wait for process cleanup
         raise RequestTimeoutError(
             f"Optimization timed out after {timeout} seconds. "
             "Try a simpler prompt or increase the timeout."
