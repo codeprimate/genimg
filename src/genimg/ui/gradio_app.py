@@ -427,41 +427,43 @@ def _build_blocks() -> gr.Blocks:
         )
 
         with gr.Row():
-            prompt_tb = gr.Textbox(
-                label="Prompt",
-                placeholder="Describe the image you want to generate…",
-                lines=4,
-                max_lines=8,
-            )
+            with gr.Column():
+                prompt_tb = gr.Textbox(
+                    label="Prompt",
+                    placeholder="Describe the image you want to generate…",
+                    lines=12,
+                    max_lines=20,
+                )
+                optimize_cb = gr.Checkbox(
+                    label="Optimize prompt with AI (Ollama)",
+                    value=True,
+                )
+            with gr.Column():
+                ref_image = gr.Image(
+                    label="Reference image",
+                    type="filepath",
+                    sources=["upload", "clipboard"],
+                )
+        
         with gr.Row():
             generate_btn = gr.Button("Generate", variant="primary", interactive=False)
             stop_btn = gr.Button("Stop", interactive=False)
-        with gr.Row():
-            optimize_cb = gr.Checkbox(
-                label="Optimize prompt with AI (Ollama)",
-                value=True,
-            )
-            ref_image = gr.Image(
-                label="Reference image",
-                type="filepath",
-                sources=["upload", "clipboard"],
-            )
-            model_dd = gr.Dropdown(
-                label="Image model",
-                value=default_image,
-                choices=image_models,
-                allow_custom_value=True,
-                visible=True,
-                info="OpenRouter image model. Type a model ID for another.",
-            )
-            optimization_dd = gr.Dropdown(
-                label="Optimization model (Ollama)",
-                value=default_opt,
-                choices=opt_models,
-                allow_custom_value=True,
-                visible=True,
-                info="Ollama model for prompt optimization.",
-            )
+        model_dd = gr.Dropdown(
+            label="Image model",
+            value=default_image,
+            choices=image_models,
+            allow_custom_value=True,
+            visible=True,
+            info="OpenRouter image model. Type a model ID for another.",
+        )
+        optimization_dd = gr.Dropdown(
+            label="Optimization model (Ollama)",
+            value=default_opt,
+            choices=opt_models,
+            allow_custom_value=True,
+            visible=True,
+            info="Ollama model for prompt optimization.",
+        )
         optimized_tb = gr.Textbox(
             label="Optimized prompt (editable)",
             placeholder="Click Optimize or run Generate with 'Optimize prompt' checked to fill. Edit then Generate.",
