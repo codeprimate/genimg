@@ -2,15 +2,20 @@
 
 A Python package for generating AI images with intelligent prompt optimization. Generate high-quality images from simple text descriptions using multiple AI models via OpenRouter, with optional local prompt enhancement via Ollama.
 
+**Current version:** 0.9.x (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
+
 ## Features
 
-- 🎨 **Multiple AI Models**: Access various image generation models through OpenRouter
-- ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama models
-- 🖼️ **Reference Images**: Use reference images to guide generation
+- 🎨 **Multiple AI Models**: Access various image generation models through OpenRouter (configurable in UI and CLI)
+- ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama models; optional in both CLI and web UI
+- 🖼️ **Reference Images**: Use reference images to guide generation (CLI and web UI)
 - 💻 **Dual Interface**: Both CLI and web UI (Gradio) interfaces
-- 🎭 **Rich CLI**: Beautiful progress displays with spinners, progress bars, and formatted results
-- 📦 **Library Usage**: Use as a Python library in your own projects
+- 🎭 **Rich CLI**: Beautiful progress displays with spinners, progress bars, and formatted results; cancellation via Ctrl+C
+- 📦 **Library Usage**: Use as a Python library with `generate_image`, `optimize_prompt`, `Config`, and configurable logging
 - 🔧 **Type-Safe**: Full type hints for better IDE support
+- 📝 **Structured Logging**: Default activity/performance logs; `-v` for prompts, `-vv` for API/cache detail; `GENIMG_VERBOSITY` and `set_verbosity()` for library/UI
+- 🔑 **API Key Override**: Pass `--api-key` to CLI (generate or ui) to override environment without editing `.env`
+- 💾 **Save Optimized Prompt**: Use `--save-prompt <path>` to write the optimized prompt to a file for reproducibility
 
 ## Installation
 
@@ -115,6 +120,8 @@ genimg ui --share          # Create a public gradio.live link
 ```
 
 Then open your browser to the displayed URL (default: http://127.0.0.1:7860).
+
+The web UI supports: prompt input with optional optimization (checkbox), reference image upload, image and optimization model dropdowns (from package config and installed Ollama models), generation with progress and **Stop** to cancel, and download of the result (JPG, timestamped filename). The app uses a package logo and favicon when available.
 
 **UI environment variables:**
 
@@ -311,12 +318,9 @@ genimg/
 ## Documentation
 
 - [SPEC.md](docs/SPEC.md) - Complete functional specification (product)
-- [LIBRARY_SPEC.md](docs/LIBRARY_SPEC.md) - Library technical specification (underlying API)
 - [AGENT.md](AGENT.md) - AI agent development guide
 - [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Developer guide
 - [DECISIONS.md](docs/DECISIONS.md) - Architecture decisions
-- [CLI_PLAN.md](docs/CLI_PLAN.md) - CLI implementation plan
-- [GRADIO_UI_PLAN.md](docs/GRADIO_UI_PLAN.md) - Gradio web UI plan (final)
 - [EXAMPLES.md](docs/EXAMPLES.md) - Usage examples
 - [CHANGELOG.md](docs/CHANGELOG.md) - Change history
 
@@ -348,7 +352,7 @@ MIT License - See LICENSE file for details
 
 ## Contributing
 
-Contributions are welcome! Please read [DEVELOPMENT.md](DEVELOPMENT.md) for guidelines.
+Contributions are welcome! Please read [DEVELOPMENT.md](docs/DEVELOPMENT.md) for guidelines.
 
 ## Support
 
