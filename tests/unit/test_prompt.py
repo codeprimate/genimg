@@ -214,7 +214,10 @@ class TestOptimizePrompt:
 
     def test_optimization_template_contains_placeholder(self):
         assert "{reference_image_instruction}" in OPTIMIZATION_TEMPLATE
-        assert "visual scene architect" in OPTIMIZATION_TEMPLATE.lower() or "scene" in OPTIMIZATION_TEMPLATE.lower()
+        assert (
+            "visual scene architect" in OPTIMIZATION_TEMPLATE.lower()
+            or "scene" in OPTIMIZATION_TEMPLATE.lower()
+        )
 
     def test_cancel_check_raises_cancellation_error(self):
         """When cancel_check returns True, optimization is cancelled and process is terminated."""

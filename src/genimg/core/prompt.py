@@ -161,7 +161,9 @@ def optimize_prompt_with_ollama(
 
     # Prepare the optimization prompt: system template (with optional reference instruction) + "Original prompt: ... Improved prompt:"
     reference_instruction = REFERENCE_IMAGE_INSTRUCTION if reference_hash else ""
-    system_part = get_optimization_template().format(reference_image_instruction=reference_instruction)
+    system_part = get_optimization_template().format(
+        reference_image_instruction=reference_instruction
+    )
     optimization_prompt = system_part + "\n\nOriginal prompt: " + prompt + "\n\nImproved prompt:"
 
     if cancel_check is None:
@@ -234,9 +236,7 @@ def optimize_prompt_with_ollama(
     return optimized
 
 
-def _run_ollama_communicate(
-    model: str, optimization_prompt: str, timeout: int
-) -> tuple[str, str]:
+def _run_ollama_communicate(model: str, optimization_prompt: str, timeout: int) -> tuple[str, str]:
     """Run ollama in a subprocess and return (stdout, stderr). Used by sync and worker."""
     process = subprocess.Popen(
         ["ollama", "run", model],
@@ -247,12 +247,12 @@ def _run_ollama_communicate(
     )
     try:
         stdout, stderr = process.communicate(input=optimization_prompt, timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as err:
         process.kill()
         raise RequestTimeoutError(
             f"Optimization timed out after {timeout} seconds. "
             "Try a simpler prompt or increase the timeout."
-        )
+        ) from err
     if process.returncode != 0:
         raise APIError(
             f"Ollama optimization failed: {stderr}",

@@ -65,10 +65,7 @@ def _parse_data_url(data_url: str) -> tuple[bytes, str | None]:
     except Exception as e:
         raise ValidationError(f"Invalid base64 in data URL: {e}") from e
     mime = data_url[5:idx].strip().lower()
-    if mime.startswith("image/"):
-        fmt = mime.split("/", 1)[1].split("+")[0].strip()
-    else:
-        fmt = None
+    fmt = mime.split("/", 1)[1].split("+")[0].strip() if mime.startswith("image/") else None
     return payload, _normalize_format(fmt) if fmt else None
 
 

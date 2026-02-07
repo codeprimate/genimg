@@ -13,7 +13,8 @@ import tempfile
 import threading
 import time
 from collections.abc import Generator
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import gradio as gr
 import yaml
@@ -48,9 +49,11 @@ def _load_ui_models() -> tuple[list[str], str, list[str], str]:
     Returns (image_models, default_image_model, optimization_models, default_optimization_model).
     """
     try:
-        with importlib.resources.files("genimg").joinpath("ui_models.yaml").open(
-            encoding="utf-8"
-        ) as f:
+        with (
+            importlib.resources.files("genimg")
+            .joinpath("ui_models.yaml")
+            .open(encoding="utf-8") as f
+        ):
             data = yaml.safe_load(f) or {}
     except FileNotFoundError:
         data = {}
@@ -85,7 +88,7 @@ def _exception_to_message(exc: BaseException) -> str:
     return str(exc) if exc.args else "An unexpected error occurred."
 
 
-def _reference_source_for_process(value: Any) -> Any | None:
+def _reference_source_for_process(value: Any) -> str | None:
     """
     Get a source suitable for process_reference_image from Gradio Image value.
 
@@ -106,14 +109,15 @@ def _reference_source_for_process(value: Any) -> Any | None:
     if isinstance(value, str) and not value.strip():
         return None
     if isinstance(value, dict):
-        path = value.get("path")
-        url = value.get("url")
-        if path and isinstance(path, str) and path.strip():
-            return path
-        if url and isinstance(url, str) and url.strip():
-            return url  # data URL or blob; reference module handles data URL
+        path_val = value.get("path")
+        url_val = value.get("url")
+        if path_val and isinstance(path_val, str) and path_val.strip():
+            return cast(str, path_val)
+        if url_val and isinstance(url_val, str) and url_val.strip():
+            return cast(str, url_val)  # data URL or blob; reference module handles data URL
         return None
-    return value  # str path or Path
+    # str path or Path
+    return str(value)
 
 
 def _run_generate(
@@ -189,9 +193,9 @@ def _run_generate(
     # Output: JPG quality 90, timestamp filename (per plan)
     elapsed = result.generation_time
     ts = int(time.time())
-    out_path = os.path.join(tempfile.gettempdir(), f"{ts}.jpg")
-    result.image.save(out_path, "JPEG", quality=90)
-    return f"Done in {elapsed:.1f}s", out_path, f"Done in {elapsed:.1f}s"
+    out_path = Path(tempfile.gettempdir()) / f"{ts}.jpg"
+    result.image.save(str(out_path), "JPEG", quality=90)
+    return f"Done in {elapsed:.1f}s", str(out_path), f"Done in {elapsed:.1f}s"
 
 
 def _run_generate_stream(
@@ -273,9 +277,9 @@ def _run_generate_stream(
         return
     elapsed = result.generation_time
     ts = int(time.time())
-    out_path = os.path.join(tempfile.gettempdir(), f"{ts}.jpg")
-    result.image.save(out_path, "JPEG", quality=90)
-    yield f"Done in {elapsed:.1f}s", out_path, True, False, box_value
+    out_path = Path(tempfile.gettempdir()) / f"{ts}.jpg"
+    result.image.save(str(out_path), "JPEG", quality=90)
+    yield f"Done in {elapsed:.1f}s", str(out_path), True, False, box_value
 
 
 def _generate_click_handler(
@@ -363,7 +367,7 @@ def _stop_click_handler() -> tuple[Any, Any]:
     return gr.update(interactive=True), gr.update(interactive=False)
 
 
-def _prompt_change_handler(text: str) -> tuple[gr.update, gr.update]:
+def _prompt_change_handler(text: str) -> tuple[Any, Any]:
     """Prompt change: enable Generate and Optimize when prompt is non-empty."""
     enabled = bool(text and text.strip())
     return gr.update(interactive=enabled), gr.update(interactive=enabled)
@@ -423,9 +427,7 @@ def _build_blocks() -> gr.Blocks:
     image_models, default_image, opt_models, default_opt = _load_ui_models()
 
     with gr.Blocks(title="genimg – AI image generation") as app:
-        gr.Markdown(
-            "**AI image generation** with optional prompt optimization (Ollama)."
-        )
+        gr.Markdown("**AI image generation** with optional prompt optimization (Ollama).")
 
         with gr.Row():
             with gr.Column():
@@ -503,7 +505,7 @@ def _build_blocks() -> gr.Blocks:
             outputs=[generate_btn, optimize_btn],
         )
 
-    return app
+    return cast(gr.Blocks, app)
 
 
 def launch(

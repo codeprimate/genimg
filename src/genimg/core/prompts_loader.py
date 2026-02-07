@@ -20,9 +20,9 @@ def _load_prompts() -> dict[str, Any]:
     if _prompts_data is not None:
         return _prompts_data
     try:
-        with importlib.resources.files("genimg").joinpath("prompts.yaml").open(
-            encoding="utf-8"
-        ) as f:
+        with (
+            importlib.resources.files("genimg").joinpath("prompts.yaml").open(encoding="utf-8") as f
+        ):
             raw = f.read()
     except FileNotFoundError:
         _prompts_data = {}

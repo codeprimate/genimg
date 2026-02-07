@@ -13,6 +13,13 @@ from genimg.core.image_gen import (
     _format_from_content_type,
     generate_image,
 )
+from genimg.utils.exceptions import (
+    APIError,
+    CancellationError,
+    NetworkError,
+    RequestTimeoutError,
+    ValidationError,
+)
 
 # Minimal valid image bytes so Image.open() succeeds in the library
 _MINIMAL_PNG_BUF = io.BytesIO()
@@ -22,13 +29,6 @@ MINIMAL_PNG = _MINIMAL_PNG_BUF.getvalue()
 _MINIMAL_JPEG_BUF = io.BytesIO()
 Image.new("RGB", (1, 1), color=(0, 0, 0)).save(_MINIMAL_JPEG_BUF, format="JPEG")
 MINIMAL_JPEG = _MINIMAL_JPEG_BUF.getvalue()
-from genimg.utils.exceptions import (
-    APIError,
-    CancellationError,
-    NetworkError,
-    RequestTimeoutError,
-    ValidationError,
-)
 
 
 @pytest.mark.unit
@@ -105,13 +105,7 @@ class TestGenerateImageMocked:
         mock_response.headers.get.return_value = "application/json"
         mock_response.json.return_value = {
             "choices": [
-                {
-                    "message": {
-                        "images": [
-                            {"image_url": {"url": f"data:image/png;base64,{b64}"}}
-                        ]
-                    }
-                }
+                {"message": {"images": [{"image_url": {"url": f"data:image/png;base64,{b64}"}}]}}
             ]
         }
         with patch("genimg.core.image_gen.requests.post", return_value=mock_response):

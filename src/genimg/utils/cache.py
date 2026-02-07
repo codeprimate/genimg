@@ -105,9 +105,7 @@ def clear_cache() -> None:
     cache.clear()
 
 
-def get_cached_prompt(
-    prompt: str, model: str, reference_hash: str | None = None
-) -> str | None:
+def get_cached_prompt(prompt: str, model: str, reference_hash: str | None = None) -> str | None:
     """
     Return the cached optimized prompt for the given inputs, or None if not cached.
 

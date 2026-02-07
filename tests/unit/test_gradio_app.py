@@ -1,6 +1,5 @@
 """Unit tests for the Gradio UI (gradio_app)."""
 
-import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -74,8 +73,8 @@ class TestReferenceSourceForProcess:
         assert out is not None
         assert isinstance(out, str)
         assert out.endswith(".png")
-        assert os.path.isfile(out)
-        os.unlink(out)
+        assert Path(out).is_file()
+        Path(out).unlink()
 
 
 @pytest.mark.unit
@@ -306,10 +305,12 @@ class TestGenerateClickHandler:
         """Handler yields status, image, and button updates from stream."""
         gradio_app._cancel_event.clear()
         with patch("genimg.ui.gradio_app._run_generate_stream") as mock_stream:
-            mock_stream.return_value = iter([
-                ("Generating…", None, False, True, ""),
-                ("Done in 1.0s", "/tmp/123.jpg", True, False, ""),
-            ])
+            mock_stream.return_value = iter(
+                [
+                    ("Generating…", None, False, True, ""),
+                    ("Done in 1.0s", "/tmp/123.jpg", True, False, ""),
+                ]
+            )
             out = list(gradio_app._generate_click_handler("a cat", False, "", None, None, None))
         assert len(out) == 2
         assert out[0][0] == "Generating…"
@@ -321,7 +322,9 @@ class TestGenerateClickHandler:
         gradio_app._cancel_event.clear()
         with patch("genimg.ui.gradio_app._run_generate_stream") as mock_stream:
             mock_stream.side_effect = ConfigurationError("Bad config")
-            out = list(gradio_app._generate_click_handler("x", True, "edited prompt", None, None, None))
+            out = list(
+                gradio_app._generate_click_handler("x", True, "edited prompt", None, None, None)
+            )
         assert len(out) == 1
         assert "config" in out[0][0].lower() or "Bad" in out[0][0]
         assert out[0][4] == "edited prompt"
@@ -342,10 +345,12 @@ class TestOptimizeClickHandler:
     def test_handler_yields_from_stream(self) -> None:
         gradio_app._cancel_event.clear()
         with patch("genimg.ui.gradio_app._run_optimize_only_stream") as mock_stream:
-            mock_stream.return_value = iter([
-                ("Optimizing…", "", False, True, False),
-                ("Done.", "optimized text", True, False, True),
-            ])
+            mock_stream.return_value = iter(
+                [
+                    ("Optimizing…", "", False, True, False),
+                    ("Done.", "optimized text", True, False, True),
+                ]
+            )
             out = list(gradio_app._optimize_click_handler("a dog", None, None))
         assert len(out) == 2
         assert out[1][1] == "optimized text"

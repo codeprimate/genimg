@@ -5,7 +5,6 @@ This module defines all custom exceptions used throughout the application.
 """
 
 
-
 class GenimgError(Exception):
     """Base exception for all genimg errors."""
 

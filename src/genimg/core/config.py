@@ -82,7 +82,7 @@ class Config:
 
         if not self.openrouter_api_key.startswith("sk-"):
             raise ConfigurationError(
-                "OpenRouter API key appears to be invalid. " "It should start with 'sk-'."
+                "OpenRouter API key appears to be invalid. It should start with 'sk-'."
             )
 
         self._validated = True
@@ -111,7 +111,7 @@ class Config:
 
         if not api_key.startswith("sk-"):
             raise ConfigurationError(
-                "OpenRouter API key appears to be invalid. " "It should start with 'sk-'."
+                "OpenRouter API key appears to be invalid. It should start with 'sk-'."
             )
 
         self.openrouter_api_key = api_key
