@@ -8,6 +8,7 @@ A Python package for generating AI images with intelligent prompt optimization. 
 - ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama models
 - 🖼️ **Reference Images**: Use reference images to guide generation
 - 💻 **Dual Interface**: Both CLI and web UI (Gradio) interfaces
+- 🎭 **Rich CLI**: Beautiful progress displays with spinners, progress bars, and formatted results
 - 📦 **Library Usage**: Use as a Python library in your own projects
 - 🔧 **Type-Safe**: Full type hints for better IDE support
 
@@ -102,28 +103,50 @@ Then open your browser to the displayed URL (default: http://127.0.0.1:7860).
 
 ### Command Line Interface
 
-Generate an image:
+The CLI provides rich, informative progress displays with spinners, progress bars, and formatted results:
 
 ```bash
 genimg generate "a red sports car at sunset" --output car.png
 ```
 
-With prompt optimization:
+**Example output:**
+```
+⠋ Optimizing prompt (svjack/gpt-oss-20b-heretic) 2.3s
+⠙ Generating image (bytedance-seed/seedream-4.5) • optimized 12.1s
 
-```bash
-genimg generate "a red sports car" --optimize --output car.png
+╭──────────────────────────── ✓ Image Generated ───────────────────────────────╮
+│                                                                              │
+│   Saved to  car.png                                                          │
+│      Model  bytedance-seed/seedream-4.5                                      │
+│       Time  15.3s                                                            │
+│   Features  ✓ Optimized                                                      │
+│      Input  a red sports car at sunset                                       │
+│  Optimized  A sleek red sports car photographed during golden hour, shot     │
+│             with 85mm lens creating shallow depth of field, parked on        │
+│             coastal highway with ocean backdrop, cinematic lighting with     │
+│             warm sunset tones, professional automotive photography style     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+car.png
 ```
 
-With a reference image:
+**Skip optimization** (generates immediately):
+
+```bash
+genimg generate "a red sports car" --no-optimize --output car.png
+```
+
+**With a reference image:**
 
 ```bash
 genimg generate "same car but in blue" --reference original.jpg --output blue_car.png
 ```
 
-Optimize a prompt without generating:
+**Quiet mode** (machine-readable output, no progress):
 
 ```bash
-genimg optimize "a beautiful landscape"
+genimg generate "a landscape" --output out.png --quiet
+# Output: out.png
 ```
 
 ### As a Python Library

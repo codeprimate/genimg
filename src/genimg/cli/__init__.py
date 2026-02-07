@@ -9,19 +9,19 @@ import os
 import signal
 import sys
 import threading
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
 
 import click
 
 from genimg import (
     APIError,
     CancellationError,
-    ConfigurationError,
     Config,
-    GenimgError,
+    ConfigurationError,
     GenerationResult,
+    GenimgError,
     ImageProcessingError,
     NetworkError,
     RequestTimeoutError,
@@ -32,6 +32,7 @@ from genimg import (
     process_reference_image,
     validate_prompt,
 )
+from genimg.cli import progress
 
 # Exit codes (130 = common for SIGINT)
 EXIT_SUCCESS = 0
@@ -91,20 +92,34 @@ def _run_with_error_handling(
     """
     try:
         fn()
-    except (ValidationError, ConfigurationError, ImageProcessingError, CancellationError,
-            APIError, NetworkError, RequestTimeoutError, GenimgError) as e:
+    except (
+        ValidationError,
+        ConfigurationError,
+        ImageProcessingError,
+        CancellationError,
+        APIError,
+        NetworkError,
+        RequestTimeoutError,
+        GenimgError,
+    ) as e:
         code, msg = _map_exception_to_exit(e)
         if code == EXIT_CANCELLED:
             if not quiet:
-                click.echo(msg, err=True)
+                progress.print_warning(msg)
         else:
-            click.echo(msg, err=True)
+            if quiet:
+                click.echo(msg, err=True)
+            else:
+                progress.print_error(msg)
         sys.exit(code)
     except Exception as e:
         if debug:
             raise
         code, msg = _map_exception_to_exit(e)
-        click.echo(msg, err=True)
+        if quiet:
+            click.echo(msg, err=True)
+        else:
+            progress.print_error(msg)
         sys.exit(EXIT_API_OR_NETWORK)
 
 
@@ -118,21 +133,31 @@ def cli() -> None:
 @cli.command()
 @click.option("--prompt", "-p", required=True, help="Text description of the image to generate.")
 @click.option("--model", "-m", help="OpenRouter image model ID (default from config).")
-@click.option("--reference", "-r", type=click.Path(exists=True, path_type=Path), help="Path to reference image.")
+@click.option(
+    "--reference",
+    "-r",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to reference image.",
+)
 @click.option("--no-optimize", is_flag=True, help="Skip prompt optimization.")
 @click.option("--out", "-o", type=click.Path(path_type=Path), help="Output file path.")
 @click.option(
     "--optimization-model",
     help="Ollama model for optimization (default from config).",
 )
-@click.option("--quiet", "-q", is_flag=True, help="Minimize progress messages; only print result path or errors.")
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="Minimize progress messages; only print result path or errors.",
+)
 def generate(
     prompt: str,
-    model: Optional[str],
-    reference: Optional[Path],
+    model: str | None,
+    reference: Path | None,
     no_optimize: bool,
-    out: Optional[Path],
-    optimization_model: Optional[str],
+    out: Path | None,
+    optimization_model: str | None,
     quiet: bool,
 ) -> None:
     """Generate an image from a text prompt (optionally with optimization and reference)."""
@@ -148,8 +173,8 @@ def generate(
         validate_prompt(prompt)
 
         # 3. Reference image
-        ref_b64: Optional[str] = None
-        ref_hash: Optional[str] = None
+        ref_b64: str | None = None
+        ref_hash: str | None = None
         if reference is not None:
             ref_b64, ref_hash = process_reference_image(reference, config=config)
 
@@ -158,25 +183,49 @@ def generate(
         if not no_optimize:
             config.optimization_enabled = True
             if not quiet:
-                click.echo("Optimizing prompt…", err=True)
-            effective_prompt = optimize_prompt(
-                prompt,
-                model=optimization_model,
-                reference_hash=ref_hash,
+                with progress.optimization_progress(
+                    model=optimization_model or config.default_optimization_model,
+                    reference_used=reference is not None,
+                ):
+                    effective_prompt = optimize_prompt(
+                        prompt,
+                        model=optimization_model,
+                        reference_hash=ref_hash,
+                        config=config,
+                        cancel_check=_cancel_check,
+                    )
+            else:
+                effective_prompt = optimize_prompt(
+                    prompt,
+                    model=optimization_model,
+                    reference_hash=ref_hash,
+                    config=config,
+                    cancel_check=_cancel_check,
+                )
+
+        # 5. Generate image
+        result: GenerationResult
+        if not quiet:
+            with progress.generation_progress(
+                model=model or config.default_image_model,
+                reference_used=reference is not None,
+                optimized=not no_optimize,
+            ):
+                result = generate_image(
+                    effective_prompt,
+                    model=model,
+                    reference_image_b64=ref_b64,
+                    config=config,
+                    cancel_check=_cancel_check,
+                )
+        else:
+            result = generate_image(
+                effective_prompt,
+                model=model,
+                reference_image_b64=ref_b64,
                 config=config,
                 cancel_check=_cancel_check,
             )
-
-        # 5. Generate image
-        if not quiet:
-            click.echo("Generating image…", err=True)
-        result = generate_image(
-            effective_prompt,
-            model=model,
-            reference_image_b64=ref_b64,
-            config=config,
-            cancel_check=_cancel_check,
-        )
 
         # 6. Output path
         out_path = out
@@ -188,11 +237,21 @@ def generate(
 
         # 8. Print result
         if quiet:
+            # Quiet mode: only output path to stdout
             click.echo(str(out_path))
         else:
-            click.echo(f"Saved to {out_path}", err=True)
+            # Rich formatted output
+            progress.print_success_result(
+                output_path=out_path,
+                generation_time=result.generation_time,
+                model_used=result.model_used,
+                prompt_used=effective_prompt,
+                had_reference=result.had_reference,
+                optimized=not no_optimize,
+                original_prompt=prompt if not no_optimize else None,
+            )
+            # Also print path to stdout for scriptability
             click.echo(str(out_path))
-            click.echo(f"Generation time: {result.generation_time:.1f}s", err=True)
 
     # Install SIGINT handler for cancellation
     old_sigint = signal.signal(signal.SIGINT, _handle_sigint)
@@ -226,7 +285,7 @@ def generate(
     envvar="GENIMG_UI_SHARE",
     help="Create a public share link (e.g. gradio.live).",
 )
-def ui(port: Optional[int], host: Optional[str], share: Optional[bool]) -> None:
+def ui(port: int | None, host: str | None, share: bool | None) -> None:
     """Launch the Gradio web UI for image generation."""
     from genimg.ui.gradio_app import launch as launch_ui
 
