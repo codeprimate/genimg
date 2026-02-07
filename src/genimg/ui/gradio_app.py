@@ -723,6 +723,7 @@ def launch(
         "server_name": host,
         "server_port": port,
         "share": share,
+        "inbrowser": True,
     }
     if favicon_path:
         launch_kwargs["favicon_path"] = favicon_path

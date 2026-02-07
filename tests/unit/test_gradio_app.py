@@ -395,7 +395,7 @@ class TestBuildBlocksAndLaunch:
         assert app is not None
 
     def test_launch_calls_build_and_launch(self) -> None:
-        """launch() builds app and calls app.launch with host/port/share."""
+        """launch() builds app and calls app.launch with host/port/share/inbrowser."""
         with patch("genimg.ui.gradio_app._build_blocks") as mock_build:
             mock_app = MagicMock()
             mock_build.return_value = mock_app
@@ -406,6 +406,7 @@ class TestBuildBlocksAndLaunch:
             assert call_kw["server_name"] == "0.0.0.0"
             assert call_kw["server_port"] == 9999
             assert call_kw["share"] is True
+            assert call_kw["inbrowser"] is True
 
 
 @pytest.mark.unit
