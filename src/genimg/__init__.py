@@ -12,8 +12,7 @@ Library usage:
 """
 
 __version__ = "0.1.0"
-__author__ = "Patrick Morgan"
-__email__ = "patrick@sitewire.co"
+__author__ = "codeprimate"
 
 from genimg.core.config import Config, get_config, set_config
 from genimg.core.image_gen import GenerationResult, generate_image

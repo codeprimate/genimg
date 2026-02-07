@@ -1,54 +1,91 @@
-.PHONY: help install install-dev format lint typecheck test test-unit test-integration coverage clean check
+.PHONY: help install install-dev build check publish uninstall clean format lint typecheck test test-unit test-integration coverage check-all
+
+# ==============================================================================
+# Build and Installing (inspired by todo_agent)
+# ==============================================================================
+# Use project venv: .venv/bin/pip, .venv/bin/python (see .cursor/rules/venv.mdc)
 
 help:
 	@echo "Available commands:"
-	@echo "  make install       - Install package in development mode"
-	@echo "  make install-dev   - Install with development dependencies"
-	@echo "  make format        - Format code with black"
-	@echo "  make lint          - Lint code with ruff"
-	@echo "  make typecheck     - Type check with mypy"
-	@echo "  make test          - Run all tests"
-	@echo "  make test-unit     - Run unit tests only"
+	@echo "  make install       - Build wheel and install package locally (from dist/*.whl)"
+	@echo "  make install-dev   - Install package in development mode with [dev] deps"
+	@echo "  make build         - Clean and build package (sdist + wheel)"
+	@echo "  make check         - Validate distribution with twine"
+	@echo "  make publish       - Clean, build, check, then upload to PyPI"
+	@echo "  make uninstall    - Uninstall genimg from current environment"
+	@echo ""
+	@echo "  make format       - Format code with black"
+	@echo "  make lint         - Lint with ruff"
+	@echo "  make typecheck    - Type check with mypy"
+	@echo "  make test         - Run tests"
+	@echo "  make test-unit    - Run unit tests only"
 	@echo "  make test-integration - Run integration tests only"
-	@echo "  make coverage      - Run tests with coverage report"
-	@echo "  make clean         - Remove build artifacts"
-	@echo "  make check         - Run all quality checks (format, lint, typecheck, test)"
+	@echo "  make coverage     - Run tests with coverage report"
+	@echo "  make clean        - Remove build artifacts"
+	@echo "  make check-all    - format, lint, typecheck, test"
 
-install:
-	pip install -e .
+install: build uninstall
+	@echo "📦 Installing built package locally..."
+	.venv/bin/pip install dist/*.whl
 
-install-dev:
-	pip install -e .
-	pip install -r requirements-dev.txt
+install-dev: uninstall
+	@echo "🔧 Installing package in development mode with dev dependencies..."
+	.venv/bin/pip install -e ".[dev]"
 
-format:
-	black src/ tests/
+build: clean
+	@echo "🔨 Building package..."
+	.venv/bin/python -m build
 
-lint:
-	ruff check --fix src/ tests/
+check:
+	@echo "✅ Checking distribution files..."
+	.venv/bin/twine check dist/*
 
-typecheck:
-	mypy src/
+publish: clean build check
+	@echo "🚀 Publishing to PyPI..."
+	.venv/bin/twine upload dist/*
 
-test:
-	pytest
-
-test-unit:
-	pytest -m unit
-
-test-integration:
-	.venv/bin/pytest -m integration --no-cov
-
-coverage:
-	pytest --cov-report=html
-	@echo "Coverage report generated in htmlcov/index.html"
+uninstall:
+	@echo "🧹 Uninstalling package..."
+	.venv/bin/pip uninstall -y genimg 2>/dev/null || true
 
 clean:
-	rm -rf build/ dist/ *.egg-info/
+	@echo "🧹 Cleaning build artifacts..."
+	rm -rf build/ dist/ .eggs/ *.egg-info/
 	rm -rf .pytest_cache/ .mypy_cache/ .ruff_cache/
 	rm -rf htmlcov/ .coverage
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 
-check: format lint typecheck test
+# ==============================================================================
+# Linting and Code Quality
+# ==============================================================================
+
+format:
+	.venv/bin/ruff format src/ tests/
+	.venv/bin/ruff check --fix src/ tests/
+
+lint:
+	.venv/bin/ruff check src/ tests/
+
+typecheck:
+	.venv/bin/mypy src/
+
+# ==============================================================================
+# Testing
+# ==============================================================================
+
+test:
+	.venv/bin/pytest
+
+test-unit:
+	.venv/bin/pytest -m unit
+
+test-integration:
+	GENIMG_RUN_INTEGRATION_TESTS=1 .venv/bin/pytest -m integration --no-cov
+
+coverage:
+	.venv/bin/pytest --cov-report=html
+	@echo "Coverage report generated in htmlcov/index.html"
+
+check-all: format lint typecheck test
 	@echo "All quality checks passed!"

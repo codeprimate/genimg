@@ -19,11 +19,11 @@ source .venv/bin/activate  # Linux/Mac
 # or
 .venv\Scripts\activate  # Windows
 
-# Install package in development mode
-pip install -e .
-
-# Install development dependencies
-pip install -r requirements-dev.txt
+# Install package in development mode with dev dependencies (recommended)
+make install-dev
+# Or manually:
+# pip install -e .
+# pip install -r requirements-dev.txt
 ```
 
 ### Environment Configuration
@@ -404,40 +404,54 @@ Typical bottlenecks:
 
 ## Release Process
 
+Inspired by the [todo_agent](https://github.com/codeprimate/todo-agent) workflow: build produces wheels and sdist; install uses the built wheel; publish runs clean → build → twine check → upload.
+
 ### Version Bump
 
 1. Update version in `src/genimg/__init__.py`
 2. Update version in `pyproject.toml`
 3. Update CHANGELOG.md
 
-### Build Package
+### Build and Install (Makefile)
+
+Ensure the project venv is set up and dev dependencies installed (including `build` and `twine` via `.[dev]`):
 
 ```bash
-# Install build tools
-pip install build
+# Install dev deps (includes build, twine)
+make install-dev
 
-# Build distribution
-python -m build
+# Build sdist + wheel (cleans first)
+make build
 
-# Verify contents
-tar -tzf dist/genimg-*.tar.gz
+# Install the built wheel into current env
+make install
+
+# Or for day-to-day development: editable install with dev deps
+make install-dev
 ```
 
-### Test Installation
+### Validate and Publish to PyPI
 
 ```bash
-# Create fresh venv
+# Check distribution files
+make check
+
+# Full publish: clean → build → check → twine upload
+make publish
+```
+
+You will be prompted for PyPI credentials (username `__token__`, password = your API token).
+
+### Test Installation (manual)
+
+To verify the wheel in a clean environment:
+
+```bash
 python -m venv test-venv
 source test-venv/bin/activate
-
-# Install from wheel
 pip install dist/genimg-*.whl
-
-# Test commands
 genimg --help
 genimg-ui --help
-
-# Deactivate and remove
 deactivate
 rm -rf test-venv
 ```
