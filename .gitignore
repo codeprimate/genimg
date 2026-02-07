@@ -68,3 +68,4 @@ desktop.ini
 
 # Documentation builds
 docs/_build/
+_local_docs/
