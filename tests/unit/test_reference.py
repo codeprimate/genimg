@@ -1,5 +1,6 @@
 """Unit tests for reference image helpers and process_reference_image."""
 
+import base64
 import io
 
 import pytest
@@ -255,3 +256,13 @@ class TestProcessReferenceImage:
         assert isinstance(encoded, str)
         assert len(ref_hash) == 64
         assert ref_hash == get_image_hash(str(path))
+
+    def test_from_data_url_returns_encoded_and_hash(self):
+        """Process from data URL (e.g. Gradio clipboard) so image is sent to API."""
+        png = _minimal_png_bytes()
+        b64 = base64.b64encode(png).decode("ascii")
+        data_url = f"data:image/png;base64,{b64}"
+        encoded, ref_hash = process_reference_image(data_url)
+        assert isinstance(encoded, str)
+        assert len(ref_hash) == 64
+        assert ref_hash == __import__("hashlib").sha256(png).hexdigest()

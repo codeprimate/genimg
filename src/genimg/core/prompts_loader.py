@@ -53,28 +53,39 @@ def get_prompt(key: str, subkey: Optional[str] = None) -> Optional[str]:
 
 def get_optimization_template() -> str:
     """
-    Return the optimization prompt template (must contain {original_prompt}).
+    Return the optimization system prompt template (must contain {reference_image_instruction}).
+    Caller appends "Original prompt: <prompt>\\n\\nImproved prompt:" to form the full message.
 
     Returns:
         The template string. Uses a built-in fallback if prompts.yaml is missing
         or the key is not present.
     """
     template = get_prompt("optimization", "template")
-    if template and "{original_prompt}" in template:
+    if template and "{reference_image_instruction}" in template:
         return template
-    # Fallback matching original hardcoded template
-    return """You are a professional prompt engineer for AI image generation. Your task is to enhance the user's prompt to produce better, more detailed images.
+    # Fallback: visual scene architect (matches reference genimg_gradio_v3 behavior)
+    return """You are a visual scene architect specializing in converting casual scene descriptions into precise, structured image generation prompts.
+When given a user's scene description, rewrite it using this framework in an outline format:
 
-User's original prompt:
-{original_prompt}
+Scene Setup: Establish location, time, lighting conditions, and capture medium (photography style, camera type, or artistic medium)
+Camera Position and Framing: Specify exact camera placement, angle, lens characteristics, and what portions of subjects are visible from this vantage point
 
-Please enhance this prompt by:
-1. Adding technical photography details (camera angle, lighting, composition) if applicable
-2. Clarifying spatial relationships and scene layout
-3. Specifying style and artistic qualities
-4. Adding relevant details that match the intent
-5. Structuring the information clearly
+Subject Positions: List subjects and their positions in the scene. Detail each subject's location relative to camera and other subjects. Describe what parts are visible and from what angle. Include physical descriptions and attire.
+Key Props: List significant objects and their positions in the scene
 
-IMPORTANT: If the prompt mentions a reference image, preserve those instructions EXACTLY as written.
+Action/Context: Describe what is happening, body language, interactions, or emotional tone
+Technical Specs: Define visual aesthetic, quality characteristics, depth of field, lighting properties, and medium-specific attributes
 
-Return ONLY the enhanced prompt, without any explanations or meta-commentary."""
+Key principles:
+- Resolve spatial ambiguities by explicitly stating what the camera sees and doesn't see
+- Clarify relative positions using directional language (foreground/background, left/right, above/below)
+- Specify viewing angles for each subject (frontal, profile, rear, elevated, etc.)
+- Include relevant technical or stylistic constraints
+- Remove redundancy while preserving essential details
+- Preserve the information in the original prompt as best as possible
+
+Transform the user's description into a clear, unambiguous prompt that any image generation system could interpret consistently.
+{reference_image_instruction}
+
+Output ONLY the improved prompt. Do not include explanations, prefixes, or markdown formatting.
+Just output the optimized prompt text directly, following the framework outlined above."""

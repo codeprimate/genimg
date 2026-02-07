@@ -1,5 +1,7 @@
 """Unit tests for the Gradio UI (gradio_app)."""
 
+import os
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -59,6 +61,21 @@ class TestReferenceSourceForProcess:
     def test_dict_with_path(self) -> None:
         assert gradio_app._reference_source_for_process({"path": "/tmp/x.jpg"}) == "/tmp/x.jpg"
         assert gradio_app._reference_source_for_process({"url": "/tmp/y.png"}) == "/tmp/y.png"
+
+    def test_dict_with_data_url(self) -> None:
+        """Dict with url as data URL is passed through for process_reference_image."""
+        data_url = "data:image/png;base64,iVBORw0KGgo="
+        assert gradio_app._reference_source_for_process({"url": data_url}) == data_url
+
+    def test_pil_image_returns_path(self) -> None:
+        """PIL Image from Gradio is saved to temp file and path returned."""
+        pil = Image.new("RGB", (2, 2), color="red")
+        out = gradio_app._reference_source_for_process(pil)
+        assert out is not None
+        assert isinstance(out, str)
+        assert out.endswith(".png")
+        assert os.path.isfile(out)
+        os.unlink(out)
 
 
 @pytest.mark.unit
@@ -293,7 +310,7 @@ class TestGenerateClickHandler:
                 ("Generating…", None, False, True, ""),
                 ("Done in 1.0s", "/tmp/123.jpg", True, False, ""),
             ])
-            out = list(gradio_app._generate_click_handler("a cat", False, "", None, None))
+            out = list(gradio_app._generate_click_handler("a cat", False, "", None, None, None))
         assert len(out) == 2
         assert out[0][0] == "Generating…"
         assert out[1][0] == "Done in 1.0s"
@@ -304,7 +321,7 @@ class TestGenerateClickHandler:
         gradio_app._cancel_event.clear()
         with patch("genimg.ui.gradio_app._run_generate_stream") as mock_stream:
             mock_stream.side_effect = ConfigurationError("Bad config")
-            out = list(gradio_app._generate_click_handler("x", True, "edited prompt", None, None))
+            out = list(gradio_app._generate_click_handler("x", True, "edited prompt", None, None, None))
         assert len(out) == 1
         assert "config" in out[0][0].lower() or "Bad" in out[0][0]
         assert out[0][4] == "edited prompt"
@@ -313,7 +330,7 @@ class TestGenerateClickHandler:
         gradio_app._cancel_event.clear()
         with patch("genimg.ui.gradio_app._run_generate_stream") as mock_stream:
             mock_stream.side_effect = RuntimeError("oops")
-            out = list(gradio_app._generate_click_handler("x", False, "", None, None))
+            out = list(gradio_app._generate_click_handler("x", False, "", None, None, None))
         assert len(out) == 1
         assert out[0][0] == "oops"
 
@@ -329,7 +346,7 @@ class TestOptimizeClickHandler:
                 ("Optimizing…", "", False, True, False),
                 ("Done.", "optimized text", True, False, True),
             ])
-            out = list(gradio_app._optimize_click_handler("a dog", None))
+            out = list(gradio_app._optimize_click_handler("a dog", None, None))
         assert len(out) == 2
         assert out[1][1] == "optimized text"
 
@@ -337,7 +354,7 @@ class TestOptimizeClickHandler:
         gradio_app._cancel_event.clear()
         with patch("genimg.ui.gradio_app._run_optimize_only_stream") as mock_stream:
             mock_stream.side_effect = APIError("Ollama failed")
-            out = list(gradio_app._optimize_click_handler("x", None))
+            out = list(gradio_app._optimize_click_handler("x", None, None))
         assert len(out) == 1
         assert "Ollama" in out[0][0] or "failed" in out[0][0]
         assert out[0][1] == ""
@@ -384,6 +401,33 @@ class TestBuildBlocksAndLaunch:
             assert call_kw["server_name"] == "0.0.0.0"
             assert call_kw["server_port"] == 9999
             assert call_kw["share"] is True
+
+
+@pytest.mark.unit
+class TestMainEntryPoint:
+    """Test main() entry point (genimg-ui --port etc.)."""
+
+    def test_main_parses_port_and_calls_launch(self) -> None:
+        """main() parses --port and passes it to launch()."""
+        with patch("genimg.ui.gradio_app.launch") as mock_launch:
+            with patch.object(sys, "argv", ["genimg-ui", "--port", "8888"]):
+                gradio_app.main()
+            mock_launch.assert_called_once()
+            assert mock_launch.call_args[1]["server_port"] == 8888
+            assert mock_launch.call_args[1]["server_name"] is None
+            assert mock_launch.call_args[1]["share"] is False
+
+    def test_main_parses_host_and_share(self) -> None:
+        """main() parses --host and --share."""
+        with patch("genimg.ui.gradio_app.launch") as mock_launch:
+            with patch.object(
+                sys, "argv", ["genimg-ui", "--port", "9000", "--host", "0.0.0.0", "--share"]
+            ):
+                gradio_app.main()
+            mock_launch.assert_called_once()
+            assert mock_launch.call_args[1]["server_port"] == 9000
+            assert mock_launch.call_args[1]["server_name"] == "0.0.0.0"
+            assert mock_launch.call_args[1]["share"] is True
 
 
 @pytest.mark.unit

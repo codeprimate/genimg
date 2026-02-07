@@ -6,13 +6,16 @@ generate with progress and cancellation, view/download result (JPG 90, timestamp
 Uses only the public API: from genimg import ...
 """
 
+import argparse
+import importlib.resources
 import os
 import tempfile
 import threading
 import time
-from typing import Any, Generator, Optional
+from typing import Any, Generator, List, Optional, Tuple
 
 import gradio as gr
+import yaml
 
 from genimg import (
     APIError,
@@ -36,6 +39,29 @@ DEFAULT_UI_HOST = "127.0.0.1"
 
 # Shared cancellation event: Generate clears at start, Stop sets it
 _cancel_event = threading.Event()
+
+
+def _load_ui_models() -> Tuple[List[str], str, List[str], str]:
+    """
+    Load image and optimization model lists from ui_models.yaml in the package.
+    Returns (image_models, default_image_model, optimization_models, default_optimization_model).
+    """
+    try:
+        with importlib.resources.files("genimg").joinpath("ui_models.yaml").open(
+            encoding="utf-8"
+        ) as f:
+            data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        data = {}
+    image_models: List[str] = data.get("image_models") or []
+    default_image: str = data.get("default_image_model") or "bytedance-seed/seedream-4.5"
+    opt_models: List[str] = data.get("optimization_models") or []
+    default_opt: str = data.get("default_optimization_model") or "svjack/gpt-oss-20b-heretic"
+    if default_opt and default_opt not in opt_models:
+        opt_models = [default_opt] + [m for m in opt_models if m != default_opt]
+    if default_image and default_image not in image_models:
+        image_models = [default_image] + [m for m in image_models if m != default_image]
+    return image_models, default_image, opt_models, default_opt
 
 
 def _exception_to_message(exc: BaseException) -> str:
@@ -62,16 +88,29 @@ def _reference_source_for_process(value: Any) -> Optional[Any]:
     """
     Get a source suitable for process_reference_image from Gradio Image value.
 
-    With type='filepath', Gradio passes a path str. We also support None and dict with 'path'.
+    Gradio can return: path str, dict with 'path' or 'url' (data URL), or PIL Image.
+    We normalize to a path (str), data URL (str), or PIL for temp-file save.
     """
     if value is None:
         return None
+    # PIL Image (e.g. Gradio type="pil" or some versions): save to temp file and return path
+    if hasattr(value, "size") and hasattr(value, "save"):
+        try:
+            fd, path = tempfile.mkstemp(suffix=".png", prefix="genimg_ref_")
+            os.close(fd)
+            value.save(path, "PNG")
+            return path
+        except Exception:
+            return None
     if isinstance(value, str) and not value.strip():
         return None
     if isinstance(value, dict):
-        path = value.get("path") or value.get("url")
-        if path and isinstance(path, str):
+        path = value.get("path")
+        url = value.get("url")
+        if path and isinstance(path, str) and path.strip():
             return path
+        if url and isinstance(url, str) and url.strip():
+            return url  # data URL or blob; reference module handles data URL
         return None
     return value  # str path or Path
 
@@ -81,6 +120,7 @@ def _run_generate(
     optimize: bool,
     reference_value: Any,
     model: Optional[str],
+    optimization_model: Optional[str] = None,
     cancel_check: Optional[Any] = None,
 ) -> tuple[Optional[str], Optional[Any], str]:
     """
@@ -120,6 +160,7 @@ def _run_generate(
         try:
             effective_prompt = optimize_prompt(
                 prompt,
+                model=optimization_model,
                 reference_hash=ref_hash,
                 config=config,
                 cancel_check=cancel_check,
@@ -158,6 +199,7 @@ def _run_generate_stream(
     optimized_prompt_value: Optional[str],
     reference_value: Any,
     model: Optional[str],
+    optimization_model: Optional[str] = None,
     cancel_check: Optional[Any] = None,
 ) -> Generator[tuple[str, Optional[str], bool, bool, str], None, None]:
     """
@@ -199,6 +241,7 @@ def _run_generate_stream(
         try:
             effective_prompt = optimize_prompt(
                 prompt,
+                model=optimization_model,
                 reference_hash=ref_hash,
                 config=config,
                 cancel_check=cancel_check,
@@ -240,6 +283,7 @@ def _generate_click_handler(
     opt_text: str,
     ref: Any,
     mod: Optional[str],
+    opt_mod: Optional[str],
 ) -> Generator[tuple[Any, ...], None, None]:
     """Generate button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     _cancel_event.clear()
@@ -250,6 +294,7 @@ def _generate_click_handler(
             opt_text,
             ref,
             mod,
+            optimization_model=opt_mod,
             cancel_check=lambda: _cancel_event.is_set(),
         ):
             yield (
@@ -277,12 +322,14 @@ def _generate_click_handler(
         )
 
 
-def _optimize_click_handler(p: str, ref: Any) -> Generator[tuple[Any, ...], None, None]:
+def _optimize_click_handler(
+    p: str, ref: Any, opt_mod: Optional[str]
+) -> Generator[tuple[Any, ...], None, None]:
     """Optimize button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     _cancel_event.clear()
     try:
         for status_msg, opt_text, opt_on, stop_on, gen_on in _run_optimize_only_stream(
-            p, ref, cancel_check=lambda: _cancel_event.is_set()
+            p, ref, optimization_model=opt_mod, cancel_check=lambda: _cancel_event.is_set()
         ):
             yield (
                 status_msg,
@@ -324,6 +371,7 @@ def _prompt_change_handler(text: str) -> tuple[gr.update, gr.update]:
 def _run_optimize_only_stream(
     prompt: str,
     reference_value: Any,
+    optimization_model: Optional[str] = None,
     cancel_check: Optional[Any] = None,
 ) -> Generator[tuple[str, str, bool, bool, bool], None, None]:
     """
@@ -358,7 +406,9 @@ def _run_optimize_only_stream(
     try:
         optimized = optimize_prompt(
             prompt,
+            model=optimization_model,
             reference_hash=ref_hash,
+            enable_cache=False,  # Optimize button always forces a fresh run
             config=config,
             cancel_check=cancel_check,
         )
@@ -369,6 +419,8 @@ def _run_optimize_only_stream(
 
 def _build_blocks() -> gr.Blocks:
     """Build the Gradio Blocks UI (layout + generate handler, no cancellation yet)."""
+    image_models, default_image, opt_models, default_opt = _load_ui_models()
+
     with gr.Blocks(title="genimg – AI image generation") as app:
         gr.Markdown(
             "**AI image generation** with optional prompt optimization (Ollama)."
@@ -395,11 +447,20 @@ def _build_blocks() -> gr.Blocks:
                 sources=["upload", "clipboard"],
             )
             model_dd = gr.Dropdown(
-                label="Model",
-                value=None,
-                choices=[],
-                allow_custom_value=False,
-                visible=False,
+                label="Image model",
+                value=default_image,
+                choices=image_models,
+                allow_custom_value=True,
+                visible=True,
+                info="OpenRouter image model. Type a model ID for another.",
+            )
+            optimization_dd = gr.Dropdown(
+                label="Optimization model (Ollama)",
+                value=default_opt,
+                choices=opt_models,
+                allow_custom_value=True,
+                visible=True,
+                info="Ollama model for prompt optimization.",
             )
         optimized_tb = gr.Textbox(
             label="Optimized prompt (editable)",
@@ -418,12 +479,12 @@ def _build_blocks() -> gr.Blocks:
 
         gen_ev = generate_btn.click(
             fn=_generate_click_handler,
-            inputs=[prompt_tb, optimize_cb, optimized_tb, ref_image, model_dd],
+            inputs=[prompt_tb, optimize_cb, optimized_tb, ref_image, model_dd, optimization_dd],
             outputs=[status_tb, out_image, generate_btn, stop_btn, optimized_tb],
         )
         opt_ev = optimize_btn.click(
             fn=_optimize_click_handler,
-            inputs=[prompt_tb, ref_image],
+            inputs=[prompt_tb, ref_image, optimization_dd],
             outputs=[status_tb, optimized_tb, optimize_btn, stop_btn, generate_btn],
         )
         stop_btn.click(
@@ -467,4 +528,42 @@ def launch(
         server_name=host,
         server_port=port,
         share=share,
+    )
+
+
+def main() -> None:
+    """Entry point for the genimg-ui console script. Parses --port, --host, --share."""
+    parser = argparse.ArgumentParser(
+        description="Launch the genimg Gradio web UI for image generation.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        metavar="PORT",
+        help=f"Port to bind (default: GENIMG_UI_PORT or {DEFAULT_UI_PORT}).",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=None,
+        metavar="HOST",
+        help=f"Host to bind (default: GENIMG_UI_HOST or {DEFAULT_UI_HOST}). Use 0.0.0.0 for LAN.",
+    )
+    parser.add_argument(
+        "--share",
+        action="store_true",
+        default=None,
+        help="Create a public share link (e.g. gradio.live). Overrides GENIMG_UI_SHARE.",
+    )
+    args = parser.parse_args()
+    share_val = args.share
+    if share_val is None:
+        env_share = os.environ.get("GENIMG_UI_SHARE", "").lower()
+        share_val = env_share in ("1", "true", "yes")
+    launch(
+        server_name=args.host,
+        server_port=args.port,
+        share=share_val,
     )

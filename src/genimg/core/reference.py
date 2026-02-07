@@ -48,6 +48,31 @@ def _normalize_format(fmt: Optional[str]) -> Optional[str]:
     return u if u in SUPPORTED_FORMATS else None
 
 
+def _parse_data_url(data_url: str) -> Tuple[bytes, Optional[str]]:
+    """
+    Parse a data URL (data:image/xxx;base64,yyy) into raw bytes and MIME format.
+
+    Returns:
+        (decoded_bytes, format_hint from MIME e.g. 'PNG', 'JPEG') or raises.
+    """
+    data_url = data_url.strip()
+    if not data_url.startswith("data:"):
+        raise ValidationError("Not a data URL", field="image")
+    idx = data_url.find(";base64,")
+    if idx == -1:
+        raise ValidationError("Data URL missing ;base64, part", field="image")
+    try:
+        payload = base64.b64decode(data_url[idx + 8 :], validate=True)
+    except Exception as e:
+        raise ValidationError(f"Invalid base64 in data URL: {e}") from e
+    mime = data_url[5:idx].strip().lower()
+    if mime.startswith("image/"):
+        fmt = mime.split("/", 1)[1].split("+")[0].strip()
+    else:
+        fmt = None
+    return payload, _normalize_format(fmt) if fmt else None
+
+
 def _load_image_source(
     source: Union[str, Path, bytes],
     format_hint: Optional[str] = None,
@@ -297,6 +322,12 @@ def process_reference_image(
     """
     if max_pixels is None:
         max_pixels = (config or get_config()).max_image_pixels
+
+    # Normalize data URL to bytes so loading and hashing work
+    if isinstance(source, str) and source.strip().startswith("data:"):
+        source, parsed_fmt = _parse_data_url(source)
+        if format_hint is None:
+            format_hint = parsed_fmt
 
     # Load image (validates format for path; for bytes uses format_hint or magic)
     image, _loaded_fmt = _load_image_source(source, format_hint)

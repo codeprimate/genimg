@@ -13,13 +13,13 @@ class TestPromptsLoader:
     def test_get_optimization_template_returns_string_with_placeholder(self):
         template = get_optimization_template()
         assert isinstance(template, str)
-        assert "{original_prompt}" in template
-        assert "enhance" in template.lower()
+        assert "{reference_image_instruction}" in template
+        assert "scene" in template.lower()
 
     def test_get_prompt_optimization_template(self):
         template = get_prompt("optimization", "template")
         assert template is not None
-        assert "{original_prompt}" in template
+        assert "{reference_image_instruction}" in template
 
     def test_get_prompt_unknown_key_returns_none(self):
         assert get_prompt("nonexistent_key") is None

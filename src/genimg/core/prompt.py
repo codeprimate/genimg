@@ -16,6 +16,51 @@ from genimg.utils.exceptions import APIError, CancellationError, RequestTimeoutE
 # Loaded from prompts.yaml; kept as name for backward compatibility and tests
 OPTIMIZATION_TEMPLATE = get_optimization_template()
 
+# Markers used by Ollama "thinking" models; strip this block from optimization output.
+_THINKING_START = "Thinking..."
+_THINKING_END = "...done thinking."
+
+# Injected into the optimization template when a reference image is present (reference_hash is set).
+REFERENCE_IMAGE_INSTRUCTION = """
+CRITICAL: Reference images are being provided with this prompt. When optimizing:
+- You cannot see or analyze these images. Do not make any assumptions about them.
+- Preserve ALL instructions about how to use, modify, or reference the provided images EXACTLY as specified
+- Do not change, remove, or reinterpret any image reference instructions
+- Maintain the exact relationship between the prompt text and the reference images
+- If the prompt specifies transformations, edits, or specific ways to use the images, keep those instructions verbatim
+- Only enhance the prompt by adding complementary details that don't conflict with image reference instructions
+"""
+
+
+def _strip_ollama_thinking(text: str) -> str:
+    """
+    Remove thinking block and optional markdown code fences from Ollama output.
+
+    Some Ollama models (e.g. thinking models) wrap reasoning in "Thinking..." ...
+    "...done thinking." and may wrap the final answer in ```. This strips those
+    so the returned string is the actual optimized prompt.
+    """
+    if not text or not text.strip():
+        return text
+    optimized = text.strip()
+    if _THINKING_START in optimized:
+        start_idx = optimized.find(_THINKING_START)
+        end_idx = optimized.find(_THINKING_END, start_idx)
+        if end_idx != -1:
+            before = optimized[:start_idx].strip()
+            after = optimized[end_idx + len(_THINKING_END) :].strip()
+            optimized = (before + " " + after).strip()
+        else:
+            optimized = optimized[:start_idx].strip()
+    if optimized.startswith("```"):
+        lines = optimized.split("\n")
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        optimized = "\n".join(lines).strip()
+    return optimized
+
 
 def validate_prompt(prompt: str) -> None:
     """
@@ -63,6 +108,7 @@ def optimize_prompt_with_ollama(
     timeout: Optional[int] = None,
     config: Optional[Config] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
+    force_refresh: bool = False,
 ) -> str:
     """
     Optimize a prompt using Ollama.
@@ -75,6 +121,7 @@ def optimize_prompt_with_ollama(
         config: Optional config to use; if None, uses shared config from get_config()
         cancel_check: Optional callable returning True to cancel; polled during the run.
             Should return quickly and not raise (exceptions are caught and ignored).
+        force_refresh: If True, skip cache lookup and always run Ollama (result is still cached).
 
     Returns:
         Optimized prompt
@@ -94,11 +141,11 @@ def optimize_prompt_with_ollama(
     if timeout is None:
         timeout = config.optimization_timeout
 
-    # Check cache first
     cache = get_cache()
-    cached = cache.get(prompt, model, reference_hash)
-    if cached:
-        return cached
+    if not force_refresh:
+        cached = cache.get(prompt, model, reference_hash)
+        if cached:
+            return cached
 
     # Check if Ollama is available
     if not check_ollama_available():
@@ -107,8 +154,10 @@ def optimize_prompt_with_ollama(
             "Visit https://ollama.ai for installation instructions."
         )
 
-    # Prepare the optimization prompt (template loaded from prompts.yaml)
-    optimization_prompt = get_optimization_template().format(original_prompt=prompt)
+    # Prepare the optimization prompt: system template (with optional reference instruction) + "Original prompt: ... Improved prompt:"
+    reference_instruction = REFERENCE_IMAGE_INSTRUCTION if reference_hash else ""
+    system_part = get_optimization_template().format(reference_image_instruction=reference_instruction)
+    optimization_prompt = system_part + "\n\nOriginal prompt: " + prompt + "\n\nImproved prompt:"
 
     if cancel_check is None:
         return _run_ollama_sync(prompt, model, reference_hash, timeout, optimization_prompt, cache)
@@ -173,7 +222,7 @@ def optimize_prompt_with_ollama(
             status_code=process.returncode,
             response=stderr,
         )
-    optimized = (stdout or "").strip()
+    optimized = _strip_ollama_thinking((stdout or "").strip())
     if not optimized:
         raise APIError("Ollama returned an empty response")
     cache.set(prompt, model, optimized, reference_hash)
@@ -223,7 +272,7 @@ def _run_ollama_sync(
         raise APIError(
             "Ollama command not found. Please ensure Ollama is installed and in your PATH."
         ) from e
-    optimized = stdout.strip()
+    optimized = _strip_ollama_thinking(stdout.strip())
     if not optimized:
         raise APIError("Ollama returned an empty response")
     cache.set(prompt, model, optimized, reference_hash)
@@ -276,7 +325,12 @@ def optimize_prompt(
         if cached:
             return cached
 
-    # Perform optimization
+    # Perform optimization (force_refresh when caller disabled cache for this request)
     return optimize_prompt_with_ollama(
-        prompt, model, reference_hash, config=config, cancel_check=cancel_check
+        prompt,
+        model,
+        reference_hash,
+        config=config,
+        cancel_check=cancel_check,
+        force_refresh=not enable_cache,
     )

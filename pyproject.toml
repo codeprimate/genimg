@@ -61,7 +61,7 @@ dev = [
 
 [project.scripts]
 genimg = "genimg.__main__:main"
-genimg-ui = "genimg.ui.gradio_app:launch"
+genimg-ui = "genimg.ui.gradio_app:main"
 
 [project.urls]
 Homepage = "https://github.com/yourusername/genimg"
@@ -73,7 +73,7 @@ Repository = "https://github.com/yourusername/genimg"
 where = ["src"]
 
 [tool.setuptools.package-data]
-genimg = ["prompts.yaml"]
+genimg = ["prompts.yaml", "ui_models.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

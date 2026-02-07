@@ -7,6 +7,7 @@ import pytest
 from genimg.core.config import Config
 from genimg.core.prompt import (
     OPTIMIZATION_TEMPLATE,
+    _strip_ollama_thinking,
     check_ollama_available,
     optimize_prompt,
     optimize_prompt_with_ollama,
@@ -34,6 +35,35 @@ class TestValidatePrompt:
     def test_valid_passes(self):
         validate_prompt("a red car")
         validate_prompt("yes")  # at least 3 chars
+
+
+@pytest.mark.unit
+class TestStripOllamaThinking:
+    """Test _strip_ollama_thinking (thinking models and markdown fences)."""
+
+    def test_no_thinking_unchanged(self):
+        assert _strip_ollama_thinking("a red car") == "a red car"
+        assert _strip_ollama_thinking("  only prompt  ") == "only prompt"
+
+    def test_strips_thinking_block(self):
+        raw = "prelude Thinking... internal reasoning ...done thinking. the actual prompt"
+        assert _strip_ollama_thinking(raw) == "prelude the actual prompt"
+
+    def test_strips_thinking_with_no_end_keeps_before(self):
+        raw = "the prompt Thinking... unfinished"
+        assert _strip_ollama_thinking(raw) == "the prompt"
+
+    def test_strips_markdown_fences(self):
+        raw = "```\na red car\n```"
+        assert _strip_ollama_thinking(raw) == "a red car"
+
+    def test_strips_thinking_then_markdown(self):
+        raw = "Thinking... blah ...done thinking.\n```\nfinal prompt\n```"
+        assert _strip_ollama_thinking(raw) == "final prompt"
+
+    def test_empty_or_whitespace_unchanged(self):
+        assert _strip_ollama_thinking("") == ""
+        assert _strip_ollama_thinking("   ") == "   "
 
 
 @pytest.mark.unit
@@ -178,8 +208,8 @@ class TestOptimizePrompt:
         cache.clear()
 
     def test_optimization_template_contains_placeholder(self):
-        assert "{original_prompt}" in OPTIMIZATION_TEMPLATE
-        assert "enhance" in OPTIMIZATION_TEMPLATE.lower()
+        assert "{reference_image_instruction}" in OPTIMIZATION_TEMPLATE
+        assert "visual scene architect" in OPTIMIZATION_TEMPLATE.lower() or "scene" in OPTIMIZATION_TEMPLATE.lower()
 
     def test_cancel_check_raises_cancellation_error(self):
         """When cancel_check returns True, optimization is cancelled and process is terminated."""

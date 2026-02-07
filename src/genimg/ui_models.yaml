@@ -1,0 +1,28 @@
+# UI model lists for genimg Gradio UI.
+# OpenRouter image-generation models (output_modalities includes "image").
+# From https://openrouter.ai/collections/image-models — no repeats.
+# allow_custom_value in the UI lets users type any model ID.
+
+image_models:
+  - google/gemini-3-pro-image-preview
+  - google/gemini-2.5-flash-image
+  - openai/gpt-5-image
+  - openai/gpt-5-image-mini
+  - black-forest-labs/flux.2-pro
+  - black-forest-labs/flux.2-max
+  - black-forest-labs/flux.2-flex
+  - black-forest-labs/flux.2-klein-4b
+  - bytedance-seed/seedream-4.5
+  - sourceful/riverflow-v2-max-preview
+  - sourceful/riverflow-v2-standard-preview
+  - sourceful/riverflow-v2-fast-preview
+  - sourceful/riverflow-v2-pro
+  - sourceful/riverflow-v2-fast
+  - openrouter/auto
+
+default_image_model: "bytedance-seed/seedream-4.5"
+
+# Ollama models for prompt optimization (dropdown suggestions; user can type another).
+default_optimization_model: "svjack/gpt-oss-20b-heretic"
+optimization_models:
+  - svjack/gpt-oss-20b-heretic
