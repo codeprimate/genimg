@@ -88,6 +88,43 @@ def _exception_to_message(exc: BaseException) -> str:
     return str(exc) if exc.args else "An unexpected error occurred."
 
 
+def _format_status(message: str, status_type: str = "info") -> str:
+    """
+    Format a status message with color and icon for better UX.
+
+    Args:
+        message: The status message text.
+        status_type: One of "info", "success", "error", "warning", "idle".
+
+    Returns:
+        HTML-formatted status string.
+    """
+    if status_type == "success":
+        icon = "✅"
+        color = "#10b981"  # green-500
+        bg_color = "#d1fae5"  # green-100
+    elif status_type == "error":
+        icon = "❌"
+        color = "#ef4444"  # red-500
+        bg_color = "#fee2e2"  # red-100
+    elif status_type == "warning":
+        icon = "⚠️"
+        color = "#f59e0b"  # amber-500
+        bg_color = "#fef3c7"  # amber-100
+    elif status_type == "info":
+        icon = "ℹ️"
+        color = "#3b82f6"  # blue-500
+        bg_color = "#dbeafe"  # blue-100
+    else:  # idle
+        return ""
+
+    # Use inline styles for reliability across themes
+    return f"""<div style="padding: 12px 16px; border-radius: 8px; background-color: {bg_color}; border-left: 4px solid {color}; margin: 8px 0;">
+    <span style="font-size: 16px; margin-right: 8px;">{icon}</span>
+    <span style="color: {color}; font-weight: 500;">{message}</span>
+</div>"""
+
+
 def _reference_source_for_process(value: Any) -> str | None:
     """
     Get a source suitable for process_reference_image from Gradio Image value.
@@ -215,18 +252,18 @@ def _run_generate_stream(
     box_value = (optimized_prompt_value or "").strip() or ""
 
     if not prompt or not prompt.strip():
-        yield "Enter a prompt to generate.", None, True, False, box_value
+        yield _format_status("Enter a prompt to generate.", "warning"), None, True, False, box_value
         return
     config = Config.from_env()
     try:
         config.validate()
     except ConfigurationError as e:
-        yield _exception_to_message(e), None, True, False, box_value
+        yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value
         return
     try:
         validate_prompt(prompt)
     except ValidationError as e:
-        yield _exception_to_message(e), None, True, False, box_value
+        yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value
         return
     ref_b64: str | None = None
     ref_hash: str | None = None
@@ -235,14 +272,14 @@ def _run_generate_stream(
         try:
             ref_b64, ref_hash = process_reference_image(ref_source, config=config)
         except (ValidationError, ImageProcessingError, FileNotFoundError) as e:
-            yield _exception_to_message(e), None, True, False, box_value
+            yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value
             return
     # Use edited optimized prompt if present; otherwise optimize when checkbox on
     if box_value:
         effective_prompt = box_value
     elif optimize:
         config.optimization_enabled = True
-        yield "Optimizing…", None, False, True, box_value
+        yield _format_status("Optimizing…", "info"), None, False, True, box_value
         try:
             effective_prompt = optimize_prompt(
                 prompt,
@@ -253,11 +290,11 @@ def _run_generate_stream(
             )
             box_value = effective_prompt
         except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
-            yield _exception_to_message(e), None, True, False, box_value
+            yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value
             return
     else:
         effective_prompt = prompt
-    yield "Generating…", None, False, True, box_value
+    yield _format_status("Generating…", "info"), None, False, True, box_value
     try:
         result = generate_image(
             effective_prompt,
@@ -273,13 +310,13 @@ def _run_generate_stream(
         RequestTimeoutError,
         CancellationError,
     ) as e:
-        yield _exception_to_message(e), None, True, False, box_value
+        yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value
         return
     elapsed = result.generation_time
     ts = int(time.time())
     out_path = Path(tempfile.gettempdir()) / f"{ts}.jpg"
     result.image.save(str(out_path), "JPEG", quality=90)
-    yield f"Done in {elapsed:.1f}s", str(out_path), True, False, box_value
+    yield _format_status(f"Done in {elapsed:.1f}s", "success"), str(out_path), True, False, box_value
 
 
 def _generate_click_handler(
@@ -311,7 +348,7 @@ def _generate_click_handler(
             )
     except GenimgError as e:
         yield (
-            _exception_to_message(e),
+            _format_status(_exception_to_message(e), "error"),
             None,
             gr.update(interactive=True),
             gr.update(interactive=False),
@@ -319,7 +356,7 @@ def _generate_click_handler(
         )
     except Exception as e:
         yield (
-            str(e),
+            _format_status(str(e), "error"),
             None,
             gr.update(interactive=True),
             gr.update(interactive=False),
@@ -345,7 +382,7 @@ def _optimize_click_handler(
             )
     except GenimgError as e:
         yield (
-            _exception_to_message(e),
+            _format_status(_exception_to_message(e), "error"),
             "",
             gr.update(interactive=True),
             gr.update(interactive=False),
@@ -353,7 +390,7 @@ def _optimize_click_handler(
         )
     except Exception as e:
         yield (
-            str(e),
+            _format_status(str(e), "error"),
             "",
             gr.update(interactive=True),
             gr.update(interactive=False),
@@ -391,18 +428,18 @@ def _run_optimize_only_stream(
     """
     prompt_ok = bool(prompt and prompt.strip())
     if not prompt_ok:
-        yield "Enter a prompt to optimize.", "", True, False, False
+        yield _format_status("Enter a prompt to optimize.", "warning"), "", True, False, False
         return
     config = Config.from_env()
     try:
         config.validate()
     except ConfigurationError as e:
-        yield _exception_to_message(e), "", True, False, True
+        yield _format_status(_exception_to_message(e), "error"), "", True, False, True
         return
     try:
         validate_prompt(prompt)
     except ValidationError as e:
-        yield _exception_to_message(e), "", True, False, True
+        yield _format_status(_exception_to_message(e), "error"), "", True, False, True
         return
     ref_hash: str | None = None
     ref_source = _reference_source_for_process(reference_value)
@@ -410,10 +447,10 @@ def _run_optimize_only_stream(
         try:
             _, ref_hash = process_reference_image(ref_source, config=config)
         except (ValidationError, ImageProcessingError, FileNotFoundError) as e:
-            yield _exception_to_message(e), "", True, False, True
+            yield _format_status(_exception_to_message(e), "error"), "", True, False, True
             return
     config.optimization_enabled = True
-    yield "Optimizing…", "", False, True, False
+    yield _format_status("Optimizing…", "info"), "", False, True, False
     try:
         optimized = optimize_prompt(
             prompt,
@@ -423,9 +460,9 @@ def _run_optimize_only_stream(
             config=config,
             cancel_check=cancel_check,
         )
-        yield "Optimized. Edit above if needed, then Generate.", optimized, True, False, True
+        yield _format_status("Optimized. Edit above if needed, then Generate.", "success"), optimized, True, False, True
     except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
-        yield _exception_to_message(e), "", True, False, True
+        yield _format_status(_exception_to_message(e), "error"), "", True, False, True
 
 
 def _build_blocks() -> gr.Blocks:
@@ -483,22 +520,18 @@ def _build_blocks() -> gr.Blocks:
         with gr.Row():
             generate_btn = gr.Button("Generate", variant="primary", interactive=False)
             stop_btn = gr.Button("Stop", interactive=False)
-        status_tb = gr.Textbox(
-            label="Status",
-            value="",
-            interactive=False,
-        )
+        status_html = gr.HTML(value="", visible=True)
         out_image = gr.Image(label="Output", type="filepath")
 
         gen_ev = generate_btn.click(
             fn=_generate_click_handler,
             inputs=[prompt_tb, optimize_cb, optimized_tb, ref_image, model_dd, optimization_dd],
-            outputs=[status_tb, out_image, generate_btn, stop_btn, optimized_tb],
+            outputs=[status_html, out_image, generate_btn, stop_btn, optimized_tb],
         )
         opt_ev = optimize_btn.click(
             fn=_optimize_click_handler,
             inputs=[prompt_tb, ref_image, optimization_dd],
-            outputs=[status_tb, optimized_tb, optimize_btn, stop_btn, generate_btn],
+            outputs=[status_html, optimized_tb, optimize_btn, stop_btn, generate_btn],
         )
         stop_btn.click(
             fn=_stop_click_handler,

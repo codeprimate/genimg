@@ -335,7 +335,7 @@ class TestGenerateClickHandler:
             mock_stream.side_effect = RuntimeError("oops")
             out = list(gradio_app._generate_click_handler("x", False, "", None, None, None))
         assert len(out) == 1
-        assert out[0][0] == "oops"
+        assert "oops" in out[0][0]
 
 
 @pytest.mark.unit
