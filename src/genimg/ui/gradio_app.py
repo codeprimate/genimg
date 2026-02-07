@@ -7,6 +7,7 @@ Uses only the public API: from genimg import ...
 """
 
 import argparse
+import base64
 import importlib.resources
 import os
 import tempfile
@@ -50,6 +51,47 @@ DEFAULT_UI_HOST = "127.0.0.1"
 
 # Shared cancellation event: Generate clears at start, Stop sets it
 _cancel_event = threading.Event()
+
+# Logo assets (package data); populated on first use
+_logo_favicon_path: str | None = None
+
+
+def _get_favicon_path() -> str | None:
+    """Return a path to the package favicon for Gradio. Uses a temp copy so it works from zip installs."""
+    global _logo_favicon_path
+    if _logo_favicon_path is not None:
+        return _logo_favicon_path
+    try:
+        ref = importlib.resources.files("genimg").joinpath("assets", "logo", "favicon.ico")
+        data = ref.read_bytes()
+    except FileNotFoundError:
+        return None
+    fd, path = tempfile.mkstemp(suffix=".ico", prefix="genimg_favicon_")
+    os.close(fd)
+    Path(path).write_bytes(data)
+    _logo_favicon_path = path
+    return path
+
+
+def get_logo_path(size: int = 128) -> str | None:
+    """Return a path to the logo PNG of the given size (16, 32, 48, 64, 128, 256, 512). None if missing."""
+    try:
+        ref = importlib.resources.files("genimg").joinpath("assets", "logo", f"logo_{size}.png")
+        with importlib.resources.as_file(ref) as f:
+            return str(f) if f.is_file() else None
+    except (FileNotFoundError, OSError):
+        return None
+
+
+def _logo_data_url(size: int = 64) -> str | None:
+    """Return a data URL for the logo PNG (for embedding in HTML), or None if missing."""
+    try:
+        ref = importlib.resources.files("genimg").joinpath("assets", "logo", f"logo_{size}.png")
+        data = ref.read_bytes()
+    except FileNotFoundError:
+        return None
+    b64 = base64.standard_b64encode(data).decode("ascii")
+    return f"data:image/png;base64,{b64}"
 
 
 def _load_ui_models() -> tuple[list[str], str, list[str], str]:
@@ -520,33 +562,36 @@ def _build_blocks() -> gr.Blocks:
     """Build the Gradio Blocks UI (layout + generate handler, no cancellation yet)."""
     image_models, default_image, opt_models, default_opt = _load_ui_models()
 
-    with gr.Blocks(title="genimg – AI image generation") as app:
-        gr.HTML("""
-<div style="text-align: center; margin: 30px 0 40px 0;">
-    <h1 style="
-        font-size: 3.5em;
-        font-weight: 700;
-        margin: 0 0 15px 0;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        letter-spacing: -0.02em;
-    ">genimg</h1>
-    <p style="
-        font-size: 1.3em;
-        color: #6b7280;
-        margin: 0 0 10px 0;
-        font-weight: 400;
-    ">AI-powered image generation with intelligent prompt optimization</p>
-    <p style="
-        font-size: 0.95em;
-        color: #9ca3af;
-        margin: 0;
-        font-weight: 400;
-    ">Generate stunning images using OpenRouter models • Enhance prompts with local Ollama • Reference images for style transfer</p>
+    logo_img = ""
+    logo_url = _logo_data_url(64)
+    if logo_url:
+        logo_img = f'<img src="{logo_url}" alt="genimg" width="64" height="64" style="display: block; flex-shrink: 0;" />'
+
+    header_html = f"""
+<div style="display: flex; align-items: center; gap: 32px; margin: 16px 0 24px 0; flex-wrap: wrap;">
+    <div style="flex-shrink: 0; display: flex; align-items: center; gap: 16px;">
+        {logo_img}
+        <h1 style="
+            font-size: 2.5em;
+            font-weight: 700;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        ">genimg</h1>
+    </div>
+    <div style="flex: 1; min-width: 200px;">
+        <p style="font-size: 1.1em; color: #6b7280; margin: 0 0 4px 0; font-weight: 400;">AI-powered image generation with intelligent prompt optimization</p>
+        <p style="font-size: 0.9em; color: #9ca3af; margin: 0; font-weight: 400;">OpenRouter models • Ollama prompt enhancement • Reference images for style transfer</p>
+    </div>
 </div>
-""")
+"""
+
+    with gr.Blocks(title="genimg – AI image generation") as app:
+        gr.HTML(header_html)
+        status_html = gr.HTML(value="", visible=True)
 
         with gr.Row():
             with gr.Column():
@@ -598,7 +643,6 @@ def _build_blocks() -> gr.Blocks:
         with gr.Row():
             generate_btn = gr.Button("Generate", variant="primary", interactive=False)
             stop_btn = gr.Button("Stop", interactive=False)
-        status_html = gr.HTML(value="", visible=True)
         out_image = gr.Image(label="Output", type="filepath")
 
         gen_ev = generate_btn.click(
@@ -674,11 +718,15 @@ def launch(
         except ValueError:
             port = DEFAULT_UI_PORT
     app = _build_blocks()
-    app.launch(
-        server_name=host,
-        server_port=port,
-        share=share,
-    )
+    favicon_path = _get_favicon_path()
+    launch_kwargs: dict[str, Any] = {
+        "server_name": host,
+        "server_port": port,
+        "share": share,
+    }
+    if favicon_path:
+        launch_kwargs["favicon_path"] = favicon_path
+    app.launch(**launch_kwargs)
 
 
 def main() -> None:

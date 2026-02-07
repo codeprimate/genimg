@@ -75,7 +75,7 @@ Repository = "https://github.com/codeprimate/genimg"
 where = ["src"]
 
 [tool.setuptools.package-data]
-genimg = ["prompts.yaml", "ui_models.yaml"]
+genimg = ["prompts.yaml", "ui_models.yaml", "assets/logo/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
