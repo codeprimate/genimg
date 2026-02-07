@@ -30,6 +30,7 @@ dependencies = [
     "pillow-heif>=0.13.0",
     "click>=8.1.0",
     "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +64,9 @@ Repository = "https://github.com/yourusername/genimg"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+genimg = ["prompts.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

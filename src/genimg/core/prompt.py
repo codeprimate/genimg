@@ -8,25 +8,12 @@ import subprocess
 from typing import Optional
 
 from genimg.core.config import Config, get_config
+from genimg.core.prompts_loader import get_optimization_template
 from genimg.utils.cache import get_cache
 from genimg.utils.exceptions import APIError, RequestTimeoutError, ValidationError
 
-# Prompt optimization template
-OPTIMIZATION_TEMPLATE = """You are a professional prompt engineer for AI image generation. Your task is to enhance the user's prompt to produce better, more detailed images.
-
-User's original prompt:
-{original_prompt}
-
-Please enhance this prompt by:
-1. Adding technical photography details (camera angle, lighting, composition) if applicable
-2. Clarifying spatial relationships and scene layout
-3. Specifying style and artistic qualities
-4. Adding relevant details that match the intent
-5. Structuring the information clearly
-
-IMPORTANT: If the prompt mentions a reference image, preserve those instructions EXACTLY as written.
-
-Return ONLY the enhanced prompt, without any explanations or meta-commentary."""
+# Loaded from prompts.yaml; kept as name for backward compatibility and tests
+OPTIMIZATION_TEMPLATE = get_optimization_template()
 
 
 def validate_prompt(prompt: str) -> None:
@@ -115,8 +102,8 @@ def optimize_prompt_with_ollama(
             "Visit https://ollama.ai for installation instructions."
         )
 
-    # Prepare the optimization prompt
-    optimization_prompt = OPTIMIZATION_TEMPLATE.format(original_prompt=prompt)
+    # Prepare the optimization prompt (template loaded from prompts.yaml)
+    optimization_prompt = get_optimization_template().format(original_prompt=prompt)
 
     try:
         # Run Ollama

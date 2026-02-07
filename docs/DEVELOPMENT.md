@@ -93,15 +93,7 @@ The library is the single source of truth for all product behavior (see LIBRARY_
 
 ### Changing the Prompt Optimization Template
 
-Edit `OPTIMIZATION_TEMPLATE` in `src/genimg/core/prompt.py`:
-
-```python
-OPTIMIZATION_TEMPLATE = """Your new template here
-{original_prompt}
-"""
-```
-
-Then run tests to verify it still works.
+Edit the `optimization.template` section in `src/genimg/prompts.yaml`. The template must include the placeholder `{original_prompt}`. Other prompt templates can be added there and loaded via `genimg.core.prompts_loader.get_prompt(key, subkey)`. Run tests to verify after changes.
 
 ### Adding a New CLI Command
 

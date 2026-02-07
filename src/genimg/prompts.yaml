@@ -1,0 +1,20 @@
+# genimg prompt templates
+# Add new prompt keys here; code loads them via genimg.core.prompts_loader.
+
+optimization:
+  template: |
+    You are a professional prompt engineer for AI image generation. Your task is to enhance the user's prompt to produce better, more detailed images.
+
+    User's original prompt:
+    {original_prompt}
+
+    Please enhance this prompt by:
+    1. Adding technical photography details (camera angle, lighting, composition) if applicable
+    2. Clarifying spatial relationships and scene layout
+    3. Specifying style and artistic qualities
+    4. Adding relevant details that match the intent
+    5. Structuring the information clearly
+
+    IMPORTANT: If the prompt mentions a reference image, preserve those instructions EXACTLY as written.
+
+    Return ONLY the enhanced prompt, without any explanations or meta-commentary.

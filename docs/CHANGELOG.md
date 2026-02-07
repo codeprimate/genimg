@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Environment variable template (.env.example)
 
 ### Changed
-- N/A (initial release)
+- Prompt templates (e.g. optimization) are loaded from `src/genimg/prompts.yaml` instead of being hardcoded in `prompt.py`
 
 ### Fixed
 - N/A (initial release)
