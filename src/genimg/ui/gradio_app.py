@@ -373,6 +373,12 @@ def _prompt_change_handler(text: str) -> tuple[Any, Any]:
     return gr.update(interactive=enabled), gr.update(interactive=enabled)
 
 
+def _optimize_checkbox_handler(enabled: bool) -> Any:
+    """Update tab label based on optimization checkbox state."""
+    label = "Optimized Prompt (enabled)" if enabled else "Optimized Prompt"
+    return gr.update(label=label)
+
+
 def _run_optimize_only_stream(
     prompt: str,
     reference_value: Any,
@@ -417,7 +423,7 @@ def _run_optimize_only_stream(
             config=config,
             cancel_check=cancel_check,
         )
-        yield "Optimized. Edit below if needed, then Generate.", optimized, True, False, True
+        yield "Optimized. Edit above if needed, then Generate.", optimized, True, False, True
     except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
         yield _exception_to_message(e), "", True, False, True
 
@@ -439,7 +445,7 @@ def _build_blocks() -> gr.Blocks:
                             lines=12,
                             max_lines=20,
                         )
-                    with gr.Tab("Optimized Prompt"):
+                    with gr.Tab("Optimized Prompt (enabled)") as optimized_tab:
                         optimize_cb = gr.Checkbox(
                             label="✨ Enable prompt optimization (Ollama)",
                             value=True,
@@ -450,7 +456,6 @@ def _build_blocks() -> gr.Blocks:
                             lines=8,
                             max_lines=12,
                         )
-                        optimize_btn = gr.Button("Optimize", variant="secondary", interactive=False)
                         optimization_dd = gr.Dropdown(
                             label="Optimization model (Ollama)",
                             value=default_opt,
@@ -459,6 +464,7 @@ def _build_blocks() -> gr.Blocks:
                             visible=True,
                             info="Ollama model for prompt optimization.",
                         )
+                        optimize_btn = gr.Button("Enhance Prompt", variant="secondary", interactive=False)
             with gr.Column():
                 ref_image = gr.Image(
                     label="Reference image",
@@ -466,9 +472,6 @@ def _build_blocks() -> gr.Blocks:
                     sources=["upload", "clipboard"],
                 )
 
-        with gr.Row():
-            generate_btn = gr.Button("Generate", variant="primary", interactive=False)
-            stop_btn = gr.Button("Stop", interactive=False)
         model_dd = gr.Dropdown(
             label="Image model",
             value=default_image,
@@ -477,6 +480,9 @@ def _build_blocks() -> gr.Blocks:
             visible=True,
             info="OpenRouter image model. Type a model ID for another.",
         )
+        with gr.Row():
+            generate_btn = gr.Button("Generate", variant="primary", interactive=False)
+            stop_btn = gr.Button("Stop", interactive=False)
         status_tb = gr.Textbox(
             label="Status",
             value="",
@@ -505,6 +511,12 @@ def _build_blocks() -> gr.Blocks:
             fn=_prompt_change_handler,
             inputs=[prompt_tb],
             outputs=[generate_btn, optimize_btn],
+        )
+
+        optimize_cb.change(
+            fn=_optimize_checkbox_handler,
+            inputs=[optimize_cb],
+            outputs=[optimized_tab],
         )
 
     return cast(gr.Blocks, app)
