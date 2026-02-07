@@ -1,17 +1,17 @@
 # AGENT.md - AI Agent Development Guide
 
-This document provides guidance for AI agents working on the genimg project. It contains architectural context, coding patterns, and development practices.
+This document provides essential context for AI agents working on the genimg project. For detailed procedures, see the referenced documentation.
 
 ## Project Overview
 
-**genimg** is an AI image generation tool that combines OpenRouter's image generation capabilities with local Ollama-based prompt optimization. Users can generate images via CLI, web UI, or Python library.
+**genimg** is an AI image generation tool combining OpenRouter's image generation with local Ollama-based prompt optimization. Users interact via CLI, web UI, or Python library.
 
-### Core Architecture
+### Architecture
 
 ```
 User Input (prompt + optional reference image)
     ↓
-Prompt Optimization (optional, via Ollama)
+Prompt Optimization (optional, via Ollama subprocess)
     ↓
 Image Generation (OpenRouter API)
     ↓
@@ -20,314 +20,235 @@ Image Output (saved file or displayed in UI)
 
 ### Key Design Principles
 
-1. **Separation of Concerns**: Core logic, UI, CLI, and utils are separate
-2. **Type Safety**: All functions have type hints
-3. **Error Handling**: Custom exceptions for different error categories
-4. **Caching**: In-memory cache for optimized prompts (session-scoped)
-5. **Configurability**: Environment variables + programmatic configuration
+1. **Public API Boundary**: CLI and UI only import from `genimg` root (never `genimg.core.*` or `genimg.utils.*`)
+2. **Type Safety**: All functions have type hints; mypy strict mode enforced
+3. **Separation of Concerns**: Core logic, UI, CLI, and utils are independent
+4. **Error Categories**: Custom exception hierarchy for clear error handling
+5. **Session Caching**: In-memory cache for optimized prompts (no persistence)
 
-## Module Responsibilities
+## Module Structure
 
-### `core/config.py`
-- Loads and validates API keys
-- Manages model selection
-- Provides global config instance
-- **Key Classes**: `Config`
-- **Key Functions**: `get_config()`, `set_config()`
-
-### `core/prompt.py`
-- Validates prompts
-- Calls Ollama for optimization
-- Uses subprocess to run `ollama run <model>`
-- Caches optimized prompts
-- **Key Functions**: `optimize_prompt()`, `validate_prompt()`
-
-### `core/image_gen.py`
-- Calls OpenRouter API
-- Handles multimodal requests (text + optional image)
-- Parses responses (JSON with base64 or direct image)
-- Tracks generation time
-- **Key Functions**: `generate_image()`
-- **Key Classes**: `GenerationResult`
-
-### `core/reference.py`
-- Loads and validates reference images
-- Resizes to 2MP limit
-- Converts to RGB
-- Encodes to base64
-- **Key Functions**: `process_reference_image()`, `get_image_hash()`
-
-### `utils/cache.py`
-- In-memory prompt caching
-- Hash-based keys (prompt + model + reference_hash)
-- Session-scoped (no persistence)
-- **Key Classes**: `PromptCache`
-- **Key Functions**: `get_cache()`, `clear_cache()`
-
-### `utils/exceptions.py`
-- Custom exception hierarchy
-- Base: `GenimgError`
-- Specific: `ValidationError`, `APIError`, `NetworkError`, `CancellationError`, `ConfigurationError`, `ImageProcessingError`
-
-## Implementing the CLI (and UI)
-
-When adding or changing CLI or UI code:
-
-- **Use only the public API.** Import from `genimg` (the package root), e.g. `from genimg import get_config, generate_image, validate_prompt, optimize_prompt, process_reference_image, clear_cache, ...` and the exception classes. Do **not** import from `genimg.core.*` or `genimg.utils.*` in CLI/UI code, except for type hints if strictly needed.
-- **Config:** Use `Config.from_env()` and optionally `config.validate()` before operations; pass `config=` into library calls so behavior is testable and overridable.
-- **Errors:** Map library exceptions to exit codes and user-facing messages (e.g. `ValidationError` → 2, `APIError` / `NetworkError` → 1). See `genimg.utils.exceptions` for the full hierarchy.
-- **Cancellation:** Pass optional `cancel_check: Callable[[], bool]` (e.g. `lambda: cancel_event.is_set()`) to `optimize_prompt` and `generate_image`; when it returns True the library raises `CancellationError` and (for Ollama) terminates the subprocess. CLI can set an event on Ctrl+C and pass it as cancel_check.
-
-## Python Practices
-
-### Python Version
-- Minimum: Python 3.10 (required for Gradio 6; see ADR-009)
-- Target: 3.10, 3.11, 3.12, 3.13
-
-### Type Hints
-- All functions must have type hints
-- Use `Optional[T]` for nullable types
-- Built-in generics (`list[str]`, `tuple[str, str]`) are fine (Python 3.10+)
-
-### Code Style
-- **Formatter**: black (line-length: 100)
-- **Linter**: ruff (replaces flake8, isort, etc.)
-- **Type Checker**: mypy (strict mode)
-
-### Error Handling Pattern
-```python
-try:
-    # Operation
-    pass
-except SpecificError as e:
-    raise CustomException("User-friendly message", ...) from e
+```
+src/genimg/
+├── __init__.py          # Public API (what CLI/UI import)
+├── __main__.py          # Entry point for `python -m genimg`
+├── core/                # Business logic (INTERNAL - do not import in CLI/UI)
+│   ├── config.py        # Configuration management
+│   ├── image_gen.py     # OpenRouter API integration
+│   ├── prompt.py        # Ollama prompt optimization
+│   ├── prompts_loader.py # YAML prompt template loader
+│   └── reference.py     # Reference image processing
+├── cli/                 # Click CLI (imports from genimg root only)
+├── ui/                  # Gradio web UI (imports from genimg root only)
+├── utils/               # Utilities (INTERNAL)
+│   ├── cache.py         # In-memory prompt cache
+│   └── exceptions.py    # Exception hierarchy
+├── prompts.yaml         # Bundled prompt templates
+└── ui_models.yaml       # UI model dropdown lists
 ```
 
-### Configuration Pattern
-```python
-config = get_config()  # Global instance
-config.validate()      # Always validate before use
+### Module Responsibilities
+
+- **core/config.py**: Load/validate API keys, manage model selection, global config instance
+- **core/image_gen.py**: Call OpenRouter API, handle multimodal requests, parse responses
+- **core/prompt.py**: Validate prompts, call Ollama for optimization, cache results
+- **core/reference.py**: Load/resize/encode reference images to base64
+- **core/prompts_loader.py**: Load prompt templates from bundled YAML files
+- **utils/cache.py**: In-memory hash-based cache for optimized prompts
+- **utils/exceptions.py**: Custom exception hierarchy (see below)
+
+### Exception Hierarchy
+
+```
+GenimgError (base)
+├── ValidationError        # Invalid input (exit code 2)
+├── ConfigurationError     # Invalid config (exit code 2)
+├── ImageProcessingError   # Image operation failed (exit code 2)
+├── CancellationError      # User cancelled (exit code 130)
+├── APIError              # OpenRouter API error (exit code 1)
+├── NetworkError          # Network/connection error (exit code 1)
+└── RequestTimeoutError   # Request timeout (exit code 1)
 ```
 
-### API Call Pattern
-```python
-try:
-    response = requests.post(url, json=payload, timeout=timeout)
-    if response.status_code != 200:
-        raise APIError(...)
-except requests.exceptions.Timeout:
-    raise NetworkError(...)
-```
+## Python Requirements
 
-## Testing Practices
+- **Version**: Python 3.10+ (required for Gradio 6.x)
+- **Style**: black (line-length: 100), ruff, mypy strict
+- **Type Hints**: Required on all functions
+- **Generics**: Use built-in (`list[str]`, `dict[str, Any]`) - Python 3.10+ syntax
 
-### Test Organization
-- `tests/unit/`: Unit tests (mock all external dependencies)
-- `tests/integration/`: Integration tests (may use real APIs in CI)
-- `tests/fixtures/`: Shared fixtures and sample data
+## Virtual Environment (Critical)
 
-### Coverage Requirements
-- Overall: >80%
-- Critical modules (config, cache): >95%
-- Exceptions module: 100%
+**Always use the project venv** (`.venv/`) for all Python commands. Never use system Python or another environment.
 
-### Pytest Markers
-- `@pytest.mark.unit`: Unit test
-- `@pytest.mark.integration`: Integration test  
-- `@pytest.mark.slow`: Slow-running test
+### Run commands explicitly with venv executables:
 
-### Running Tests
-Use the project venv (see "Virtual environment (venv)" above):
 ```bash
-.venv/bin/pytest tests/        # All tests
-.venv/bin/pytest tests/unit/  # Unit only
-.venv/bin/pytest tests/ -v     # Verbose
-make test                      # Same, if venv is already activated
-make test-unit
-make test-integration
-make coverage
-```
-
-## Virtual environment (venv) — required
-
-**Always use the project venv for Python commands.** Do not run `python`, `pip`, `pytest`, `ruff`, or `mypy` with the system or another environment. The project uses `.venv/` (see .gitignore).
-
-### When you run commands
-
-1. **Preferred (no shell activation):** Use the venv’s executables explicitly so the right environment is used every time:
-   ```bash
-   .venv/bin/pip install -e .
-   .venv/bin/pip install -r requirements-dev.txt
-   .venv/bin/pytest tests/
-   .venv/bin/ruff check src/ tests/
-   .venv/bin/ruff format src/ tests/
-   .venv/bin/mypy src/
-   ```
-2. **If the user has activated the venv:** `make test`, `make lint`, `make typecheck`, and `make check` will use the activated environment. Only rely on this when you know the venv is active (e.g. the user said they activated it).
-3. **In CI or automation:** Always call `.venv/bin/python`, `.venv/bin/pytest`, etc., or run in a step that activates `.venv` first.
-
-### Ensure venv exists
-
-If `.venv` might not exist (e.g. fresh clone), create and install before running tests or tools:
-```bash
-python3 -m venv .venv
 .venv/bin/pip install -e .
-.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest tests/
+.venv/bin/ruff check src/ tests/
+.venv/bin/mypy src/
 ```
-Then use `.venv/bin/pytest` (and similar) for all subsequent commands.
 
-### Why this matters
+### Or activate venv first (if user has done so):
 
-- Running `pytest` or `make test` without the project venv can use a different Python and miss project dependencies (e.g. pytest not found, wrong package).
-- Explicit `.venv/bin/...` commands are deterministic and work even when the shell is not activated.
+```bash
+source .venv/bin/activate  # then: make test, make lint, etc.
+```
+
+See `.cursor/rules/venv.mdc` for the full rule.
 
 ## Development Workflow
 
-### Setup
-```bash
-python -m venv .venv
-source .venv/bin/activate   # optional if you will use .venv/bin/... for every command
-.venv/bin/pip install -e .
-.venv/bin/pip install -r requirements-dev.txt
-```
+### Before Starting
+
+1. **Read relevant docs first**:
+   - `DECISIONS.md` - Understand architectural decisions (ADRs)
+   - `SPEC.md` - Functional requirements
+   - `DEVELOPMENT.md` - Detailed procedures and common tasks
+
+### Making Changes
+
+1. Implement with tests (maintain >80% coverage)
+2. Add type hints to all new functions
+3. Use appropriate exception types
+4. Run quality checks: `make check-all` (format, lint, typecheck, test)
 
 ### Before Committing
+
 ```bash
-make check  # Runs: format, lint, typecheck, test — ensure venv is active or use .venv/bin/... for each tool
+make check-all  # Runs: ruff format, ruff check, mypy, pytest
 ```
 
-### Adding a New Feature
-1. Update DECISIONS.md if architectural
-2. Implement core logic with tests
-3. Update UI/CLI if needed
-4. Run quality checks
-5. Update documentation
+### Documentation Updates
+
+- **DEVELOPMENT.md** - Add detailed procedures for new development tasks
+- **EXAMPLES.md** - Add code examples for new features
+- **DECISIONS.md** - Document architectural decisions (ADR format)
+- **CHANGELOG.md** - Track user-facing changes
+- **README.md** - Update if user-facing features change
+
+## Testing
+
+- **Unit tests**: `tests/unit/` - Mock all external dependencies
+- **Integration tests**: `tests/integration/` - Real API (manual, opt-in only)
+- **Coverage target**: >80% overall, >95% for config/cache
+- **Markers**: `@pytest.mark.unit`, `@pytest.mark.integration`, `@pytest.mark.slow`
+
+### Running Tests
+
+```bash
+make test              # Unit tests only (default)
+make test-integration  # Opt-in: requires GENIMG_RUN_INTEGRATION_TESTS=1
+make coverage          # Generate HTML coverage report
+```
+
+**Integration tests** call real OpenRouter API (slow, costs money). Excluded by default via `pyproject.toml` (`-m "not integration"`).
+
+## CLI and UI Implementation
+
+### Critical Rule: Public API Only
+
+CLI and UI **must only** import from `genimg` root:
+
+```python
+from genimg import (
+    Config, generate_image, optimize_prompt, validate_prompt,
+    process_reference_image, get_config, clear_cache,
+    ValidationError, APIError, CancellationError, ...
+)
+```
+
+**Never** import from `genimg.core.*` or `genimg.utils.*` in CLI/UI code.
+
+### CLI Exit Codes
+
+- `0` - Success
+- `1` - API/Network errors (`APIError`, `NetworkError`, `RequestTimeoutError`)
+- `2` - Validation/Config errors (`ValidationError`, `ConfigurationError`, `ImageProcessingError`)
+- `130` - Cancellation (`CancellationError` - standard SIGINT code)
+
+### Cancellation Pattern
+
+```python
+import threading
+cancel_event = threading.Event()
+
+# In SIGINT handler: cancel_event.set()
+
+result = generate_image(
+    prompt="...",
+    cancel_check=lambda: cancel_event.is_set()
+)
+```
+
+Library polls `cancel_check()` every 250ms; raises `CancellationError` when True. For Ollama, subprocess is terminated.
+
+## Configuration
+
+### Environment Variables
+
+**Required:**
+- `OPENROUTER_API_KEY` - OpenRouter API key (format: `sk-or-v1-...`)
+
+**Optional:**
+- `GENIMG_DEFAULT_MODEL` - Default image model (default: `bytedance-seed/seedream-4.5`)
+- `GENIMG_OPTIMIZATION_MODEL` - Ollama model (default: `svjack/gpt-oss-20b-heretic`)
+- `GENIMG_UI_PORT`, `GENIMG_UI_HOST`, `GENIMG_UI_SHARE` - UI launch options
+- `GENIMG_RUN_INTEGRATION_TESTS` - Enable integration tests (set to `1`)
+
+See `.env.example` for full reference.
 
 ## Common Patterns
 
-### Validating User Input
-```python
-from genimg.utils.exceptions import ValidationError
+See `EXAMPLES.md` for detailed code examples. Key patterns:
 
-if not value or not value.strip():
-    raise ValidationError("Field cannot be empty", field="field_name")
-```
+- **Config**: Use `Config.from_env()` and call `config.validate()` before operations
+- **Errors**: Use appropriate exception types from `utils.exceptions`
+- **Cache**: Access via `get_cache()`, clear with `clear_cache()`
+- **Images**: Process reference images with `process_reference_image()`
+- **Prompts**: Load templates via `prompts_loader.get_optimization_template()`
 
-### Using the Cache
-```python
-from genimg.utils.cache import get_cache
+## Key Implementation Details
 
-cache = get_cache()
-cached_value = cache.get(key, model, ref_hash)
-if cached_value:
-    return cached_value
-# ... compute value ...
-cache.set(key, model, value, ref_hash)
-```
-
-### Processing Images
-```python
-from genimg.core.reference import process_reference_image
-
-encoded, hash = process_reference_image("/path/to/image.jpg")
-# encoded: base64 string
-# hash: SHA256 hash for caching
-```
-
-## Gotchas & Lessons Learned
-
-### API Integration
-
-**OpenRouter Response Formats**:
-- May return JSON with `choices[0].message.images[]`
-- Or may return direct image with `content-type: image/*`
+### OpenRouter API
+- May return JSON (`choices[0].message.images[]`) or direct image (`content-type: image/*`)
 - Always check content-type header first
 
-**Ollama Subprocess**:
-- Use `subprocess.Popen` with `communicate()` for timeout support
-- Always handle `TimeoutExpired` and kill process
-- Check `returncode` for errors
+### Ollama Integration
+- Runs as subprocess via `Popen`
+- Handles timeout with `communicate(timeout=...)`
+- Terminated on cancellation
 
 ### Image Processing
+- Reference images resized to 2MP (maintains aspect ratio)
+- Requires `pillow-heif` for HEIC/HEIF support
+- RGBA converted to RGB (composite on white background)
 
-**HEIC/HEIF Support**:
-- Requires `pillow-heif` library
-- Register opener: `from pillow_heif import register_heif_opener; register_heif_opener()`
-- Fails gracefully if library not installed
-
-**Image Resizing**:
-- Use `Image.Resampling.LANCZOS` for quality
-- Calculate scale based on total pixels, not dimensions
-- Always maintain aspect ratio
-
-**RGB Conversion**:
-- Handle RGBA by compositing on white background
-- Use alpha channel for proper transparency
-
-### Configuration
-
-**Environment Variables**:
-- Load via `python-dotenv`
-- Call `load_dotenv()` early (done in config.py)
-- Validate API keys (must start with "sk-")
-
-## Module Interdependencies
-
-```
-utils/exceptions.py (base - no dependencies)
-    ↓
-utils/cache.py
-    ↓
-core/config.py
-    ↓
-core/reference.py
-    ↓
-core/prompt.py → uses cache
-    ↓
-core/image_gen.py → uses reference
-    ↓
-cli/commands.py, ui/gradio_app.py
-```
-
-## Future Improvements
-
-- Async support for concurrent generations
-- Persistent cache (disk-based)
-- Streaming support for Ollama
-- Progress callbacks for long operations
-- Batch generation support
-
-## External Dependencies
-
-### Critical
-- **requests**: HTTP client for OpenRouter
-- **pillow**: Image processing
-- **gradio**: Web UI framework
-- **click**: CLI framework
-- **python-dotenv**: Environment variable loading
-
-### Optional
-- **pillow-heif**: HEIC/HEIF format support
-
-### Development
-- **pytest**: Testing framework
-- **black**: Code formatter
-- **ruff**: Linter
-- **mypy**: Type checker
-- **pytest-cov**: Coverage reporting
-
-## When Making Changes
-
-1. **Read DECISIONS.md** first - understand why things are the way they are
-2. **Update tests** - maintain >80% coverage
-3. **Run linters** - `make check` before committing
-4. **Update EXAMPLES.md** - if adding new features
-5. **Update this file** - capture new patterns or gotchas
-6. **Update CHANGELOG.md** - track what changed
+### Package Data
+- `prompts.yaml` and `ui_models.yaml` bundled with package
+- Accessed via `importlib.resources.files("genimg").joinpath("file.yaml")`
+- Declared in `pyproject.toml` under `[tool.setuptools.package-data]`
 
 ## Getting Help
 
-- Check EXAMPLES.md for usage patterns
-- Check DEVELOPMENT.md for common tasks
-- Check DECISIONS.md for architectural context
-- Read the SPEC.md for requirements
+- **DEVELOPMENT.md** - Detailed procedures for common development tasks
+- **EXAMPLES.md** - Code examples for library, CLI, and error handling
+- **DECISIONS.md** - Architecture Decision Records (ADRs) explaining design choices
+- **SPEC.md** - Functional requirements and user capabilities
+- **README.md** - User-facing documentation and quick start
+
+## Quick Reference
+
+### Make Targets
+- `make install-dev` - Install with dev dependencies
+- `make check-all` - Run all quality checks (format, lint, typecheck, test)
+- `make test`, `make test-unit`, `make test-integration` - Run tests
+- `make coverage` - Generate HTML coverage report
+- `make clean` - Remove build artifacts
+
+### Console Scripts
+- `genimg generate "prompt"` - Generate image
+- `genimg ui` - Launch web UI
+- `genimg-ui` - Launch web UI (direct entry point)
+- `python -m genimg` - Alternative CLI invocation

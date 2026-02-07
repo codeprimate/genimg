@@ -35,6 +35,25 @@ cp .env.example .env
 # Edit .env and add your OpenRouter API key
 ```
 
+#### Environment Variables Reference
+
+**Required:**
+- `OPENROUTER_API_KEY` — OpenRouter API key (format: `sk-or-v1-...`). Get from https://openrouter.ai/keys
+
+**Optional (Image Generation):**
+- `GENIMG_DEFAULT_MODEL` — Default image generation model (default: `bytedance-seed/seedream-4.5`)
+- `GENIMG_OPTIMIZATION_MODEL` — Default Ollama model for prompt optimization (default: `svjack/gpt-oss-20b-heretic`)
+
+**Optional (Web UI):**
+- `GENIMG_UI_PORT` — Gradio server port (default: 7860)
+- `GENIMG_UI_HOST` — Server host binding (default: 127.0.0.1; use 0.0.0.0 for LAN access)
+- `GENIMG_UI_SHARE` — Create public share link (set to "1" or "true" for gradio.live link)
+
+**Optional (Testing):**
+- `GENIMG_RUN_INTEGRATION_TESTS` — Enable integration tests (set to "1" to opt-in; default: disabled)
+
+See `.env.example` for a complete template with all variables.
+
 ### Verify Setup
 
 **Use the project venv** so tests and tools see the right dependencies. (AI agents: see AGENT.md "Virtual environment (venv)" and the Cursor rule in `.cursor/rules/venv.mdc`.) Either activate it first:
@@ -152,6 +171,156 @@ class NewError(GenimgError):
 
 2. Export in `src/genimg/__init__.py`
 3. Add tests in `tests/unit/test_exceptions.py`
+
+## Implementation Patterns
+
+### Using the Public API
+
+CLI and UI code must only import from the `genimg` root package:
+
+```python
+# ✅ CORRECT - Import from public API
+from genimg import (
+    Config, generate_image, optimize_prompt, validate_prompt,
+    process_reference_image, get_config, set_config, clear_cache,
+    ValidationError, APIError, CancellationError, GenimgError
+)
+
+# ❌ WRONG - Do not import from internal modules
+from genimg.core.config import Config
+from genimg.utils.exceptions import ValidationError
+```
+
+### Configuration Pattern
+
+```python
+from genimg import Config
+
+# Load from environment
+config = Config.from_env()
+
+# Validate before use
+config.validate()  # Raises ConfigurationError if invalid
+
+# Override programmatically
+config.default_model = "openai/gpt-5-image"
+config.optimization_enabled = True
+
+# Pass to operations
+result = generate_image(prompt="...", config=config)
+```
+
+### Error Handling with Exit Codes (CLI)
+
+```python
+from genimg import ValidationError, APIError, NetworkError, CancellationError
+import sys
+
+try:
+    # operation
+    result = generate_image(...)
+except ValidationError as e:
+    print(f"Validation error: {e}", file=sys.stderr)
+    sys.exit(2)  # EXIT_VALIDATION_OR_CONFIG
+except (APIError, NetworkError) as e:
+    print(f"API error: {e}", file=sys.stderr)
+    sys.exit(1)  # EXIT_API_OR_NETWORK
+except CancellationError:
+    print("Cancelled.", file=sys.stderr)
+    sys.exit(130)  # EXIT_CANCELLED (standard SIGINT code)
+```
+
+### Cancellation Support
+
+```python
+import threading
+from genimg import generate_image, optimize_prompt, CancellationError
+
+cancel_event = threading.Event()
+
+# In your SIGINT handler (or UI cancel button):
+def handle_cancel():
+    cancel_event.set()
+
+# Pass cancel_check to operations
+try:
+    result = generate_image(
+        prompt="...",
+        cancel_check=lambda: cancel_event.is_set()
+    )
+except CancellationError:
+    print("Operation cancelled by user")
+```
+
+**How it works:**
+- Library polls `cancel_check()` every 250ms
+- When it returns True, library raises `CancellationError`
+- For Ollama: subprocess is terminated
+- For OpenRouter: HTTP request may complete in background (no sync abort)
+
+### Using the Cache
+
+```python
+from genimg import get_cache, clear_cache, get_cached_prompt
+
+# Get cache instance
+cache = get_cache()
+
+# Check for cached value
+cached = cache.get(prompt, model, reference_hash)
+if cached:
+    return cached
+
+# Set cached value
+cache.set(prompt, model, optimized_prompt, reference_hash)
+
+# Clear entire cache
+clear_cache()
+
+# Get specific cached prompt
+cached_prompt = get_cached_prompt(prompt, model, reference_hash)
+```
+
+### Loading Prompt Templates
+
+```python
+from genimg.core.prompts_loader import get_optimization_template, get_prompt
+
+# Get optimization template (includes {reference_image_instruction} placeholder)
+template = get_optimization_template()
+
+# Get any prompt by key
+custom_prompt = get_prompt("optimization", "template")
+```
+
+### Processing Reference Images
+
+```python
+from genimg import process_reference_image
+
+# Process and encode image
+encoded_b64, image_hash = process_reference_image("/path/to/image.jpg")
+
+# Use in generation
+result = generate_image(
+    prompt="...",
+    reference_image_b64=encoded_b64
+)
+
+# Use hash for cache key
+cached = get_cached_prompt(prompt, model, reference_hash=image_hash)
+```
+
+### Accessing Package Data Files
+
+```python
+import importlib.resources
+import yaml
+
+# Load bundled YAML files (prompts.yaml, ui_models.yaml)
+with importlib.resources.files("genimg").joinpath("prompts.yaml").open(encoding="utf-8") as f:
+    data = yaml.safe_load(f)
+```
 
 ## Testing
 
@@ -322,6 +491,131 @@ Or use the inspection script:
 ```bash
 python scripts/inspect_cache.py
 ```
+
+## Gotchas & Implementation Details
+
+### OpenRouter API Integration
+
+**Response Format Variations:**
+- May return JSON with `choices[0].message.images[]` (array of base64 strings)
+- Or may return direct image bytes with `content-type: image/*`
+- **Always check content-type header first** to determine response format
+
+**Best Practices:**
+- Handle both response formats
+- Check for error responses before parsing
+- Include model name in requests for proper routing
+
+### Ollama Subprocess Management
+
+**Implementation:**
+- Uses `subprocess.Popen` for subprocess control
+- Calls `communicate(timeout=...)` for timeout support
+- Always handle `TimeoutExpired` exception
+- Check `returncode` for subprocess errors
+
+**On Cancellation:**
+- Call `process.terminate()` to stop subprocess
+- Subprocess is actually killed (not just abandoned)
+- Join worker thread with timeout to ensure cleanup
+
+**Limitations:**
+- No streaming support (reads full response)
+- Blocking operation (runs in worker thread for cancellation)
+
+### Image Processing
+
+**Reference Image Resizing:**
+- All reference images resized to 2MP (maintains aspect ratio)
+- Use `Image.Resampling.LANCZOS` for quality
+- Calculate scale based on total pixels, not dimensions
+- Example: 4000x3000 (12MP) → resized to ~1633x1225 (2MP)
+
+**Color Mode Conversion:**
+- RGBA converted to RGB (composite on white background)
+- Use alpha channel for proper transparency handling
+- All images converted to RGB before encoding
+
+**HEIC/HEIF Support:**
+- Requires optional `pillow-heif` library
+- Register opener: `from pillow_heif import register_heif_opener; register_heif_opener()`
+- Gracefully degrades if library not installed (error message to user)
+
+### Configuration Management
+
+**API Key Security:**
+- API keys validated format (`sk-or-v1-...` for OpenRouter)
+- Keys never logged or exposed in error messages
+- Config `__repr__` masks API keys
+- Environment variables loaded early via `python-dotenv`
+
+**Config Validation:**
+- Call `config.validate()` before operations that need API keys
+- Raises `ConfigurationError` with helpful message if invalid
+- Optional validation (some operations don't need all config)
+
+### Caching
+
+**Cache Key Strategy:**
+- Hash-based: `prompt + model + reference_hash`
+- Reference hash is SHA256 of image bytes
+- No cache key collisions (hash includes all inputs)
+
+**Cache Lifetime:**
+- Session-scoped (process lifetime)
+- No disk persistence (intentional - optimization is fast enough)
+- Cleared on process exit or explicit `clear_cache()`
+
+**Memory Considerations:**
+- Cache grows with unique prompts
+- Bounded by session length (typically short)
+- Each cached entry stores optimized prompt string (~500-2000 chars)
+
+### Package Data Files
+
+**Bundled YAML Files:**
+- `prompts.yaml` - Prompt templates
+- `ui_models.yaml` - Model dropdown lists for UI
+- Declared in `pyproject.toml`: `[tool.setuptools.package-data]`
+- Access via `importlib.resources.files("genimg").joinpath("file.yaml")`
+- Cached after first load (module-level cache in `prompts_loader.py`)
+
+### Testing
+
+**Integration Test Safeguard:**
+- Must set `GENIMG_RUN_INTEGRATION_TESTS=1` to enable
+- Prevents accidental API calls and costs during dev
+- Default `pytest` excludes via `-m "not integration"` in `pyproject.toml`
+
+**Mocking External Dependencies:**
+- Mock `subprocess.Popen` for Ollama tests
+- Mock `requests.post` for OpenRouter tests
+- Use `pytest-mock` for simple mocking
+- Use `responses` library for detailed HTTP mocking
+
+### CLI Exit Codes
+
+Standard exit codes for consistent error handling:
+
+```python
+EXIT_SUCCESS = 0                  # Success
+EXIT_API_OR_NETWORK = 1          # APIError, NetworkError, RequestTimeoutError
+EXIT_VALIDATION_OR_CONFIG = 2    # ValidationError, ConfigurationError, ImageProcessingError
+EXIT_CANCELLED = 130             # CancellationError (standard SIGINT code)
+```
+
+### Cancellation Polling
+
+**Implementation Details:**
+- Poll interval: 250ms (adequate for <100ms response in practice)
+- Worker threads are daemon threads (don't block process exit)
+- `cancel_check` should return quickly and not raise exceptions
+- Library catches and ignores exceptions from `cancel_check` (buggy callback won't abort operation)
+
+**Platform Differences:**
+- OpenRouter: HTTP request may complete in background after cancel (requests has no sync abort from another thread)
+- Ollama: Subprocess actually terminated via `process.terminate()`
+- Thread accumulation: Repeated cancel-and-retry leaves worker threads until requests finish (acceptable for CLI; consider thread pool for long-lived servers)
 
 ### Trace Image Processing
 
