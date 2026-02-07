@@ -20,8 +20,8 @@ load_dotenv()
 class Config:
     """Configuration for genimg application."""
 
-    # API Configuration
-    openrouter_api_key: str = ""
+    # API Configuration (openrouter_api_key excluded from repr to avoid leaking secrets)
+    openrouter_api_key: str = field(default="", repr=False)
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # Model Configuration
@@ -60,9 +60,7 @@ class Config:
 
         config = cls(
             openrouter_api_key=api_key,
-            default_image_model=os.getenv(
-                "GENIMG_DEFAULT_MODEL", cls.default_image_model
-            ),
+            default_image_model=os.getenv("GENIMG_DEFAULT_MODEL", cls.default_image_model),
             default_optimization_model=os.getenv(
                 "GENIMG_OPTIMIZATION_MODEL", cls.default_optimization_model
             ),
@@ -85,8 +83,7 @@ class Config:
 
         if not self.openrouter_api_key.startswith("sk-"):
             raise ConfigurationError(
-                "OpenRouter API key appears to be invalid. "
-                "It should start with 'sk-'."
+                "OpenRouter API key appears to be invalid. " "It should start with 'sk-'."
             )
 
         self._validated = True
@@ -115,8 +112,7 @@ class Config:
 
         if not api_key.startswith("sk-"):
             raise ConfigurationError(
-                "OpenRouter API key appears to be invalid. "
-                "It should start with 'sk-'."
+                "OpenRouter API key appears to be invalid. " "It should start with 'sk-'."
             )
 
         self.openrouter_api_key = api_key
@@ -136,9 +132,7 @@ class Config:
             raise ConfigurationError("Model ID cannot be empty")
 
         if "/" not in model:
-            raise ConfigurationError(
-                "Model ID should be in format 'provider/model-name'"
-            )
+            raise ConfigurationError("Model ID should be in format 'provider/model-name'")
 
         self.default_image_model = model
 

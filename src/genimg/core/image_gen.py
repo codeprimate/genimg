@@ -12,9 +12,16 @@ from typing import Optional
 
 import requests
 
-from genimg.core.config import get_config
+from genimg.core.config import Config, get_config
 from genimg.core.reference import create_image_data_url
-from genimg.utils.exceptions import APIError, NetworkError, ValidationError
+from genimg.utils.exceptions import APIError, NetworkError, RequestTimeoutError, ValidationError
+
+
+def _format_from_content_type(content_type: str) -> str:
+    """Infer image format from Content-Type header (e.g. 'image/jpeg' -> 'jpeg')."""
+    if not content_type or not content_type.strip().lower().startswith("image/"):
+        return "png"
+    return content_type.split("/", 1)[1].lower().split(";")[0].strip() or "png"
 
 
 @dataclass
@@ -22,6 +29,7 @@ class GenerationResult:
     """Result of an image generation operation."""
 
     image_data: bytes  # Raw image bytes
+    format: str  # Image format, e.g. 'jpeg' or 'png'
     generation_time: float  # Time taken in seconds
     model_used: str  # Model that generated the image
     prompt_used: str  # Prompt that was used
@@ -34,6 +42,7 @@ def generate_image(
     reference_image_b64: Optional[str] = None,
     api_key: Optional[str] = None,
     timeout: Optional[int] = None,
+    config: Optional[Config] = None,
 ) -> GenerationResult:
     """
     Generate an image using OpenRouter API.
@@ -44,6 +53,7 @@ def generate_image(
         reference_image_b64: Optional base64-encoded reference image
         api_key: Optional API key (defaults to config value)
         timeout: Optional timeout in seconds (defaults to config value)
+        config: Optional config to use; if None, uses shared config from get_config()
 
     Returns:
         GenerationResult with image data and metadata
@@ -52,11 +62,12 @@ def generate_image(
         ValidationError: If inputs are invalid
         APIError: If API call fails
         NetworkError: If network error occurs
+        RequestTimeoutError: If request times out
     """
     if not prompt or not prompt.strip():
         raise ValidationError("Prompt cannot be empty", field="prompt")
 
-    config = get_config()
+    config = config or get_config()
 
     if model is None:
         model = config.default_image_model
@@ -138,8 +149,10 @@ def generate_image(
         content_type = response.headers.get("content-type", "")
         if content_type.startswith("image/"):
             image_data = response.content
+            fmt = _format_from_content_type(content_type)
             return GenerationResult(
                 image_data=image_data,
+                format=fmt,
                 generation_time=generation_time,
                 model_used=model,
                 prompt_used=prompt,
@@ -183,6 +196,7 @@ def generate_image(
 
             return GenerationResult(
                 image_data=image_data,
+                format="png",
                 generation_time=generation_time,
                 model_used=model,
                 prompt_used=prompt,
@@ -195,17 +209,17 @@ def generate_image(
                 response=str(result),
             ) from e
 
-    except requests.exceptions.Timeout:
-        raise NetworkError(
+    except requests.exceptions.Timeout as e:
+        raise RequestTimeoutError(
             f"Request timed out after {timeout} seconds. "
             "The generation may be taking longer than expected."
-        )
+        ) from e
 
     except requests.exceptions.ConnectionError as e:
         raise NetworkError(
             "Failed to connect to OpenRouter API. Please check your internet connection.",
             original_error=e,
-        )
+        ) from e
 
     except requests.exceptions.RequestException as e:
-        raise NetworkError(f"Network error during API request: {str(e)}", original_error=e)
+        raise NetworkError(f"Network error during API request: {str(e)}", original_error=e) from e

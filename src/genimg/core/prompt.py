@@ -5,12 +5,11 @@ This module handles prompt validation, optimization via Ollama, and caching.
 """
 
 import subprocess
-import time
 from typing import Optional
 
-from genimg.core.config import get_config
+from genimg.core.config import Config, get_config
 from genimg.utils.cache import get_cache
-from genimg.utils.exceptions import APIError, CancellationError, ValidationError
+from genimg.utils.exceptions import APIError, RequestTimeoutError, ValidationError
 
 # Prompt optimization template
 OPTIMIZATION_TEMPLATE = """You are a professional prompt engineer for AI image generation. Your task is to enhance the user's prompt to produce better, more detailed images.
@@ -74,6 +73,7 @@ def optimize_prompt_with_ollama(
     model: Optional[str] = None,
     reference_hash: Optional[str] = None,
     timeout: Optional[int] = None,
+    config: Optional[Config] = None,
 ) -> str:
     """
     Optimize a prompt using Ollama.
@@ -83,6 +83,7 @@ def optimize_prompt_with_ollama(
         model: The Ollama model to use (defaults to config value)
         reference_hash: Hash of reference image if present (for caching)
         timeout: Timeout in seconds (defaults to config value)
+        config: Optional config to use; if None, uses shared config from get_config()
 
     Returns:
         Optimized prompt
@@ -90,11 +91,11 @@ def optimize_prompt_with_ollama(
     Raises:
         ValidationError: If prompt is invalid
         APIError: If Ollama is not available or optimization fails
-        CancellationError: If operation times out
+        RequestTimeoutError: If operation times out
     """
     validate_prompt(prompt)
 
-    config = get_config()
+    config = config or get_config()
     if model is None:
         model = config.default_optimization_model
 
@@ -119,7 +120,6 @@ def optimize_prompt_with_ollama(
 
     try:
         # Run Ollama
-        start_time = time.time()
         process = subprocess.Popen(
             ["ollama", "run", model],
             stdin=subprocess.PIPE,
@@ -128,11 +128,7 @@ def optimize_prompt_with_ollama(
             text=True,
         )
 
-        stdout, stderr = process.communicate(
-            input=optimization_prompt, timeout=timeout
-        )
-
-        elapsed = time.time() - start_time
+        stdout, stderr = process.communicate(input=optimization_prompt, timeout=timeout)
 
         if process.returncode != 0:
             raise APIError(
@@ -151,17 +147,17 @@ def optimize_prompt_with_ollama(
 
         return optimized
 
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         process.kill()
-        raise CancellationError(
+        raise RequestTimeoutError(
             f"Optimization timed out after {timeout} seconds. "
             "Try a simpler prompt or increase the timeout."
-        )
+        ) from e
 
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         raise APIError(
             "Ollama command not found. Please ensure Ollama is installed and in your PATH."
-        )
+        ) from e
 
     except Exception as e:
         raise APIError(f"Optimization failed: {str(e)}") from e
@@ -172,6 +168,7 @@ def optimize_prompt(
     model: Optional[str] = None,
     reference_hash: Optional[str] = None,
     enable_cache: bool = True,
+    config: Optional[Config] = None,
 ) -> str:
     """
     Optimize a prompt (main entry point).
@@ -181,6 +178,7 @@ def optimize_prompt(
         model: The optimization model to use (defaults to config)
         reference_hash: Hash of reference image if present
         enable_cache: Whether to use caching (default: True)
+        config: Optional config to use; if None, uses shared config from get_config()
 
     Returns:
         Optimized prompt
@@ -188,11 +186,11 @@ def optimize_prompt(
     Raises:
         ValidationError: If prompt is invalid
         APIError: If optimization fails
-        CancellationError: If operation is cancelled
+        RequestTimeoutError: If operation times out
     """
     validate_prompt(prompt)
 
-    config = get_config()
+    config = config or get_config()
 
     # If optimization is disabled, return original
     if not config.optimization_enabled:
@@ -208,4 +206,4 @@ def optimize_prompt(
             return cached
 
     # Perform optimization
-    return optimize_prompt_with_ollama(prompt, model, reference_hash)
+    return optimize_prompt_with_ollama(prompt, model, reference_hash, config=config)

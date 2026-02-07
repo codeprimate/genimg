@@ -201,7 +201,8 @@ genimg/
 
 ## Documentation
 
-- [SPEC.md](SPEC.md) - Complete functional specification
+- [SPEC.md](SPEC.md) - Complete functional specification (product)
+- [LIBRARY_SPEC.md](LIBRARY_SPEC.md) - Library technical specification (underlying API)
 - [AGENT.md](AGENT.md) - AI agent development guide
 - [DEVELOPMENT.md](DEVELOPMENT.md) - Developer guide
 - [DECISIONS.md](DECISIONS.md) - Architecture decisions

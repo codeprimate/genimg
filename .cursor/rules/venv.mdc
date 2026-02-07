@@ -1,0 +1,28 @@
+---
+description: Always use the project's .venv for Python, pip, pytest, ruff, and mypy
+alwaysApply: true
+---
+
+# Use project virtual environment
+
+This project uses a virtual environment at **`.venv/`**. All Python-related commands must use that environment.
+
+## Rules
+
+- **Do not** run `python`, `pip`, `pytest`, `ruff`, `black`, or `mypy` without the project venv. System or other envs may have wrong or missing dependencies.
+- **Do** run commands via the venv executables when you execute shell commands:
+  - `.venv/bin/python` or `.venv/bin/python3`
+  - `.venv/bin/pip`
+  - `.venv/bin/pytest`
+  - `.venv/bin/ruff`
+  - `.venv/bin/mypy`
+- If the venv might not exist (e.g. first run), create it first:
+  ```bash
+  python3 -m venv .venv
+  .venv/bin/pip install -e .
+  .venv/bin/pip install -r requirements-dev.txt
+  ```
+- **Tests:** Run with `.venv/bin/pytest tests/` (or `make test` only when the user has already activated the venv).
+- **Lint/format:** `.venv/bin/ruff check src/ tests/`, `.venv/bin/ruff format src/ tests/`, `.venv/bin/mypy src/`.
+
+See AGENT.md section "Virtual environment (venv)" for full details.

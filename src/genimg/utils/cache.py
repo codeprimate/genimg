@@ -16,9 +16,7 @@ class PromptCache:
         """Initialize an empty cache."""
         self._cache: Dict[str, str] = {}
 
-    def _generate_key(
-        self, prompt: str, model: str, reference_hash: Optional[str] = None
-    ) -> str:
+    def _generate_key(self, prompt: str, model: str, reference_hash: Optional[str] = None) -> str:
         """
         Generate a cache key from prompt, model, and optional reference image hash.
 
@@ -37,9 +35,7 @@ class PromptCache:
         key_string = "|".join(key_parts)
         return hashlib.sha256(key_string.encode()).hexdigest()
 
-    def get(
-        self, prompt: str, model: str, reference_hash: Optional[str] = None
-    ) -> Optional[str]:
+    def get(self, prompt: str, model: str, reference_hash: Optional[str] = None) -> Optional[str]:
         """
         Retrieve an optimized prompt from cache.
 
@@ -108,3 +104,20 @@ def clear_cache() -> None:
     """Clear the global cache."""
     cache = get_cache()
     cache.clear()
+
+
+def get_cached_prompt(
+    prompt: str, model: str, reference_hash: Optional[str] = None
+) -> Optional[str]:
+    """
+    Return the cached optimized prompt for the given inputs, or None if not cached.
+
+    Args:
+        prompt: The original prompt text
+        model: The optimization model name
+        reference_hash: Hash of reference image (if any)
+
+    Returns:
+        The cached optimized prompt, or None if not in cache
+    """
+    return get_cache().get(prompt, model, reference_hash)

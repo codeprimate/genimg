@@ -128,25 +128,63 @@ except requests.exceptions.Timeout:
 - `@pytest.mark.slow`: Slow-running test
 
 ### Running Tests
+Use the project venv (see "Virtual environment (venv)" above):
 ```bash
-make test              # All tests
-make test-unit         # Unit only
-make test-integration  # Integration only
-make coverage          # With coverage report
+.venv/bin/pytest tests/        # All tests
+.venv/bin/pytest tests/unit/  # Unit only
+.venv/bin/pytest tests/ -v     # Verbose
+make test                      # Same, if venv is already activated
+make test-unit
+make test-integration
+make coverage
 ```
+
+## Virtual environment (venv) — required
+
+**Always use the project venv for Python commands.** Do not run `python`, `pip`, `pytest`, `ruff`, or `mypy` with the system or another environment. The project uses `.venv/` (see .gitignore).
+
+### When you run commands
+
+1. **Preferred (no shell activation):** Use the venv’s executables explicitly so the right environment is used every time:
+   ```bash
+   .venv/bin/pip install -e .
+   .venv/bin/pip install -r requirements-dev.txt
+   .venv/bin/pytest tests/
+   .venv/bin/ruff check src/ tests/
+   .venv/bin/ruff format src/ tests/
+   .venv/bin/mypy src/
+   ```
+2. **If the user has activated the venv:** `make test`, `make lint`, `make typecheck`, and `make check` will use the activated environment. Only rely on this when you know the venv is active (e.g. the user said they activated it).
+3. **In CI or automation:** Always call `.venv/bin/python`, `.venv/bin/pytest`, etc., or run in a step that activates `.venv` first.
+
+### Ensure venv exists
+
+If `.venv` might not exist (e.g. fresh clone), create and install before running tests or tools:
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/pip install -r requirements-dev.txt
+```
+Then use `.venv/bin/pytest` (and similar) for all subsequent commands.
+
+### Why this matters
+
+- Running `pytest` or `make test` without the project venv can use a different Python and miss project dependencies (e.g. pytest not found, wrong package).
+- Explicit `.venv/bin/...` commands are deterministic and work even when the shell is not activated.
 
 ## Development Workflow
 
 ### Setup
 ```bash
 python -m venv .venv
-source .venv/bin/activate
-make install-dev
+source .venv/bin/activate   # optional if you will use .venv/bin/... for every command
+.venv/bin/pip install -e .
+.venv/bin/pip install -r requirements-dev.txt
 ```
 
 ### Before Committing
 ```bash
-make check  # Runs: format, lint, typecheck, test
+make check  # Runs: format, lint, typecheck, test — ensure venv is active or use .venv/bin/... for each tool
 ```
 
 ### Adding a New Feature

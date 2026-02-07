@@ -64,6 +64,12 @@ class CancellationError(GenimgError):
     pass
 
 
+class RequestTimeoutError(GenimgError):
+    """Raised when an operation times out (e.g. request or backend call)."""
+
+    pass
+
+
 class ConfigurationError(GenimgError):
     """Raised when there is a configuration problem."""
 

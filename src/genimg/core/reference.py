@@ -9,15 +9,106 @@ import base64
 import hashlib
 import io
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 from PIL import Image
 
-from genimg.core.config import get_config
+from genimg.core.config import Config, get_config
 from genimg.utils.exceptions import ImageProcessingError, ValidationError
 
 # Supported image formats
 SUPPORTED_FORMATS = {"PNG", "JPEG", "JPG", "WEBP", "HEIC", "HEIF"}
+
+
+def _infer_format_from_magic(data: bytes) -> Optional[str]:
+    """Infer image format from magic bytes. Returns format name (e.g. PNG, JPEG) or None."""
+    if len(data) < 12:
+        return None
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "PNG"
+    if data[:2] == b"\xff\xd8":
+        return "JPEG"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "WEBP"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "GIF"
+    if data[4:12] in (b"ftypheic", b"ftypheix", b"ftypmif1"):
+        return "HEIC"
+    return None
+
+
+def _normalize_format(fmt: Optional[str]) -> Optional[str]:
+    """Normalize format to a key present in SUPPORTED_FORMATS (e.g. JPG -> JPEG, image/jpeg -> JPEG)."""
+    if not fmt:
+        return None
+    s = fmt.strip().lower()
+    if s.startswith("image/"):
+        s = s.split("/", 1)[1]
+    u = s.upper()
+    if u == "JPG":
+        return "JPEG"
+    return u if u in SUPPORTED_FORMATS else None
+
+
+def _load_image_source(
+    source: Union[str, Path, bytes],
+    format_hint: Optional[str] = None,
+) -> Tuple[Image.Image, str]:
+    """
+    Load an image from a file path or in-memory bytes.
+
+    Args:
+        source: Path to image file (str or Path) or raw image bytes
+        format_hint: Optional format/MIME hint when source is bytes (e.g. 'PNG', 'image/jpeg')
+
+    Returns:
+        Tuple of (PIL Image, normalized format name for encoding)
+
+    Raises:
+        ValidationError: If format is unsupported or cannot be inferred
+        ImageProcessingError: If image cannot be loaded
+    """
+    if isinstance(source, bytes):
+        if not source:
+            raise ValidationError("Image data is empty", field="image")
+        fmt = _normalize_format(format_hint)
+        if not fmt:
+            inferred = _infer_format_from_magic(source)
+            fmt = _normalize_format(inferred) if inferred else None
+        if not fmt or fmt not in SUPPORTED_FORMATS:
+            raise ValidationError(
+                "Could not determine image format from bytes. "
+                "Pass format_hint (e.g. 'PNG', 'JPEG', 'image/jpeg').",
+                field="image_format",
+            )
+        try:
+            try:
+                from pillow_heif import register_heif_opener
+
+                register_heif_opener()
+            except ImportError:
+                pass
+            image = Image.open(io.BytesIO(source))
+            image.load()
+            return image, fmt
+        except Exception as e:
+            raise ImageProcessingError(f"Failed to load image from bytes: {str(e)}") from e
+
+    path = Path(source)
+    if not path.exists():
+        raise FileNotFoundError(f"Image file not found: {path}")
+
+    suffix = path.suffix.upper().lstrip(".")
+    if suffix == "JPG":
+        suffix = "JPEG"
+    if suffix not in SUPPORTED_FORMATS:
+        raise ValidationError(
+            f"Unsupported image format: {suffix}. "
+            f"Supported formats: {', '.join(sorted(SUPPORTED_FORMATS))}",
+            field="image_format",
+        )
+    image = load_image(str(path))
+    return image, suffix
 
 
 def validate_image_format(image_path: str) -> None:
@@ -73,9 +164,7 @@ def load_image(image_path: str) -> Image.Image:
         return image
 
     except Exception as e:
-        raise ImageProcessingError(
-            f"Failed to load image: {str(e)}", image_path=image_path
-        ) from e
+        raise ImageProcessingError(f"Failed to load image: {str(e)}", image_path=image_path) from e
 
 
 def resize_image(image: Image.Image, max_pixels: Optional[int] = None) -> Image.Image:
@@ -174,26 +263,31 @@ def get_image_hash(image_path: str) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Image file not found: {image_path}")
 
-    with open(path, "rb") as f:
+    with path.open("rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
 
 
 def process_reference_image(
-    image_path: str, max_pixels: Optional[int] = None
+    source: Union[str, Path, bytes],
+    format_hint: Optional[str] = None,
+    max_pixels: Optional[int] = None,
+    config: Optional[Config] = None,
 ) -> Tuple[str, str]:
     """
     Process a reference image for API submission.
 
     This function:
     1. Validates the image format
-    2. Loads the image
+    2. Loads the image (from file path or in-memory bytes)
     3. Resizes if needed
     4. Converts to RGB
     5. Encodes to base64
 
     Args:
-        image_path: Path to the image file
+        source: Path to the image file (str or Path) or raw image bytes
+        format_hint: Optional format when source is bytes (e.g. 'PNG', 'JPEG', 'image/jpeg')
         max_pixels: Maximum number of pixels (defaults to config value)
+        config: Optional config to use for max_pixels when not provided; if None, uses get_config()
 
     Returns:
         Tuple of (base64_encoded_image, image_hash)
@@ -201,16 +295,22 @@ def process_reference_image(
     Raises:
         ValidationError: If image format is invalid
         ImageProcessingError: If processing fails
-        FileNotFoundError: If file doesn't exist
+        FileNotFoundError: If file doesn't exist (path source only)
     """
-    # Validate format
-    validate_image_format(image_path)
+    if max_pixels is None:
+        max_pixels = (config or get_config()).max_image_pixels
 
-    # Get hash before processing
-    image_hash = get_image_hash(image_path)
+    # Load image (validates format for path; for bytes uses format_hint or magic)
+    image, _loaded_fmt = _load_image_source(source, format_hint)
 
-    # Load image
-    image = load_image(image_path)
+    # Hash: from file or from bytes
+    if isinstance(source, bytes):
+        image_hash = hashlib.sha256(source).hexdigest()
+    else:
+        path = Path(source)
+        if not path.exists():
+            raise FileNotFoundError(f"Image file not found: {path}")
+        image_hash = get_image_hash(str(path))
 
     # Resize if needed
     image = resize_image(image, max_pixels)

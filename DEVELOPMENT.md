@@ -37,6 +37,26 @@ cp .env.example .env
 
 ### Verify Setup
 
+**Use the project venv** so tests and tools see the right dependencies. (AI agents: see AGENT.md "Virtual environment (venv)" and the Cursor rule in `.cursor/rules/venv.mdc`.) Either activate it first:
+
+```bash
+source .venv/bin/activate   # Linux/Mac
+# or  .venv\Scripts\activate  # Windows
+make test
+make lint
+make typecheck
+```
+
+Or run the venv's executables directly (e.g. in CI or without activating):
+
+```bash
+.venv/bin/pip install -e .
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest tests/
+.venv/bin/ruff check src/ tests/
+.venv/bin/mypy src/
+```
+
 ```bash
 # Run tests
 make test
@@ -47,6 +67,15 @@ make lint
 # Type check
 make typecheck
 ```
+
+## Library API
+
+The library is the single source of truth for all product behavior (see LIBRARY_SPEC.md).
+
+- **Configuration**: Pass `config` per operation (e.g. `generate_image(..., config=my_config)`) or use the shared config via `get_config()` / `set_config()`. When passing config explicitly, the caller may call `config.validate()` before use if the operation depends on credentials.
+- **Cache**: The prompt optimization cache is process-scoped. Use `clear_cache()` and `get_cached_prompt()` for cache management; `get_cache()` gives direct access to the cache instance.
+- **API keys**: The library does not log or expose API keys in error messages, return values, or config repr.
+- **Testability**: Backends (HTTP client, Ollama subprocess) are not yet injectable; a future improvement for unit tests would be dependency injection of the HTTP client and optimizer so tests do not require network or Ollama.
 
 ## Common Development Tasks
 
