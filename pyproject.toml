@@ -64,10 +64,10 @@ genimg = "genimg.__main__:main"
 genimg-ui = "genimg.ui.gradio_app:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/genimg"
-Documentation = "https://github.com/yourusername/genimg#readme"
-Repository = "https://github.com/yourusername/genimg"
-"Bug Tracker" = "https://github.com/yourusername/genimg/issues"
+Homepage = "https://github.com/codeprimate/genimg"
+Documentation = "https://github.com/codeprimate/genimg#readme"
+Repository = "https://github.com/codeprimate/genimg"
+"Bug Tracker" = "https://github.com/codeprimate/genimg/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

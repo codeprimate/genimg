@@ -8,7 +8,7 @@ This guide covers practical development tasks for working on genimg.
 
 ```bash
 # Clone repository
-git clone <repository-url>
+git clone https://github.com/codeprimate/genimg.git
 cd genimg
 
 # Create virtual environment
@@ -404,7 +404,7 @@ Typical bottlenecks:
 
 ## Release Process
 
-Inspired by the [todo_agent](https://github.com/codeprimate/todo-agent) workflow: build produces wheels and sdist; install uses the built wheel; publish runs clean → build → twine check → upload.
+The release workflow builds source and wheel distributions, installs using the built wheel, and publishes by running clean → build → twine check → upload.
 
 ### Version Bump
 

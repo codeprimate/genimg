@@ -19,11 +19,26 @@ A Python package for generating AI images with intelligent prompt optimization. 
 - OpenRouter API key ([get one here](https://openrouter.ai/keys))
 - (Optional) Ollama installed locally for prompt optimization ([install here](https://ollama.ai))
 
-### Install from Source
+### Install from GitHub
+
+**Note:** This package is not yet published to PyPI. You can install it directly from GitHub or from a local clone.
+
+#### Option 1: Install directly from GitHub (recommended)
+
+```bash
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install from GitHub
+pip install git+https://github.com/codeprimate/genimg.git
+```
+
+#### Option 2: Install from local clone
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/codeprimate/genimg.git
 cd genimg
 
 # Create and activate virtual environment
@@ -33,7 +48,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 # Install the package
 pip install -e .
 
-# Install development dependencies (optional)
+# Install development dependencies (optional, for contributors)
 pip install -r requirements-dev.txt
 ```
 
@@ -264,5 +279,5 @@ Contributions are welcome! Please read [DEVELOPMENT.md](DEVELOPMENT.md) for guid
 
 ## Support
 
-- Issues: [GitHub Issues](<repository-issues-url>)
-- Discussions: [GitHub Discussions](<repository-discussions-url>)
+- Issues: [GitHub Issues](https://github.com/codeprimate/genimg/issues)
+- Discussions: [GitHub Discussions](https://github.com/codeprimate/genimg/discussions)
