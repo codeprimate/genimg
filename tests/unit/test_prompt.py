@@ -73,8 +73,9 @@ class TestOptimizePrompt:
     def test_cache_hit_returns_cached_without_ollama(self):
         cache = get_cache()
         cache.clear()
-        cache.set("red car", "llama3.2", "optimized red car")
         config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+        # Cache key must use same model as config.default_optimization_model for lookup to hit
+        cache.set("red car", config.default_optimization_model, "optimized red car")
         with patch("genimg.core.prompt.check_ollama_available", return_value=False):
             result = optimize_prompt("red car", config=config, enable_cache=True)
         assert result == "optimized red car"
@@ -108,8 +109,9 @@ class TestOptimizePrompt:
     def test_optimize_prompt_with_ollama_cache_hit_returns_cached(self):
         cache = get_cache()
         cache.clear()
-        cache.set("cached", "llama3.2", "from cache")
         config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+        # Cache key must use same model as config.default_optimization_model for lookup to hit
+        cache.set("cached", config.default_optimization_model, "from cache")
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
             with patch("genimg.core.prompt.subprocess.Popen") as Popen:
                 result = optimize_prompt_with_ollama("cached", config=config)
