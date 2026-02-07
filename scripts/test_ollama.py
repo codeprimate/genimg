@@ -53,11 +53,11 @@ def main() -> None:
             print(result.stdout)
             
             # Check for recommended model
-            if "llama3.2" in result.stdout:
-                print("✓ Recommended model (llama3.2) is installed")
+            if "svjack/gpt-oss-20b-heretic" in result.stdout:
+                print("✓ Recommended model (svjack/gpt-oss-20b-heretic) is installed")
             else:
-                print("⚠️  Recommended model (llama3.2) not found")
-                print("   Install with: ollama pull llama3.2")
+                print("⚠️  Recommended model (svjack/gpt-oss-20b-heretic) not found")
+                print("   Install with: ollama pull svjack/gpt-oss-20b-heretic")
         else:
             print("❌ Failed to list models")
             sys.exit(1)

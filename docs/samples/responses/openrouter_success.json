@@ -1,6 +1,6 @@
 {
   "id": "gen-abc123def456",
-  "model": "google/gemini-2.0-flash-exp-image:free",
+  "model": "bytedance-seed/seedream-4.5",
   "choices": [
     {
       "message": {

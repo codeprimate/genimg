@@ -48,8 +48,8 @@ Copy `.env.example` to `.env` and configure:
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
 # Optional
-GENIMG_DEFAULT_MODEL=google/gemini-2.0-flash-exp-image:free
-GENIMG_OPTIMIZATION_MODEL=llama3.2
+GENIMG_DEFAULT_MODEL=bytedance-seed/seedream-4.5
+GENIMG_OPTIMIZATION_MODEL=svjack/gpt-oss-20b-heretic
 ```
 
 Or set environment variables directly:
@@ -108,7 +108,7 @@ config.validate()
 # Generate an image
 result = generate_image(
     prompt="a serene mountain landscape at dawn",
-    model="google/gemini-2.0-flash-exp-image:free"
+    model="bytedance-seed/seedream-4.5"
 )
 
 # Save the image
@@ -139,10 +139,7 @@ Prompt optimization uses Ollama to enhance your simple descriptions into detaile
 
 ## Available Models
 
-The default model is `google/gemini-2.0-flash-exp-image:free`. You can use any OpenRouter-compatible image generation model. Popular options include:
-
-- `google/gemini-2.0-flash-exp-image:free` (default, free tier)
-- Check [OpenRouter's model list](https://openrouter.ai/models) for more options
+The default image model is `bytedance-seed/seedream-4.5` and the default optimization model is `svjack/gpt-oss-20b-heretic`. You can use any OpenRouter-compatible image generation model. Check [OpenRouter's model list](https://openrouter.ai/models) for more options.
 
 ## Development
 
@@ -175,7 +172,7 @@ make check
 ### Testing
 
 ```bash
-# Run all tests
+# Run all tests (unit only; integration tests are excluded)
 make test
 
 # Run only unit tests
@@ -184,6 +181,14 @@ make test-unit
 # Run with coverage
 make coverage
 ```
+
+**Integration tests** (optional, manual): they call the real OpenRouter API, are slow, and cost money. They are excluded from `make test`. To run them:
+
+```bash
+GENIMG_RUN_INTEGRATION_TESTS=1 make test-integration
+```
+
+Requires `OPENROUTER_API_KEY` in `.env` or the environment. Output images are written to `tmp/` (timestamped filenames). See [Development Guide](docs/DEVELOPMENT.md#integration-tests-manual-slow-costs-money) for details.
 
 ## Project Structure
 
@@ -215,7 +220,7 @@ genimg/
 
 If you see this error and want to use prompt optimization:
 1. Install Ollama from https://ollama.ai
-2. Pull a model: `ollama pull llama3.2`
+2. Pull a model: `ollama pull svjack/gpt-oss-20b-heretic`
 3. Verify it works: `ollama list`
 
 You can generate images without Ollama by skipping optimization.

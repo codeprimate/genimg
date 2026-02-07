@@ -39,6 +39,9 @@ build/
 .env.local
 .env.*.local
 
+# Integration test output
+tmp/
+
 # Generated images
 *.jpg
 *.jpeg

@@ -37,7 +37,7 @@ test-unit:
 	pytest -m unit
 
 test-integration:
-	pytest -m integration
+	.venv/bin/pytest -m integration --no-cov
 
 coverage:
 	pytest --cov-report=html

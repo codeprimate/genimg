@@ -76,6 +76,8 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
+    "-m",
+    "not integration",
     "--cov=src/genimg",
     "--cov-report=term-missing",
     "--cov-report=html",
@@ -83,8 +85,9 @@ addopts = [
 ]
 markers = [
     "unit: Unit tests",
-    "integration: Integration tests",
+    "integration: Integration tests (real API, run manually)",
     "slow: Slow running tests",
+    "expensive: Expensive tests (API cost, run manually)",
 ]
 
 [tool.coverage.run]

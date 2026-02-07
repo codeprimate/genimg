@@ -68,6 +68,22 @@ make lint
 make typecheck
 ```
 
+### Integration tests (manual, slow, costs money)
+
+Integration tests call the real OpenRouter API. They are **excluded from the default test run** (`make test` / `pytest`). Run them only when you need to verify the live API:
+
+```bash
+# Opt-in: set env and run integration tests only
+GENIMG_RUN_INTEGRATION_TESTS=1 make test-integration
+# or
+GENIMG_RUN_INTEGRATION_TESTS=1 .venv/bin/pytest -m integration
+```
+
+Requirements:
+
+- `GENIMG_RUN_INTEGRATION_TESTS=1` (opt-in so they never run by accident)
+- `OPENROUTER_API_KEY` set in `.env` or environment
+
 ## Library API
 
 The library is the single source of truth for all product behavior (see LIBRARY_SPEC.md).

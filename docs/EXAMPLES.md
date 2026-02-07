@@ -25,7 +25,7 @@ config.validate()
 # Generate image
 result = generate_image(
     prompt="a serene mountain landscape at dawn, misty atmosphere",
-    model="google/gemini-2.0-flash-exp-image:free"
+    model="bytedance-seed/seedream-4.5"
 )
 
 # Save image
@@ -104,8 +104,8 @@ from genimg import Config, generate_image
 # Create custom config
 config = Config(
     openrouter_api_key="sk-or-v1-...",
-    default_image_model="google/gemini-2.0-flash-exp-image:free",
-    default_optimization_model="llama3.2",
+    default_image_model="bytedance-seed/seedream-4.5",
+    default_optimization_model="svjack/gpt-oss-20b-heretic",
     optimization_enabled=True,
     max_image_pixels=1_500_000,  # 1.5MP instead of 2MP
     generation_timeout=180  # 3 minutes instead of 5
@@ -132,7 +132,7 @@ genimg generate "a beautiful sunset over the ocean"
 genimg generate "a red sports car" --output car.png
 
 # With specific model
-genimg generate "a landscape" --model google/gemini-2.0-flash-exp-image:free
+genimg generate "a landscape" --model bytedance-seed/seedream-4.5
 ```
 
 ### With Optimization
@@ -142,7 +142,7 @@ genimg generate "a landscape" --model google/gemini-2.0-flash-exp-image:free
 genimg generate "a mountain scene" --optimize
 
 # With specific optimization model
-genimg generate "a forest" --optimize --optimization-model llama3.2
+genimg generate "a forest" --optimize --optimization-model svjack/gpt-oss-20b-heretic
 ```
 
 ### With Reference Image
@@ -225,7 +225,7 @@ Portrait in cyberpunk aesthetic, neon lighting in pink and blue tones, futuristi
 **Request:**
 ```json
 {
-  "model": "google/gemini-2.0-flash-exp-image:free",
+  "model": "bytedance-seed/seedream-4.5",
   "modalities": ["image"],
   "messages": [
     {
@@ -245,7 +245,7 @@ Portrait in cyberpunk aesthetic, neon lighting in pink and blue tones, futuristi
 ```json
 {
   "id": "gen-abc123",
-  "model": "google/gemini-2.0-flash-exp-image:free",
+  "model": "bytedance-seed/seedream-4.5",
   "choices": [
     {
       "message": {
@@ -298,7 +298,7 @@ Content-Length: 245632
 
 **Command:**
 ```bash
-echo "You are a prompt engineer..." | ollama run llama3.2
+echo "You are a prompt engineer..." | ollama run svjack/gpt-oss-20b-heretic
 ```
 
 **Output:**

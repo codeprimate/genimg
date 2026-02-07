@@ -25,8 +25,8 @@ class Config:
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # Model Configuration
-    default_image_model: str = "google/gemini-2.0-flash-exp-image:free"
-    default_optimization_model: str = "llama3.2"
+    default_image_model: str = "bytedance-seed/seedream-4.5"
+    default_optimization_model: str = "svjack/gpt-oss-20b-heretic"
 
     # Image Processing Configuration
     max_image_pixels: int = 2_000_000  # 2 megapixels
