@@ -522,17 +522,16 @@ Operation State:
 
 #### 6.3.1 Generated Image
 ```
-Generated Image:
-  - image_data: binary (JPEG or PNG)
-  - format: JPEG | PNG
-  - dimensions: width × height
-  - file_path: string (temporary location)
-  - filename: string (timestamp-based)
+Generated Image (library returns GenerationResult):
+  - image: PIL Image (primary; caller saves, converts, or gets bytes as needed)
+  - image_data: binary (bytes, derived from image for backward compatibility)
+  - format: JPEG | PNG (from API)
   - generation_time: float (seconds)
   - model_used: string
   - prompt_used: string
   - had_reference: boolean
 ```
+(Note: dimensions, file_path, filename are obtained by the caller from the PIL image or their own naming logic.)
 
 #### 6.3.2 Error Information
 ```

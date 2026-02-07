@@ -294,7 +294,56 @@ Each decision record includes:
 - **Ollama**: On cancel we call `process.terminate()` then `thread.join(timeout=5)`. The subprocess is actually stopped; no lingering work.
 - **OpenRouter**: We only stop waiting and raise; the HTTP request continues in the worker until it completes. No way to abort a synchronous `requests` call from another thread. Thread exits when the request finishes; daemon=True prevents blocking process exit.
 - **Thread accumulation**: Repeated cancel-and-retry can leave a few short-lived worker threads (one per cancelled generation) until their requests complete. Acceptable for CLI; for long-lived servers, document or consider a thread pool if needed.
-- **Python 3.8**: Use `Tuple[str, str]` (typing) not `tuple[str, str]` for return types.
+- **Python 3.10+**: Built-in `tuple[str, str]` etc. are fine; no need for `typing.Tuple` for return types.
+
+---
+
+## ADR-009: Python 3.10+ and Gradio 6.x for Web UI
+
+**Date**: 2026-02-07
+
+**Decision**: Require Python >=3.10 for the project and use Gradio 6.x for the web UI so implementation follows the latest supported Gradio APIs.
+
+**Context**: Gradio is the chosen web UI framework (ADR-007). Latest stable Gradio (6.x) requires Python 3.10+; Gradio dropped 3.8/3.9 support. We want to use the latest Gradio supported on our Python version to establish correct patterns and avoid outdated APIs.
+
+**Options Considered**:
+1. **Upgrade to Python 3.10 + Gradio 6.x**: Use latest Gradio and bump project requires-python.
+2. **Keep Python 3.8 + pin Gradio 4.x**: Stay on older Gradio that supports 3.8; miss 6.x features and patterns.
+3. **Support both**: Multiple CI legs and dependency matrix; rejected for complexity.
+
+**Rationale**:
+- Gradio 6 is the current stable; 4.x is legacy. New UI code should follow Gradio 6 patterns (Blocks, events, cancellation).
+- Python 3.8 is EOL (Oct 2024); 3.10+ is a reasonable minimum for new work.
+- Single Python/Gradio baseline keeps implementation and docs consistent.
+
+**Consequences**:
+- `requires-python = ">=3.10"` in pyproject.toml; classifiers and tool configs (black, ruff, mypy) target 3.10.
+- Dependency: `gradio>=6.0.0,<7` (or pinned 6.x). Implementation and GRADIO_UI_PLAN must reference Gradio 6 docs.
+- Contributors and users must have Python 3.10+.
+
+---
+
+## ADR-010: GenerationResult returns PIL Image as primary output
+
+**Date**: 2026-02-07
+
+**Decision**: The library returns a PIL (Pillow) Image as the primary output of image generation. `GenerationResult` has an `image` attribute (PIL `Image.Image`); `image_data` and `format` remain as derived properties for backward compatibility.
+
+**Context**: Callers (CLI, UI, scripts) need to save, convert format, or get bytes. A PIL object lets each caller do what they need (e.g. save as JPEG at quality 90, or write raw bytes) without the library encoding output format or filename.
+
+**Options Considered**:
+1. **Return PIL Image**: Primary output is `result.image`; keep `image_data`/`format` as properties for compat.
+2. **Return only bytes**: Caller would need to decode to PIL for conversion; duplicates logic.
+3. **Return bytes + separate conversion helpers**: More API surface; PIL is standard for image handling in Python.
+
+**Rationale**:
+- PIL is already a dependency (reference image handling). One decode in the library; callers use the object as needed.
+- CLI and UI can use `result.image.save(path, "JPEG", quality=90)` or `result.image_data` for simple write.
+- Backward compatibility: existing code using `result.image_data` and `result.format` continues to work.
+
+**Consequences**:
+- `GenerationResult.image` is the primary attribute; `image_data` and `format` are properties derived from it.
+- Documentation (LIBRARY_SPEC, SPEC, README, EXAMPLES) updated to describe PIL as primary and image_data/format as compat.
 
 ---
 

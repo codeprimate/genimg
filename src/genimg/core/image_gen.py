@@ -6,12 +6,14 @@ from text prompts and optional reference images.
 """
 
 import base64
+import io
 import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 import requests
+from PIL import Image
 
 from genimg.core.config import Config, get_config
 from genimg.core.reference import create_image_data_url
@@ -33,14 +35,31 @@ def _format_from_content_type(content_type: str) -> str:
 
 @dataclass
 class GenerationResult:
-    """Result of an image generation operation."""
+    """Result of an image generation operation.
 
-    image_data: bytes  # Raw image bytes
-    format: str  # Image format, e.g. 'jpeg' or 'png'
+    The primary output is ``image`` (a PIL Image). Use it to save, convert format,
+    or get bytes as needed. ``image_data`` and ``format`` are provided for
+    backward compatibility.
+    """
+
+    image: Image.Image  # PIL Image; caller can save, convert, or get bytes as needed
+    _format: str  # Format from API, e.g. 'jpeg' or 'png'
     generation_time: float  # Time taken in seconds
     model_used: str  # Model that generated the image
     prompt_used: str  # Prompt that was used
     had_reference: bool  # Whether a reference image was used
+
+    @property
+    def format(self) -> str:
+        """Image format from the API (e.g. 'jpeg', 'png')."""
+        return self._format
+
+    @property
+    def image_data(self) -> bytes:
+        """Raw image bytes in the API's format (for backward compatibility)."""
+        buf = io.BytesIO()
+        self.image.save(buf, format=self._format)
+        return buf.getvalue()
 
 
 def _do_generate_image_request(
@@ -92,9 +111,10 @@ def _do_generate_image_request(
     if content_type.startswith("image/"):
         image_data = response.content
         fmt = _format_from_content_type(content_type)
+        pil_image = Image.open(io.BytesIO(image_data)).copy()
         return GenerationResult(
-            image_data=image_data,
-            format=fmt,
+            image=pil_image,
+            _format=fmt,
             generation_time=generation_time,
             model_used=model,
             prompt_used=prompt,
@@ -124,9 +144,10 @@ def _do_generate_image_request(
             image_data = base64.b64decode(base64_data)
         else:
             image_data = base64.b64decode(image_url)
+        pil_image = Image.open(io.BytesIO(image_data)).copy()
         return GenerationResult(
-            image_data=image_data,
-            format="png",
+            image=pil_image,
+            _format="png",
             generation_time=generation_time,
             model_used=model,
             prompt_used=prompt,

@@ -247,8 +247,9 @@ Optional or implementation-defined fields (e.g., optimization_enabled) may be pa
 
 - **Input**: prompt (string), model (string), api_key (string), timeout (integer), optional reference_encoded (e.g., base64 data URL).
 - **Output (success)**:
-  - image_data: binary (bytes).
-  - format: e.g., JPEG or PNG (as returned or chosen).
+  - image: PIL Image (primary; caller can save, convert format, or get bytes as needed).
+  - image_data: binary (bytes), derived from image for backward compatibility.
+  - format: string (e.g. JPEG or PNG), derived for backward compatibility.
   - generation_time: float (seconds).
   - model_used: string.
   - prompt_used: string.

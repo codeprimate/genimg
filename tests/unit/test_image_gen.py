@@ -1,9 +1,11 @@
 """Unit tests for image generation (result shape, validation, mocked API)."""
 
 import base64
+import io
 from unittest.mock import MagicMock, patch
 
 import pytest
+from PIL import Image
 
 from genimg.core.config import Config
 from genimg.core.image_gen import (
@@ -11,6 +13,15 @@ from genimg.core.image_gen import (
     _format_from_content_type,
     generate_image,
 )
+
+# Minimal valid image bytes so Image.open() succeeds in the library
+_MINIMAL_PNG_BUF = io.BytesIO()
+Image.new("RGB", (1, 1), color=(0, 0, 0)).save(_MINIMAL_PNG_BUF, format="PNG")
+MINIMAL_PNG = _MINIMAL_PNG_BUF.getvalue()
+
+_MINIMAL_JPEG_BUF = io.BytesIO()
+Image.new("RGB", (1, 1), color=(0, 0, 0)).save(_MINIMAL_JPEG_BUF, format="JPEG")
+MINIMAL_JPEG = _MINIMAL_JPEG_BUF.getvalue()
 from genimg.utils.exceptions import (
     APIError,
     CancellationError,
@@ -22,16 +33,20 @@ from genimg.utils.exceptions import (
 
 @pytest.mark.unit
 class TestGenerationResult:
-    def test_has_format_field(self):
+    def test_has_image_and_format(self):
+        pil_image = Image.open(io.BytesIO(MINIMAL_PNG)).copy()
         r = GenerationResult(
-            image_data=b"\x00",
-            format="png",
+            image=pil_image,
+            _format="png",
             generation_time=1.0,
             model_used="m",
             prompt_used="p",
             had_reference=False,
         )
         assert r.format == "png"
+        assert r.image is not None
+        assert len(r.image_data) > 0
+        assert r.image_data[:8] == b"\x89PNG\r\n\x1a\n"
 
     def test_format_from_content_type(self):
         assert _format_from_content_type("image/jpeg") == "jpeg"
@@ -70,20 +85,21 @@ class TestGenerateImageMocked:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "image/png"
-        mock_response.content = b"\x89PNG\r\n\x1a\nfake"
+        mock_response.content = MINIMAL_PNG
         mock_response.text = ""
         with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
             result = generate_image("a cat", config=config)
-        assert result.image_data == b"\x89PNG\r\n\x1a\nfake"
+        assert result.image is not None
         assert result.format == "png"
+        assert len(result.image_data) > 0
+        assert result.image_data[:8] == b"\x89PNG\r\n\x1a\n"
         assert result.model_used == config.default_image_model
         assert result.prompt_used == "a cat"
         assert result.had_reference is False
 
     def test_success_json_response_with_data_url(self):
         config = Config(openrouter_api_key="sk-ok")
-        raw = b"fake-png-bytes"
-        b64 = base64.b64encode(raw).decode("ascii")
+        b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "application/json"
@@ -100,14 +116,14 @@ class TestGenerateImageMocked:
         }
         with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
             result = generate_image("a dog", config=config)
-        assert result.image_data == raw
+        assert result.image is not None
         assert result.format == "png"
+        assert len(result.image_data) > 0
         assert result.prompt_used == "a dog"
 
     def test_success_json_response_raw_base64(self):
         config = Config(openrouter_api_key="sk-ok")
-        raw = b"raw-bytes"
-        b64 = base64.b64encode(raw).decode("ascii")
+        b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "application/json"
@@ -116,7 +132,9 @@ class TestGenerateImageMocked:
         }
         with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
             result = generate_image("bird", config=config)
-        assert result.image_data == raw
+        assert result.image is not None
+        assert result.format == "png"
+        assert len(result.image_data) > 0
 
     def test_config_override_used(self):
         config = Config(
@@ -127,7 +145,7 @@ class TestGenerateImageMocked:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "image/jpeg"
-        mock_response.content = b"\xff\xd8"
+        mock_response.content = MINIMAL_JPEG
         with patch("genimg.core.image_gen.requests.post", return_value=mock_response) as m:
             generate_image("x", config=config)
         call_kw = m.call_args[1]
@@ -139,7 +157,7 @@ class TestGenerateImageMocked:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "image/png"
-        mock_response.content = b"img"
+        mock_response.content = MINIMAL_PNG
         with patch("genimg.core.image_gen.requests.post", return_value=mock_response) as m:
             generate_image("same but blue", reference_image_b64="YXNk", config=config)
         payload = m.call_args[1]["json"]

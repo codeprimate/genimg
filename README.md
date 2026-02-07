@@ -15,7 +15,7 @@ A Python package for generating AI images with intelligent prompt optimization. 
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.10 or higher
 - OpenRouter API key ([get one here](https://openrouter.ai/keys))
 - (Optional) Ollama installed locally for prompt optimization ([install here](https://ollama.ai))
 
@@ -111,9 +111,10 @@ result = generate_image(
     model="bytedance-seed/seedream-4.5"
 )
 
-# Save the image
+# Save the image (result.image is a PIL Image; result.image_data is bytes)
 with open("output.png", "wb") as f:
     f.write(result.image_data)
+# Or save as JPEG with quality: result.image.save("output.jpg", "JPEG", quality=90)
 
 print(f"Generated in {result.generation_time:.2f}s")
 
@@ -206,13 +207,15 @@ genimg/
 
 ## Documentation
 
-- [SPEC.md](SPEC.md) - Complete functional specification (product)
-- [LIBRARY_SPEC.md](LIBRARY_SPEC.md) - Library technical specification (underlying API)
+- [SPEC.md](docs/SPEC.md) - Complete functional specification (product)
+- [LIBRARY_SPEC.md](docs/LIBRARY_SPEC.md) - Library technical specification (underlying API)
 - [AGENT.md](AGENT.md) - AI agent development guide
-- [DEVELOPMENT.md](DEVELOPMENT.md) - Developer guide
-- [DECISIONS.md](DECISIONS.md) - Architecture decisions
-- [EXAMPLES.md](EXAMPLES.md) - Usage examples
-- [CHANGELOG.md](CHANGELOG.md) - Change history
+- [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Developer guide
+- [DECISIONS.md](docs/DECISIONS.md) - Architecture decisions
+- [CLI_PLAN.md](docs/CLI_PLAN.md) - CLI implementation plan
+- [GRADIO_UI_PLAN.md](docs/GRADIO_UI_PLAN.md) - Gradio web UI plan (final)
+- [EXAMPLES.md](docs/EXAMPLES.md) - Usage examples
+- [CHANGELOG.md](docs/CHANGELOG.md) - Change history
 
 ## Troubleshooting
 

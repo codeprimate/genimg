@@ -81,13 +81,13 @@ When adding or changing CLI or UI code:
 ## Python Practices
 
 ### Python Version
-- Minimum: Python 3.8
-- Target: 3.8, 3.9, 3.10, 3.11
+- Minimum: Python 3.10 (required for Gradio 6; see ADR-009)
+- Target: 3.10, 3.11, 3.12, 3.13
 
 ### Type Hints
 - All functions must have type hints
 - Use `Optional[T]` for nullable types
-- Use `from typing import` for compatibility with Python 3.8
+- Built-in generics (`list[str]`, `tuple[str, str]`) are fine (Python 3.10+)
 
 ### Code Style
 - **Formatter**: black (line-length: 100)

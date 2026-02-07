@@ -28,9 +28,10 @@ result = generate_image(
     model="bytedance-seed/seedream-4.5"
 )
 
-# Save image
+# Save image (result.image is a PIL Image; use it to save in any format)
 with open("mountain.png", "wb") as f:
     f.write(result.image_data)
+# Or: result.image.save("mountain.jpg", "JPEG", quality=90)
 
 print(f"Generated in {result.generation_time:.2f} seconds")
 print(f"Used model: {result.model_used}")

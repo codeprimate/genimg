@@ -58,7 +58,7 @@ This document plans the implementation of the `genimg` command-line interface. I
   3. If reference path given: call `process_reference_image(path)` → get base64 and hash; on failure map `ImageProcessingError` / `ValidationError` to message and exit code.
   4. If optimization not disabled: call `optimize_prompt(prompt, model=optimization_model, reference_hash=ref_hash, config=config, cancel_check=...)`; use result as the prompt for generation.
   5. Call `generate_image(prompt, model=model, reference_image_b64=ref_b64, config=config, cancel_check=...)`.
-  6. Save `GenerationResult.image_data` to output path; use `GenerationResult.format` for extension if not implied by `--out`.
+  6. Save the image to output path (e.g. `result.image.save(path)` or `path.write_bytes(result.image_data)`); use `GenerationResult.format` for extension if not implied by `--out`.
   7. Print output path (and optionally generation time); on `--quiet`, only print path or error.
 
 ### 3.2 Cancellation (Ctrl+C)

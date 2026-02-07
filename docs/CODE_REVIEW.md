@@ -28,7 +28,7 @@ The codebase is **in good shape** for CLI implementation. The library matches th
 | Optimize prompt with configurable backend | ✅ | `optimize_prompt()` / `optimize_prompt_with_ollama()` |
 | Cache keyed by prompt, model, reference | ✅ | `PromptCache`; `get_cache()`, `clear_cache()`, `get_cached_prompt()` |
 | Reference: path or bytes, format, resize 2MP, RGB, base64 + hash | ✅ | `process_reference_image()` |
-| Generation: prompt, optional reference, model, return bytes + metadata | ✅ | `generate_image()` → `GenerationResult` |
+| Generation: prompt, optional reference, model, return PIL image + metadata | ✅ | `generate_image()` → `GenerationResult` (result.image is PIL; result.image_data for compat) |
 | Distinct errors (validation, config, network, API, timeout, image) | ✅ | `utils.exceptions` hierarchy |
 | Cancellation | ✅ Implemented | Optional `cancel_check` on optimize_prompt and generate_image; raises CancellationError |
 
@@ -36,7 +36,7 @@ The codebase is **in good shape** for CLI implementation. The library matches th
 
 - **Prompt:** Non-empty validated; original preserved by caller. ✅  
 - **Reference image:** Formats PNG, JPEG, WebP, HEIC, HEIF; 2MP limit; hash for cache. ✅  
-- **Generated image:** `GenerationResult` has `image_data`, `format`, `generation_time`, `model_used`, `prompt_used`, `had_reference`. ✅  
+- **Generated image:** `GenerationResult` has `image` (PIL Image, primary), `image_data` and `format` (for backward compatibility), `generation_time`, `model_used`, `prompt_used`, `had_reference`. ✅  
 - **Optimized prompt cache:** In-memory, session-scoped; key = hash(prompt, model, reference_hash). ✅  
 
 ### 1.3 Integration Contracts (LIBRARY_SPEC §7)
