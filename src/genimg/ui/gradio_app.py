@@ -699,7 +699,12 @@ def _build_blocks() -> gr.Blocks:
         with gr.Row():
             generate_btn = gr.Button("Generate", variant="primary", interactive=False)
             stop_btn = gr.Button("Stop", interactive=False)
-        out_image = gr.Image(label="Output", type="filepath")
+        out_image = gr.Image(
+            label="Output",
+            type="filepath",
+            height="70vh",
+            elem_id="genimg-output-image",
+        )
 
         optimized_for_state = gr.State(value=_initial_optimized_for_state())
 
