@@ -109,8 +109,9 @@ Requirements:
 
 ## Library API
 
-The library is the single source of truth for all product behavior (see LIBRARY_SPEC.md).
+The library is the single source of truth for all product behavior (see [SPEC.md](SPEC.md)).
 
+- **Specifications**: [SPEC.md](SPEC.md) (product/functional), [MCP_SERVER_SPEC.md](MCP_SERVER_SPEC.md) (MCP server).
 - **Configuration**: Pass `config` per operation (e.g. `generate_image(..., config=my_config)`) or use the shared config via `get_config()` / `set_config()`. When passing config explicitly, the caller may call `config.validate()` before use if the operation depends on credentials.
 - **Cache**: The prompt optimization cache is process-scoped. Use `clear_cache()` and `get_cached_prompt()` for cache management; `get_cache()` gives direct access to the cache instance.
 - **API keys**: The library does not log or expose API keys in error messages, return values, or config repr.
