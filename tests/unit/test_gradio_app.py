@@ -268,7 +268,7 @@ class TestRunGenerate:
         mock_optimize: MagicMock,
         mock_generate: MagicMock,
     ) -> None:
-        """When Optimized prompt box has content, Generate uses it and does not run optimize."""
+        """When Optimized prompt box has content produced for current prompt, use it and do not run optimize."""
         config = MagicMock()
         config.default_image_model = "test/model"
         config.openrouter_api_key = "sk-test"
@@ -283,17 +283,65 @@ class TestRunGenerate:
         result.generation_time = 1.0
         mock_generate.return_value = result
 
+        # State must match current (prompt, ref_hash) so the box is considered valid for this prompt
+        matching_state = {"prompt": "original prompt", "ref_hash": None}
         stream = gradio_app._run_generate_stream(
             "original prompt",
             optimize=True,
             optimized_prompt_value="user edited prompt",
             reference_value=None,
             model=None,
+            optimized_for_state=matching_state,
         )
         items = list(stream)
         mock_optimize.assert_not_called()
         mock_generate.assert_called_once()
         assert mock_generate.call_args[0][0] == "user edited prompt"
+        assert any("Done" in (item[0] or "") for item in items)
+
+    @patch("genimg.ui.gradio_app.generate_image")
+    @patch("genimg.ui.gradio_app.optimize_prompt")
+    @patch("genimg.ui.gradio_app.process_reference_image")
+    @patch("genimg.ui.gradio_app.validate_prompt")
+    @patch("genimg.ui.gradio_app.Config")
+    def test_prompt_changed_reoptimizes_despite_box_content(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_validate: MagicMock,
+        _mock_ref: MagicMock,
+        mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+    ) -> None:
+        """When user changes the prompt, Generate re-optimizes even if box has old content (cache fix)."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.openrouter_api_key = "sk-test"
+        config.generation_timeout = 60
+        config.max_image_pixels = 2_000_000
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+        mock_optimize.return_value = "new optimized prompt"
+        pil_image = Image.new("RGB", (10, 10), color="red")
+        result = MagicMock()
+        result.image = pil_image
+        result.generation_time = 1.0
+        mock_generate.return_value = result
+
+        # Box has content from a previous prompt; state says it was for "old prompt"
+        stale_state = {"prompt": "old prompt", "ref_hash": None}
+        stream = gradio_app._run_generate_stream(
+            "new prompt",
+            optimize=True,
+            optimized_prompt_value="old optimized text",
+            reference_value=None,
+            model=None,
+            optimized_for_state=stale_state,
+        )
+        items = list(stream)
+        mock_optimize.assert_called_once()
+        assert mock_optimize.call_args[0][0] == "new prompt"
+        mock_generate.assert_called_once()
+        assert mock_generate.call_args[0][0] == "new optimized prompt"
         assert any("Done" in (item[0] or "") for item in items)
 
 
@@ -304,14 +352,17 @@ class TestGenerateClickHandler:
     def test_handler_yields_from_stream(self) -> None:
         """Handler yields status, image, and button updates from stream."""
         gradio_app._cancel_event.clear()
+        state = {"prompt": "", "ref_hash": None}
         with patch("genimg.ui.gradio_app._run_generate_stream") as mock_stream:
             mock_stream.return_value = iter(
                 [
-                    ("Generating…", None, False, True, ""),
-                    ("Done in 1.0s", "/tmp/123.jpg", True, False, ""),
+                    ("Generating…", None, False, True, "", state),
+                    ("Done in 1.0s", "/tmp/123.jpg", True, False, "", state),
                 ]
             )
-            out = list(gradio_app._generate_click_handler("a cat", False, "", None, None, None))
+            out = list(
+                gradio_app._generate_click_handler("a cat", False, "", None, None, None, state)
+            )
         assert len(out) == 2
         assert out[0][0] == "Generating…"
         assert out[1][0] == "Done in 1.0s"
@@ -320,10 +371,13 @@ class TestGenerateClickHandler:
     def test_handler_on_genimg_error_yields_message_and_preserves_opt_text(self) -> None:
         """On GenimgError, handler yields error message and preserves optimized prompt box."""
         gradio_app._cancel_event.clear()
+        state = {"prompt": "", "ref_hash": None}
         with patch("genimg.ui.gradio_app._run_generate_stream") as mock_stream:
             mock_stream.side_effect = ConfigurationError("Bad config")
             out = list(
-                gradio_app._generate_click_handler("x", True, "edited prompt", None, None, None)
+                gradio_app._generate_click_handler(
+                    "x", True, "edited prompt", None, None, None, state
+                )
             )
         assert len(out) == 1
         assert "config" in out[0][0].lower() or "Bad" in out[0][0]
@@ -333,7 +387,11 @@ class TestGenerateClickHandler:
         gradio_app._cancel_event.clear()
         with patch("genimg.ui.gradio_app._run_generate_stream") as mock_stream:
             mock_stream.side_effect = RuntimeError("oops")
-            out = list(gradio_app._generate_click_handler("x", False, "", None, None, None))
+            out = list(
+                gradio_app._generate_click_handler(
+                    "x", False, "", None, None, None, {"prompt": "", "ref_hash": None}
+                )
+            )
         assert len(out) == 1
         assert "oops" in out[0][0]
 
@@ -344,22 +402,24 @@ class TestOptimizeClickHandler:
 
     def test_handler_yields_from_stream(self) -> None:
         gradio_app._cancel_event.clear()
+        state = {"prompt": "", "ref_hash": None}
         with patch("genimg.ui.gradio_app._run_optimize_only_stream") as mock_stream:
             mock_stream.return_value = iter(
                 [
-                    ("Optimizing…", "", False, True, False),
-                    ("Done.", "optimized text", True, False, True),
+                    ("Optimizing…", "", False, True, False, None),
+                    ("Done.", "optimized text", True, False, True, {"prompt": "a dog", "ref_hash": None}),
                 ]
             )
-            out = list(gradio_app._optimize_click_handler("a dog", None, None))
+            out = list(gradio_app._optimize_click_handler("a dog", None, None, state))
         assert len(out) == 2
         assert out[1][1] == "optimized text"
 
     def test_handler_on_error_yields_message(self) -> None:
         gradio_app._cancel_event.clear()
+        state = {"prompt": "", "ref_hash": None}
         with patch("genimg.ui.gradio_app._run_optimize_only_stream") as mock_stream:
             mock_stream.side_effect = APIError("Ollama failed")
-            out = list(gradio_app._optimize_click_handler("x", None, None))
+            out = list(gradio_app._optimize_click_handler("x", None, None, state))
         assert len(out) == 1
         assert "Ollama" in out[0][0] or "failed" in out[0][0]
         assert out[0][1] == ""
