@@ -36,6 +36,7 @@ class Config:
     default_optimization_model: str = DEFAULT_OPTIMIZATION_MODEL
 
     # Image Processing Configuration
+    min_image_pixels: int = 2500  # minimum total pixels for reference images
     max_image_pixels: int = 2_000_000  # 2 megapixels
     default_image_quality: int = 95  # JPEG quality for saved images
 
@@ -56,6 +57,7 @@ class Config:
             OPENROUTER_API_KEY: Required for image generation
             GENIMG_DEFAULT_MODEL: Optional default image generation model
             GENIMG_OPTIMIZATION_MODEL: Optional default optimization model
+            GENIMG_MIN_IMAGE_PIXELS: Optional minimum total pixels for reference images (default 2500)
 
         Returns:
             Config instance populated from environment
@@ -65,12 +67,17 @@ class Config:
         """
         api_key = os.getenv("OPENROUTER_API_KEY", "")
 
+        def _int_env(name: str, default: int) -> int:
+            val = os.getenv(name)
+            return int(val) if val not in (None, "") else default
+
         config = cls(
             openrouter_api_key=api_key,
             default_image_model=os.getenv("GENIMG_DEFAULT_MODEL", cls.default_image_model),
             default_optimization_model=os.getenv(
                 "GENIMG_OPTIMIZATION_MODEL", cls.default_optimization_model
             ),
+            min_image_pixels=_int_env("GENIMG_MIN_IMAGE_PIXELS", 2500),
         )
 
         return config
@@ -92,6 +99,16 @@ class Config:
         if not self.openrouter_api_key.startswith("sk-"):
             raise ConfigurationError(
                 "OpenRouter API key appears to be invalid. It should start with 'sk-'."
+            )
+
+        if self.min_image_pixels <= 0:
+            raise ConfigurationError(
+                f"min_image_pixels must be positive, got {self.min_image_pixels}."
+            )
+        if self.min_image_pixels > self.max_image_pixels:
+            raise ConfigurationError(
+                f"min_image_pixels ({self.min_image_pixels}) must not exceed "
+                f"max_image_pixels ({self.max_image_pixels})."
             )
 
         self._validated = True

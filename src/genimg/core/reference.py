@@ -190,47 +190,73 @@ def load_image(image_path: str) -> Image.Image:
         raise ImageProcessingError(f"Failed to load image: {str(e)}", image_path=image_path) from e
 
 
-def resize_image(image: Image.Image, max_pixels: int | None = None) -> Image.Image:
+def resize_image(
+    image: Image.Image,
+    max_pixels: int | None = None,
+    min_pixels: int | None = None,
+) -> Image.Image:
     """
     Resize an image to fit within a maximum pixel count while maintaining aspect ratio.
+    Enforces a minimum pixel count (raises ValidationError if output would be too small).
 
     Args:
         image: PIL Image to resize
         max_pixels: Maximum number of pixels (width * height). If None, uses config default.
+        min_pixels: Minimum number of pixels for the result. If None, uses config default.
+            If the image (after any resize) would have fewer pixels, ValidationError is raised.
 
     Returns:
-        Resized PIL Image (or original if already small enough)
+        Resized PIL Image (or original if already within bounds)
+
+    Raises:
+        ValidationError: If the resulting image would have fewer than min_pixels
     """
-    if max_pixels is None:
+    if max_pixels is None or min_pixels is None:
         config = get_config()
-        max_pixels = config.max_image_pixels
+        if max_pixels is None:
+            max_pixels = config.max_image_pixels
+        if min_pixels is None:
+            min_pixels = config.min_image_pixels
 
     width, height = image.size
     current_pixels = width * height
 
+    # Compute target dimensions (within max_pixels, aspect ratio preserved)
     if current_pixels <= max_pixels:
+        out_w, out_h = width, height
         logger.debug(
             "Reference image no resize needed dimensions=%dx%d max_pixels=%s",
             width,
             height,
             max_pixels,
         )
-        return image  # No resize needed
+    else:
+        scale_factor = (max_pixels / current_pixels) ** 0.5
+        min_dim = min(width, height)
+        if min_dim > 0:
+            scale_factor = max(scale_factor, 1.0 / min_dim)
+        out_w = max(1, int(width * scale_factor))
+        out_h = max(1, int(height * scale_factor))
+        logger.debug(
+            "Reference image resizing %dx%d -> %dx%d max_pixels=%s",
+            width,
+            height,
+            out_w,
+            out_h,
+            max_pixels,
+        )
 
-    # Calculate new dimensions maintaining aspect ratio
-    scale_factor = (max_pixels / current_pixels) ** 0.5
-    new_width = int(width * scale_factor)
-    new_height = int(height * scale_factor)
-    logger.debug(
-        "Reference image resizing %dx%d -> %dx%d max_pixels=%s",
-        width,
-        height,
-        new_width,
-        new_height,
-        max_pixels,
-    )
+    out_pixels = out_w * out_h
+    if out_pixels < min_pixels:
+        raise ValidationError(
+            f"Reference image too small: {out_w}x{out_h} ({out_pixels} pixels) "
+            f"is below minimum {min_pixels} pixels.",
+            field="image",
+        )
 
-    return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    if (out_w, out_h) == (width, height):
+        return image
+    return image.resize((out_w, out_h), Image.Resampling.LANCZOS)
 
 
 def convert_to_rgb(image: Image.Image) -> Image.Image:
@@ -316,7 +342,7 @@ def process_reference_image(
     This function:
     1. Validates the image format
     2. Loads the image (from file path or in-memory bytes)
-    3. Resizes if needed
+    3. Resizes if needed (resize_image enforces config max/min pixels)
     4. Converts to RGB
     5. Encodes to base64
 
@@ -324,18 +350,19 @@ def process_reference_image(
         source: Path to the image file (str or Path) or raw image bytes
         format_hint: Optional format when source is bytes (e.g. 'PNG', 'JPEG', 'image/jpeg')
         max_pixels: Maximum number of pixels (defaults to config value)
-        config: Optional config to use for max_pixels when not provided; if None, uses get_config()
+        config: Optional config for max_pixels and min_image_pixels; if None, uses get_config()
 
     Returns:
         Tuple of (base64_encoded_image, image_hash)
 
     Raises:
-        ValidationError: If image format is invalid
+        ValidationError: If image format is invalid or image has fewer pixels than config.min_image_pixels
         ImageProcessingError: If processing fails
         FileNotFoundError: If file doesn't exist (path source only)
     """
+    cfg = config or get_config()
     if max_pixels is None:
-        max_pixels = (config or get_config()).max_image_pixels
+        max_pixels = cfg.max_image_pixels
 
     logger.info("Processing reference image max_pixels=%s", max_pixels)
     start_time = time.time()
@@ -358,8 +385,8 @@ def process_reference_image(
             raise FileNotFoundError(f"Image file not found: {path}")
         image_hash = get_image_hash(str(path))
 
-    # Resize if needed
-    image = resize_image(image, max_pixels)
+    # Resize if needed (enforces max and min pixels from config)
+    image = resize_image(image, max_pixels=max_pixels, min_pixels=cfg.min_image_pixels)
 
     # Convert to RGB
     image = convert_to_rgb(image)

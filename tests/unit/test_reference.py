@@ -154,14 +154,22 @@ class TestCreateImageDataUrl:
 class TestResizeImage:
     def test_small_image_unchanged(self):
         img = Image.new("RGB", (10, 10))
-        out = resize_image(img, max_pixels=1_000_000)
+        out = resize_image(img, max_pixels=1_000_000, min_pixels=1)
         assert out.size == (10, 10)
 
     def test_large_image_resized(self):
         img = Image.new("RGB", (2000, 2000))  # 4M pixels
-        out = resize_image(img, max_pixels=100)
+        out = resize_image(img, max_pixels=100, min_pixels=1)
         assert out.size != (2000, 2000)
         assert out.size[0] * out.size[1] <= 100
+
+    def test_raises_when_below_min_pixels(self):
+        img = Image.new("RGB", (10, 10))  # 100 pixels
+        with pytest.raises(ValidationError) as exc_info:
+            resize_image(img, max_pixels=1_000_000, min_pixels=2500)
+        assert "too small" in str(exc_info.value)
+        assert "2500" in str(exc_info.value)
+        assert exc_info.value.field == "image"
 
 
 @pytest.mark.unit
@@ -231,14 +239,16 @@ class TestGetImageHash:
 class TestProcessReferenceImage:
     def test_from_bytes_returns_encoded_and_hash(self):
         png = _minimal_png_bytes()
-        encoded, ref_hash = process_reference_image(png, format_hint="PNG")
+        config = Config(openrouter_api_key="", min_image_pixels=1)
+        encoded, ref_hash = process_reference_image(
+            png, format_hint="PNG", config=config
+        )
         assert isinstance(encoded, str)
         assert len(ref_hash) == 64
         assert ref_hash == __import__("hashlib").sha256(png).hexdigest()
 
     def test_from_bytes_uses_config_max_pixels(self):
-        config = Config(openrouter_api_key="")
-        config.max_image_pixels = 1
+        config = Config(openrouter_api_key="", min_image_pixels=1, max_image_pixels=1)
         png = _minimal_png_bytes()
         encoded, _ = process_reference_image(png, format_hint="PNG", config=config)
         assert isinstance(encoded, str)
@@ -252,7 +262,8 @@ class TestProcessReferenceImage:
         png = _minimal_png_bytes()
         path = tmp_path / "ref.png"
         path.write_bytes(png)
-        encoded, ref_hash = process_reference_image(path)
+        config = Config(openrouter_api_key="", min_image_pixels=1)
+        encoded, ref_hash = process_reference_image(path, config=config)
         assert isinstance(encoded, str)
         assert len(ref_hash) == 64
         assert ref_hash == get_image_hash(str(path))
@@ -262,7 +273,18 @@ class TestProcessReferenceImage:
         png = _minimal_png_bytes()
         b64 = base64.b64encode(png).decode("ascii")
         data_url = f"data:image/png;base64,{b64}"
-        encoded, ref_hash = process_reference_image(data_url)
+        config = Config(openrouter_api_key="", min_image_pixels=1)
+        encoded, ref_hash = process_reference_image(data_url, config=config)
         assert isinstance(encoded, str)
         assert len(ref_hash) == 64
         assert ref_hash == __import__("hashlib").sha256(png).hexdigest()
+
+    def test_raises_when_image_below_min_image_pixels(self):
+        """Process rejects image with fewer pixels than config.min_image_pixels."""
+        png = _minimal_png_bytes()  # 1x1
+        config = Config(openrouter_api_key="", min_image_pixels=2500)
+        with pytest.raises(ValidationError) as exc_info:
+            process_reference_image(png, format_hint="PNG", config=config)
+        assert "too small" in str(exc_info.value)
+        assert "2500" in str(exc_info.value)
+        assert exc_info.value.field == "image"

@@ -41,6 +41,7 @@ class TestConfig:
                 "OPENROUTER_API_KEY": "sk-from-env",
                 "GENIMG_DEFAULT_MODEL": "custom/model",
                 "GENIMG_OPTIMIZATION_MODEL": "custom-ollama",
+                "GENIMG_MIN_IMAGE_PIXELS": "5000",
             },
             clear=False,
         ):
@@ -48,6 +49,7 @@ class TestConfig:
         assert c.openrouter_api_key == "sk-from-env"
         assert c.default_image_model == "custom/model"
         assert c.default_optimization_model == "custom-ollama"
+        assert c.min_image_pixels == 5000
 
     def test_from_env_defaults_when_env_empty(self):
         with patch.dict(
@@ -59,6 +61,35 @@ class TestConfig:
         assert c.openrouter_api_key == ""
         assert "google" in c.default_image_model or c.default_image_model
         assert "llama" in c.default_optimization_model or c.default_optimization_model
+
+    def test_from_env_min_image_pixels_default(self):
+        with patch.dict(
+            os.environ,
+            {"OPENROUTER_API_KEY": "sk-ok"},
+            clear=False,
+        ):
+            env = dict(os.environ)
+            env.pop("GENIMG_MIN_IMAGE_PIXELS", None)
+            with patch.dict(os.environ, env):
+                c = Config.from_env()
+        assert c.min_image_pixels == 2500
+
+    def test_validate_raises_when_min_image_pixels_non_positive(self):
+        c = Config(openrouter_api_key="sk-ok", min_image_pixels=0)
+        with pytest.raises(ConfigurationError) as exc_info:
+            c.validate()
+        assert "min_image_pixels" in str(exc_info.value)
+
+    def test_validate_raises_when_min_image_pixels_exceeds_max(self):
+        c = Config(
+            openrouter_api_key="sk-ok",
+            min_image_pixels=3_000_000,
+            max_image_pixels=2_000_000,
+        )
+        with pytest.raises(ConfigurationError) as exc_info:
+            c.validate()
+        assert "min_image_pixels" in str(exc_info.value)
+        assert "max_image_pixels" in str(exc_info.value)
 
     def test_set_api_key_empty_raises(self):
         c = Config(openrouter_api_key="sk-ok")
