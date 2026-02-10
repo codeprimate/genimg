@@ -190,13 +190,49 @@ def load_image(image_path: str) -> Image.Image:
         raise ImageProcessingError(f"Failed to load image: {str(e)}", image_path=image_path) from e
 
 
+def _pad_to_aspect(
+    image: Image.Image,
+    aspect_ratio: tuple[int, int],
+    fill: tuple[int, ...] = (255, 255, 255),
+) -> Image.Image:
+    """
+    Pad image to match target aspect ratio (width, height) with fill color.
+    Pads top/bottom or left/right so the image is centered.
+    """
+    out_w, out_h = image.size
+    if image.mode in ("RGBA", "LA") and len(fill) == 3:
+        fill = (*fill, 255)
+    ar_w, ar_h = aspect_ratio
+    target_ratio = ar_w / ar_h
+    current_ratio = out_w / out_h if out_h else 0
+
+    if current_ratio <= target_ratio:
+        final_w = max(out_w, round(out_h * target_ratio))
+        final_h = out_h
+    else:
+        final_w = out_w
+        final_h = max(out_h, round(out_w / target_ratio))
+
+    if (final_w, final_h) == (out_w, out_h):
+        return image
+
+    canvas = Image.new(image.mode, (final_w, final_h), fill)
+    paste_x = (final_w - out_w) // 2
+    paste_y = (final_h - out_h) // 2
+    canvas.paste(image, (paste_x, paste_y))
+    return canvas
+
+
 def resize_image(
     image: Image.Image,
     max_pixels: int | None = None,
     min_pixels: int | None = None,
+    aspect_ratio: tuple[int, int] | None = None,
 ) -> Image.Image:
     """
-    Resize an image to fit within a maximum pixel count while maintaining aspect ratio.
+    Resize an image to fit within a maximum pixel count while maintaining aspect ratio,
+    then pad to match the configured aspect ratio (white by default).
+
     Enforces a minimum pixel count (raises ValidationError if output would be too small).
 
     Args:
@@ -204,19 +240,23 @@ def resize_image(
         max_pixels: Maximum number of pixels (width * height). If None, uses config default.
         min_pixels: Minimum number of pixels for the result. If None, uses config default.
             If the image (after any resize) would have fewer pixels, ValidationError is raised.
+        aspect_ratio: (width, height) ratio for final image; images are padded to match.
+            If None, uses config default.
 
     Returns:
-        Resized PIL Image (or original if already within bounds)
+        Resized (and optionally padded) PIL Image
 
     Raises:
         ValidationError: If the resulting image would have fewer than min_pixels
     """
-    if max_pixels is None or min_pixels is None:
+    if max_pixels is None or min_pixels is None or aspect_ratio is None:
         config = get_config()
         if max_pixels is None:
             max_pixels = config.max_image_pixels
         if min_pixels is None:
             min_pixels = config.min_image_pixels
+        if aspect_ratio is None:
+            aspect_ratio = config.aspect_ratio
 
     width, height = image.size
     current_pixels = width * height
@@ -254,9 +294,10 @@ def resize_image(
             field="image",
         )
 
-    if (out_w, out_h) == (width, height):
-        return image
-    return image.resize((out_w, out_h), Image.Resampling.LANCZOS)
+    if (out_w, out_h) != (width, height):
+        image = image.resize((out_w, out_h), Image.Resampling.LANCZOS)
+
+    return _pad_to_aspect(image, aspect_ratio)
 
 
 def convert_to_rgb(image: Image.Image) -> Image.Image:

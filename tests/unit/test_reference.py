@@ -171,6 +171,37 @@ class TestResizeImage:
         assert "2500" in str(exc_info.value)
         assert exc_info.value.field == "image"
 
+    def test_aspect_ratio_pad_top_bottom(self):
+        # 20x10 (wide) with aspect 1:1 -> padded to 20x20 (top/bottom white)
+        img = Image.new("RGB", (20, 10), color=(100, 100, 100))
+        out = resize_image(
+            img, max_pixels=1_000_000, min_pixels=1, aspect_ratio=(1, 1)
+        )
+        assert out.size == (20, 20)
+        # Center of pasted image (original 20x10 at paste_y=5)
+        assert out.getpixel((10, 10)) == (100, 100, 100)
+        # Top/bottom padding should be white
+        assert out.getpixel((10, 0)) == (255, 255, 255)
+        assert out.getpixel((10, 19)) == (255, 255, 255)
+
+    def test_aspect_ratio_pad_left_right(self):
+        # 10x20 (tall) with aspect 1:1 -> padded to 20x20 (left/right white)
+        img = Image.new("RGB", (10, 20), color=(100, 100, 100))
+        out = resize_image(
+            img, max_pixels=1_000_000, min_pixels=1, aspect_ratio=(1, 1)
+        )
+        assert out.size == (20, 20)
+        assert out.getpixel((5, 10)) == (100, 100, 100)
+        assert out.getpixel((0, 10)) == (255, 255, 255)
+        assert out.getpixel((19, 10)) == (255, 255, 255)
+
+    def test_aspect_ratio_no_pad_when_already_matches(self):
+        img = Image.new("RGB", (10, 10))
+        out = resize_image(
+            img, max_pixels=1_000_000, min_pixels=1, aspect_ratio=(1, 1)
+        )
+        assert out.size == (10, 10)
+
 
 @pytest.mark.unit
 class TestConvertToRgb:

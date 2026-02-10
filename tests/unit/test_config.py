@@ -91,6 +91,20 @@ class TestConfig:
         assert "min_image_pixels" in str(exc_info.value)
         assert "max_image_pixels" in str(exc_info.value)
 
+    def test_aspect_ratio_default(self):
+        c = Config(openrouter_api_key="sk-ok")
+        assert c.aspect_ratio == (1, 1)
+
+    def test_validate_raises_when_aspect_ratio_non_positive(self):
+        c = Config(openrouter_api_key="sk-ok", aspect_ratio=(0, 1))
+        with pytest.raises(ConfigurationError) as exc_info:
+            c.validate()
+        assert "aspect_ratio" in str(exc_info.value)
+        c2 = Config(openrouter_api_key="sk-ok", aspect_ratio=(1, 0))
+        with pytest.raises(ConfigurationError) as exc_info2:
+            c2.validate()
+        assert "aspect_ratio" in str(exc_info2.value)
+
     def test_set_api_key_empty_raises(self):
         c = Config(openrouter_api_key="sk-ok")
         with pytest.raises(ConfigurationError):

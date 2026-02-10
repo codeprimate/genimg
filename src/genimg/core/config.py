@@ -39,6 +39,7 @@ class Config:
     min_image_pixels: int = 2500  # minimum total pixels for reference images
     max_image_pixels: int = 2_000_000  # 2 megapixels
     default_image_quality: int = 95  # JPEG quality for saved images
+    aspect_ratio: tuple[int, int] = (1, 1)  # (width, height) ratio for output; images padded to match
 
     # Timeout Configuration (seconds)
     generation_timeout: int = 300  # 5 minutes
@@ -109,6 +110,12 @@ class Config:
             raise ConfigurationError(
                 f"min_image_pixels ({self.min_image_pixels}) must not exceed "
                 f"max_image_pixels ({self.max_image_pixels})."
+            )
+
+        ar_w, ar_h = self.aspect_ratio
+        if ar_w <= 0 or ar_h <= 0:
+            raise ConfigurationError(
+                f"aspect_ratio components must be positive, got {self.aspect_ratio}."
             )
 
         self._validated = True
