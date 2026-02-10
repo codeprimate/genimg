@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "genimg"
-version = "0.9.4"
+version = "0.9.6"
 description = "AI image generation tool with prompt optimization"
 readme = "README.md"
 requires-python = ">=3.10"
