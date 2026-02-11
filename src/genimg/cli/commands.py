@@ -89,6 +89,11 @@ def cli(ctx: click.Context) -> None:
     count=True,
     help="Increase verbosity: -v also show prompts, -vv show API/cache detail.",
 )
+@click.option(
+    "--debug-api",
+    is_flag=True,
+    help="Log raw API request payload and response (image data truncated) for debugging.",
+)
 def generate(
     prompt: str,
     model: str | None,
@@ -100,6 +105,7 @@ def generate(
     api_key: str | None,
     quiet: bool,
     verbose_count: int,
+    debug_api: bool,
 ) -> None:
     """Generate an image from a text prompt (optionally with optimization and reference)."""
     # Reset cancel event for this run (in case CLI is invoked again in same process)
@@ -116,6 +122,8 @@ def generate(
         # Override API key if provided via CLI
         if api_key is not None:
             config.set_api_key(api_key)
+        if debug_api:
+            config.debug_api = True
 
         config.validate()
 
@@ -258,7 +266,18 @@ def generate(
     envvar="OPENROUTER_API_KEY",
     help="OpenRouter API key (overrides OPENROUTER_API_KEY environment variable).",
 )
-def ui(port: int | None, host: str | None, share: bool | None, api_key: str | None) -> None:
+@click.option(
+    "--debug-api",
+    is_flag=True,
+    help="Log raw API request/response (image data truncated) when generating from the UI.",
+)
+def ui(
+    port: int | None,
+    host: str | None,
+    share: bool | None,
+    api_key: str | None,
+    debug_api: bool,
+) -> None:
     """Launch the Gradio web UI for image generation."""
     from genimg.ui.gradio_app import launch as launch_ui
 
@@ -268,6 +287,8 @@ def ui(port: int | None, host: str | None, share: bool | None, api_key: str | No
     # Set API key in environment if provided via CLI so the UI can pick it up
     if api_key is not None:
         os.environ["OPENROUTER_API_KEY"] = api_key
+    if debug_api:
+        os.environ["GENIMG_DEBUG_API"] = "1"
 
     # Resolve env for share: env var "1" or "true" => True
     share_val = share

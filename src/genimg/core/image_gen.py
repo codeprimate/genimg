@@ -7,6 +7,7 @@ from text prompts and optional reference images.
 
 import base64
 import io
+import json
 import threading
 import time
 from collections.abc import Callable
@@ -31,6 +32,30 @@ logger = get_logger(__name__)
 
 # Max prompt length for logging (large so prompts are effectively never truncated)
 _PROMPT_LOG_MAX = 50_000
+
+# Min length for a string to be considered image data and truncated in debug logs
+_DEBUG_TRUNCATE_THRESHOLD = 200
+
+# Dict keys whose string values are never truncated (prompts, error messages, provider raw error)
+_DEBUG_NEVER_TRUNCATE_KEYS = frozenset({"text", "message", "raw"})
+
+
+def _truncate_image_data_for_log(obj: Any, parent_key: str | None = None) -> Any:
+    """Recursively replace long base64/data URL strings with placeholders for safe logging.
+    Values under keys 'text', 'message', and 'raw' are never truncated so prompts and
+    API error details remain visible.
+    """
+    if isinstance(obj, dict):
+        return {k: _truncate_image_data_for_log(v, k) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_truncate_image_data_for_log(v, None) for v in obj]
+    if isinstance(obj, str) and len(obj) >= _DEBUG_TRUNCATE_THRESHOLD:
+        if parent_key in _DEBUG_NEVER_TRUNCATE_KEYS:
+            return obj
+        if obj.startswith("data:"):
+            return f"<data URL, {len(obj)} chars>"
+        return f"<string, {len(obj)} chars>"
+    return obj
 
 
 def _format_from_content_type(content_type: str) -> str:
@@ -77,6 +102,7 @@ def _do_generate_image_request(
     model: str,
     prompt: str,
     reference_image_b64: str | None,
+    debug: bool = False,
 ) -> GenerationResult:
     """Perform the HTTP request and parse response; used by generate_image (and by worker when cancellable)."""
     logger.debug(
@@ -85,6 +111,12 @@ def _do_generate_image_request(
         model,
         timeout,
     )
+    if debug:
+        truncated = _truncate_image_data_for_log(payload)
+        logger.info(
+            "API request payload (image data truncated): %s",
+            json.dumps(truncated, indent=2, default=str),
+        )
     start_time = time.time()
     response = requests.post(url, headers=headers, json=payload, timeout=timeout)
     generation_time = time.time() - start_time
@@ -94,6 +126,26 @@ def _do_generate_image_request(
         response.headers.get("content-type", ""),
         generation_time,
     )
+    if debug:
+        content_type = response.headers.get("content-type", "")
+        if content_type.startswith("image/"):
+            logger.info(
+                "API response (image data truncated): <image body, %s bytes>",
+                len(response.content),
+            )
+        else:
+            try:
+                result = response.json()
+                truncated = _truncate_image_data_for_log(result)
+                logger.info(
+                    "API response (image data truncated): %s",
+                    json.dumps(truncated, indent=2, default=str),
+                )
+            except ValueError:
+                text = response.text
+                if len(text) > 2000:
+                    text = text[:2000] + f"... <truncated, {len(response.text)} chars total>"
+                logger.info("API response (raw text): %s", text)
 
     if response.status_code == 401:
         raise APIError(
@@ -230,6 +282,8 @@ def generate_image(
     if timeout is None:
         timeout = config.generation_timeout
 
+    debug_api = getattr(config, "debug_api", False)
+
     has_ref = reference_image_b64 is not None
     logger.info(
         "Generating image model=%s has_reference=%s",
@@ -258,7 +312,14 @@ def generate_image(
     if cancel_check is None:
         try:
             result = _do_generate_image_request(
-                url, headers, payload, timeout, model, prompt, reference_image_b64
+                url,
+                headers,
+                payload,
+                timeout,
+                model,
+                prompt,
+                reference_image_b64,
+                debug=debug_api,
             )
             logger.info(
                 "Generated in %.1fs model=%s",
@@ -288,7 +349,14 @@ def generate_image(
     def worker() -> None:
         try:
             result_holder[0] = _do_generate_image_request(
-                url, headers, payload, timeout, model, prompt, reference_image_b64
+                url,
+                headers,
+                payload,
+                timeout,
+                model,
+                prompt,
+                reference_image_b64,
+                debug=debug_api,
             )
         except requests.exceptions.Timeout as e:
             err = RequestTimeoutError(

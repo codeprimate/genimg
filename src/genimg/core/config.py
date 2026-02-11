@@ -45,6 +45,9 @@ class Config:
     generation_timeout: int = 300  # 5 minutes
     optimization_timeout: int = 120  # 2 minutes
 
+    # Debug: log raw API payload/response with image data truncated
+    debug_api: bool = False
+
     # Runtime state
     optimization_enabled: bool = False
     _validated: bool = field(default=False, repr=False)
@@ -72,6 +75,8 @@ class Config:
             val = os.getenv(name)
             return int(val) if val not in (None, "") else default
 
+        debug_api = os.getenv("GENIMG_DEBUG_API", "").strip().lower() in ("1", "true", "yes")
+
         config = cls(
             openrouter_api_key=api_key,
             default_image_model=os.getenv("GENIMG_DEFAULT_MODEL", cls.default_image_model),
@@ -79,6 +84,7 @@ class Config:
                 "GENIMG_OPTIMIZATION_MODEL", cls.default_optimization_model
             ),
             min_image_pixels=_int_env("GENIMG_MIN_IMAGE_PIXELS", 2500),
+            debug_api=debug_api,
         )
 
         return config

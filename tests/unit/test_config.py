@@ -74,6 +74,27 @@ class TestConfig:
                 c = Config.from_env()
         assert c.min_image_pixels == 2500
 
+    def test_from_env_debug_api_true(self):
+        with patch.dict(
+            os.environ,
+            {"OPENROUTER_API_KEY": "sk-ok", "GENIMG_DEBUG_API": "1"},
+            clear=False,
+        ):
+            c = Config.from_env()
+        assert c.debug_api is True
+
+    def test_from_env_debug_api_false_by_default(self):
+        with patch.dict(
+            os.environ,
+            {"OPENROUTER_API_KEY": "sk-ok"},
+            clear=False,
+        ):
+            env = dict(os.environ)
+            env.pop("GENIMG_DEBUG_API", None)
+            with patch.dict(os.environ, env):
+                c = Config.from_env()
+        assert c.debug_api is False
+
     def test_validate_raises_when_min_image_pixels_non_positive(self):
         c = Config(openrouter_api_key="sk-ok", min_image_pixels=0)
         with pytest.raises(ConfigurationError) as exc_info:

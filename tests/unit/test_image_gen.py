@@ -11,6 +11,7 @@ from genimg.core.config import Config
 from genimg.core.image_gen import (
     GenerationResult,
     _format_from_content_type,
+    _truncate_image_data_for_log,
     generate_image,
 )
 from genimg.utils.exceptions import (
@@ -54,6 +55,39 @@ class TestGenerationResult:
         assert _format_from_content_type("image/PNG; charset=utf-8") == "png"
         assert _format_from_content_type("") == "png"
         assert _format_from_content_type("text/plain") == "png"
+
+    def test_truncate_image_data_for_log_short_string_unchanged(self):
+        assert _truncate_image_data_for_log("short") == "short"
+
+    def test_truncate_image_data_for_log_data_url_truncated(self):
+        long_data = "data:image/png;base64," + ("x" * 500)
+        out = _truncate_image_data_for_log(long_data)
+        assert out == "<data URL, 522 chars>"
+
+    def test_truncate_image_data_for_log_long_string_truncated(self):
+        long_str = "a" * 300
+        out = _truncate_image_data_for_log(long_str)
+        assert out == "<string, 300 chars>"
+
+    def test_truncate_image_data_for_log_payload(self):
+        payload = {"model": "m", "messages": [{"content": [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + ("y" * 400)}}]}]}
+        out = _truncate_image_data_for_log(payload)
+        assert out["model"] == "m"
+        assert out["messages"][0]["content"][0]["image_url"]["url"] == "<data URL, 423 chars>"
+
+    def test_truncate_image_data_for_log_preserves_text_message_raw(self):
+        # Prompt text, error message, and provider raw error must not be truncated
+        long_prompt = "a" * 300
+        long_error = "b" * 250
+        long_raw = "Provider error: image too large" + "x" * 300
+        payload = {"messages": [{"content": [{"type": "text", "text": long_prompt}]}], "other": "z" * 300}
+        response = {"error": {"message": long_error, "metadata": {"raw": long_raw}}}
+        out_p = _truncate_image_data_for_log(payload)
+        out_r = _truncate_image_data_for_log(response)
+        assert out_p["messages"][0]["content"][0]["text"] == long_prompt
+        assert out_p["other"] == "<string, 300 chars>"
+        assert out_r["error"]["message"] == long_error
+        assert out_r["error"]["metadata"]["raw"] == long_raw
 
 
 @pytest.mark.unit
