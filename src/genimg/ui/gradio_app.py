@@ -7,6 +7,7 @@ Uses only the public API: from genimg import ...
 """
 
 import argparse
+import atexit
 import base64
 import importlib.resources
 import os
@@ -57,6 +58,24 @@ _cancel_event = threading.Event()
 OPTIMIZED_FOR_PROMPT = "prompt"
 OPTIMIZED_FOR_REF_HASH = "ref_hash"
 
+# Temp paths we create (favicon, reference images, output JPGs); cleaned on process exit
+_temp_paths: set[str] = set()
+
+
+def _register_temp_path(path: str) -> None:
+    _temp_paths.add(path)
+
+
+def _cleanup_temp_paths() -> None:
+    for path in _temp_paths:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+atexit.register(_cleanup_temp_paths)
+
 
 def _initial_optimized_for_state() -> dict[str, Any]:
     """Initial value for optimized_for_state (JSON-serializable for Gradio)."""
@@ -80,6 +99,7 @@ def _get_favicon_path() -> str | None:
     os.close(fd)
     Path(path).write_bytes(data)
     _logo_favicon_path = path
+    _register_temp_path(path)
     return path
 
 
@@ -243,6 +263,7 @@ def _reference_source_for_process(value: Any) -> str | None:
             fd, path = tempfile.mkstemp(suffix=".png", prefix="genimg_ref_")
             os.close(fd)
             value.save(path, "PNG")
+            _register_temp_path(path)
             return path
         except Exception:
             return None
@@ -337,6 +358,7 @@ def _run_generate(
     ts = int(time.time())
     out_path = Path(tempfile.gettempdir()) / f"{ts}.jpg"
     result.image.save(str(out_path), "JPEG", quality=90)
+    _register_temp_path(str(out_path))
     return f"Done in {elapsed:.1f}s", str(out_path), f"Done in {elapsed:.1f}s"
 
 
@@ -457,6 +479,7 @@ def _run_generate_stream(
     ts = int(time.time())
     out_path = Path(tempfile.gettempdir()) / f"{ts}.jpg"
     result.image.save(str(out_path), "JPEG", quality=90)
+    _register_temp_path(str(out_path))
     yield (
         _format_status(f"Done in {elapsed:.1f}s", "success"),
         str(out_path),
