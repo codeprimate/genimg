@@ -689,10 +689,7 @@ def _run_optimize_only_stream(
 
 
 # Message shown when provider does not support reference images
-_REF_NOT_SUPPORTED_MSG = (
-    "Reference images are not supported for this provider. "
-    "Switch to OpenRouter to use a reference image."
-)
+_REF_NOT_SUPPORTED_MSG = "Reference images are not supported for this provider."
 
 
 def _build_blocks() -> gr.Blocks:
