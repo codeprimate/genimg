@@ -51,6 +51,16 @@ _UI_PROMPT_LOG_MAX = 50_000
 DEFAULT_UI_PORT = 7860
 DEFAULT_UI_HOST = "127.0.0.1"
 
+# Base page title (browser tab); status prefixes are prepended during optimize/generate
+BASE_PAGE_TITLE = "genimg – AI image generation"
+
+
+def _page_title_with_status(status_tag: str) -> str:
+    """Return full page title with optional status prefix for tab."""
+    if not status_tag:
+        return BASE_PAGE_TITLE
+    return f"{status_tag} {BASE_PAGE_TITLE}"
+
 # Shared cancellation event: Generate clears at start, Stop sets it
 _cancel_event = threading.Event()
 
@@ -372,18 +382,18 @@ def _run_generate_stream(
     optimization_model: str | None = None,
     cancel_check: Any | None = None,
     optimized_for_state: dict[str, Any] | None = None,
-) -> Generator[tuple[str, str | None, bool, bool, str, dict[str, Any]], None, None]:
+) -> Generator[tuple[str, str | None, bool, bool, str, dict[str, Any], str], None, None]:
     """
     Generate flow: use Optimized prompt box only when it was produced for the current
     (prompt, ref_hash); otherwise run optimize when checkbox on, else use Prompt.
-    Yields (status, img_path, gen_on, stop_on, optimized_box_value, optimized_for_state).
+    Yields (status, img_path, gen_on, stop_on, optimized_box_value, optimized_for_state, page_title).
     """
     state = optimized_for_state or _initial_optimized_for_state()
     # Value to show in Optimized prompt box; keep unchanged unless we run optimize
     box_value = (optimized_prompt_value or "").strip() or ""
 
     if not prompt or not prompt.strip():
-        yield _format_status("Enter a prompt to generate.", "warning"), None, True, False, box_value, state
+        yield _format_status("Enter a prompt to generate.", "warning"), None, True, False, box_value, state, BASE_PAGE_TITLE
         return
     logger.info("Generate requested")
     if log_prompts():
@@ -395,12 +405,12 @@ def _run_generate_stream(
     try:
         config.validate()
     except ConfigurationError as e:
-        yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state
+        yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state, BASE_PAGE_TITLE
         return
     try:
         validate_prompt(prompt)
     except ValidationError as e:
-        yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state
+        yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state, BASE_PAGE_TITLE
         return
     ref_b64: str | None = None
     ref_hash: str | None = None
@@ -409,7 +419,7 @@ def _run_generate_stream(
         try:
             ref_b64, ref_hash = process_reference_image(ref_source, config=config)
         except (ValidationError, ImageProcessingError, FileNotFoundError) as e:
-            yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state
+            yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state, BASE_PAGE_TITLE
             return
     # Use optimized box only if it was produced for this exact (prompt, ref_hash)
     state_matches = (
@@ -421,7 +431,7 @@ def _run_generate_stream(
     elif box_value and not state_matches and optimize:
         # Prompt or ref changed; re-optimize for current prompt
         config.optimization_enabled = True
-        yield _format_status("Optimizing…", "info"), None, False, True, box_value, state
+        yield _format_status("Optimizing…", "info"), None, False, True, box_value, state, _page_title_with_status("[Optimizing]")
         try:
             effective_prompt = optimize_prompt(
                 prompt,
@@ -433,14 +443,14 @@ def _run_generate_stream(
             box_value = effective_prompt
             state = {OPTIMIZED_FOR_PROMPT: prompt, OPTIMIZED_FOR_REF_HASH: ref_hash}
         except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
-            yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state
+            yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state, BASE_PAGE_TITLE
             return
     elif box_value and not state_matches and not optimize:
         # Stale box from different prompt; user has optimization off so use raw prompt
         effective_prompt = prompt
     elif optimize:
         config.optimization_enabled = True
-        yield _format_status("Optimizing…", "info"), None, False, True, box_value, state
+        yield _format_status("Optimizing…", "info"), None, False, True, box_value, state, _page_title_with_status("[Optimizing]")
         try:
             effective_prompt = optimize_prompt(
                 prompt,
@@ -452,11 +462,11 @@ def _run_generate_stream(
             box_value = effective_prompt
             state = {OPTIMIZED_FOR_PROMPT: prompt, OPTIMIZED_FOR_REF_HASH: ref_hash}
         except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
-            yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state
+            yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state, BASE_PAGE_TITLE
             return
     else:
         effective_prompt = prompt
-    yield _format_status("Generating…", "info"), None, False, True, box_value, state
+    yield _format_status("Generating…", "info"), None, False, True, box_value, state, _page_title_with_status("[Generating]")
     try:
         result = generate_image(
             effective_prompt,
@@ -473,7 +483,7 @@ def _run_generate_stream(
         RequestTimeoutError,
         CancellationError,
     ) as e:
-        yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state
+        yield _format_status(_exception_to_message(e), "error"), None, True, False, box_value, state, BASE_PAGE_TITLE
         return
     elapsed = result.generation_time
     ts = int(time.time())
@@ -487,6 +497,7 @@ def _run_generate_stream(
         False,
         box_value,
         state,
+        _page_title_with_status("[DONE]"),
     )
 
 
@@ -505,7 +516,7 @@ def _generate_click_handler(
     _cancel_event.clear()
     state = optimized_for_state or _initial_optimized_for_state()
     try:
-        for status_msg, img_path, gen_on, stop_on, box_val, new_state in _run_generate_stream(
+        for status_msg, img_path, gen_on, stop_on, box_val, new_state, page_title in _run_generate_stream(
             p,
             opt,
             opt_text,
@@ -524,6 +535,7 @@ def _generate_click_handler(
                 gr.update(interactive=stop_on),
                 box_val,
                 state,
+                page_title,
             )
     except GenimgError as e:
         yield (
@@ -533,6 +545,7 @@ def _generate_click_handler(
             gr.update(interactive=False),
             opt_text,
             state,
+            BASE_PAGE_TITLE,
         )
     except Exception as e:
         yield (
@@ -542,6 +555,7 @@ def _generate_click_handler(
             gr.update(interactive=False),
             opt_text,
             state,
+            BASE_PAGE_TITLE,
         )
 
 
@@ -556,7 +570,7 @@ def _optimize_click_handler(
     _cancel_event.clear()
     state = optimized_for_state or _initial_optimized_for_state()
     try:
-        for status_msg, opt_text, opt_on, stop_on, gen_on, state_update in _run_optimize_only_stream(
+        for status_msg, opt_text, opt_on, stop_on, gen_on, state_update, page_title in _run_optimize_only_stream(
             p, ref, optimization_model=opt_mod, cancel_check=lambda: _cancel_event.is_set()
         ):
             if state_update is not None:
@@ -568,6 +582,7 @@ def _optimize_click_handler(
                 gr.update(interactive=stop_on),
                 gr.update(interactive=gen_on),
                 state,
+                page_title,
             )
     except GenimgError as e:
         yield (
@@ -577,6 +592,7 @@ def _optimize_click_handler(
             gr.update(interactive=False),
             gr.update(interactive=True),
             state,
+            BASE_PAGE_TITLE,
         )
     except Exception as e:
         yield (
@@ -586,13 +602,14 @@ def _optimize_click_handler(
             gr.update(interactive=False),
             gr.update(interactive=True),
             state,
+            BASE_PAGE_TITLE,
         )
 
 
-def _stop_click_handler() -> tuple[Any, Any]:
-    """Stop button logic: set cancel event, restore button states."""
+def _stop_click_handler() -> tuple[Any, Any, str]:
+    """Stop button logic: set cancel event, restore button states, reset page title."""
     _cancel_event.set()
-    return gr.update(interactive=True), gr.update(interactive=False)
+    return gr.update(interactive=True), gr.update(interactive=False), BASE_PAGE_TITLE
 
 
 def _prompt_change_handler(text: str) -> tuple[Any, Any]:
@@ -612,14 +629,14 @@ def _run_optimize_only_stream(
     reference_value: Any,
     optimization_model: str | None = None,
     cancel_check: Any | None = None,
-) -> Generator[tuple[str, str, bool, bool, bool, dict[str, Any] | None], None, None]:
+) -> Generator[tuple[str, str, bool, bool, bool, dict[str, Any] | None, str], None, None]:
     """
-    Run optimization only; yields (status_msg, optimized_text, optimize_btn_on, stop_btn_on, generate_btn_on, state_update).
+    Run optimization only; yields (status_msg, optimized_text, optimize_btn_on, stop_btn_on, generate_btn_on, state_update, page_title).
     state_update is None for intermediate yields; on success final yield it is {prompt, ref_hash}.
     """
     prompt_ok = bool(prompt and prompt.strip())
     if not prompt_ok:
-        yield _format_status("Enter a prompt to optimize.", "warning"), "", True, False, False, None
+        yield _format_status("Enter a prompt to optimize.", "warning"), "", True, False, False, None, BASE_PAGE_TITLE
         return
     logger.info("Optimize requested")
     if log_prompts():
@@ -631,12 +648,12 @@ def _run_optimize_only_stream(
     try:
         config.validate()
     except ConfigurationError as e:
-        yield _format_status(_exception_to_message(e), "error"), "", True, False, True, None
+        yield _format_status(_exception_to_message(e), "error"), "", True, False, True, None, BASE_PAGE_TITLE
         return
     try:
         validate_prompt(prompt)
     except ValidationError as e:
-        yield _format_status(_exception_to_message(e), "error"), "", True, False, True, None
+        yield _format_status(_exception_to_message(e), "error"), "", True, False, True, None, BASE_PAGE_TITLE
         return
     ref_hash: str | None = None
     ref_source = _reference_source_for_process(reference_value)
@@ -644,10 +661,10 @@ def _run_optimize_only_stream(
         try:
             _, ref_hash = process_reference_image(ref_source, config=config)
         except (ValidationError, ImageProcessingError, FileNotFoundError) as e:
-            yield _format_status(_exception_to_message(e), "error"), "", True, False, True, None
+            yield _format_status(_exception_to_message(e), "error"), "", True, False, True, None, BASE_PAGE_TITLE
             return
     config.optimization_enabled = True
-    yield _format_status("Optimizing…", "info"), "", False, True, False, None
+    yield _format_status("Optimizing…", "info"), "", False, True, False, None, _page_title_with_status("[Optimizing]")
     try:
         optimized = optimize_prompt(
             prompt,
@@ -665,9 +682,10 @@ def _run_optimize_only_stream(
             False,
             True,
             state_update,
+            _page_title_with_status("[DONE]"),
         )
     except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
-        yield _format_status(_exception_to_message(e), "error"), "", True, False, True, None
+        yield _format_status(_exception_to_message(e), "error"), "", True, False, True, None, BASE_PAGE_TITLE
 
 
 # Message shown when provider does not support reference images
@@ -716,9 +734,10 @@ def _build_blocks() -> gr.Blocks:
 </div>
 """
 
-    with gr.Blocks(title="genimg – AI image generation") as app:
+    with gr.Blocks(title=BASE_PAGE_TITLE) as app:
         gr.HTML(header_html)
         status_html = gr.HTML(value="", visible=True)
+        page_title = gr.Textbox(value=BASE_PAGE_TITLE, visible=False, elem_id="genimg-page-title")
 
         with gr.Row():
             with gr.Column():
@@ -823,6 +842,12 @@ def _build_blocks() -> gr.Blocks:
 
         optimized_for_state = gr.State(value=_initial_optimized_for_state())
 
+        _JS_SET_PAGE_TITLE = (
+            "function(...args) { if (args.length) document.title = args[args.length - 1] || ''; return args; }"
+        )
+        _gen_outputs = [status_html, out_image, generate_btn, stop_btn, optimized_tb, optimized_for_state, page_title]
+        _opt_outputs = [status_html, optimized_tb, optimize_btn, stop_btn, generate_btn, optimized_for_state, page_title]
+
         gen_ev = generate_btn.click(
             fn=_generate_click_handler,
             inputs=[
@@ -835,19 +860,22 @@ def _build_blocks() -> gr.Blocks:
                 optimization_dd,
                 optimized_for_state,
             ],
-            outputs=[status_html, out_image, generate_btn, stop_btn, optimized_tb, optimized_for_state],
+            outputs=_gen_outputs,
         )
+        gen_ev.then(js=_JS_SET_PAGE_TITLE, inputs=_gen_outputs, outputs=_gen_outputs)
         opt_ev = optimize_btn.click(
             fn=_optimize_click_handler,
             inputs=[prompt_tb, ref_image, optimization_dd, optimized_for_state],
-            outputs=[status_html, optimized_tb, optimize_btn, stop_btn, generate_btn, optimized_for_state],
+            outputs=_opt_outputs,
         )
+        opt_ev.then(js=_JS_SET_PAGE_TITLE, inputs=_opt_outputs, outputs=_opt_outputs)
+        _stop_outputs = [generate_btn, stop_btn, page_title]
         stop_btn.click(
             fn=_stop_click_handler,
             inputs=[],
-            outputs=[generate_btn, stop_btn],
+            outputs=_stop_outputs,
             cancels=[gen_ev, opt_ev],
-        )
+        ).then(js=_JS_SET_PAGE_TITLE, inputs=_stop_outputs, outputs=_stop_outputs)
 
         prompt_tb.change(
             fn=_prompt_change_handler,

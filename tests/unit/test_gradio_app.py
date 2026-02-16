@@ -358,8 +358,8 @@ class TestGenerateClickHandler:
         with patch("genimg.ui.gradio_app._run_generate_stream") as mock_stream:
             mock_stream.return_value = iter(
                 [
-                    ("Generating…", None, False, True, "", state),
-                    ("Done in 1.0s", "/tmp/123.jpg", True, False, "", state),
+                    ("Generating…", None, False, True, "", state, "[Generating] genimg – AI image generation"),
+                    ("Done in 1.0s", "/tmp/123.jpg", True, False, "", state, "[DONE] genimg – AI image generation"),
                 ]
             )
             out = list(
@@ -408,8 +408,8 @@ class TestOptimizeClickHandler:
         with patch("genimg.ui.gradio_app._run_optimize_only_stream") as mock_stream:
             mock_stream.return_value = iter(
                 [
-                    ("Optimizing…", "", False, True, False, None),
-                    ("Done.", "optimized text", True, False, True, {"prompt": "a dog", "ref_hash": None}),
+                    ("Optimizing…", "", False, True, False, None, "[Optimizing] genimg – AI image generation"),
+                    ("Done.", "optimized text", True, False, True, {"prompt": "a dog", "ref_hash": None}, "[DONE] genimg – AI image generation"),
                 ]
             )
             out = list(gradio_app._optimize_click_handler("a dog", None, None, state))
@@ -433,9 +433,10 @@ class TestStopAndPromptHandlers:
 
     def test_stop_click_sets_event_and_returns_updates(self) -> None:
         gradio_app._cancel_event.clear()
-        a, b = gradio_app._stop_click_handler()
+        a, b, page_title = gradio_app._stop_click_handler()
         assert gradio_app._cancel_event.is_set()
         assert a is not None and b is not None
+        assert page_title == gradio_app.BASE_PAGE_TITLE
 
     def test_prompt_change_empty_disabled(self) -> None:
         a, b = gradio_app._prompt_change_handler("")
