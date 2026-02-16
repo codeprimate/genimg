@@ -1,0 +1,61 @@
+---
+description: When the user wants to implement a plan
+globs: 
+alwaysApply: false
+---
+Execute implementation of this plan through systematic task iteration with specification-driven validation.
+
+## Execution Philosophy
+
+### Simplicity in Implementation
+- **Appropriate Complexity**: Implement solutions that match the actual complexity of the problem, not the theoretical maximum
+- **Iterative Refinement**: Start with the simplest working solution and add complexity only when requirements prove it necessary
+- **Pattern Consistency**: Follow existing codebase patterns rather than introducing new architectural approaches unless genuinely required
+- **Practical Trade-offs**: Make pragmatic decisions that prioritize maintainability and clarity over theoretical optimization
+- **Context-Aware Engineering**: Consider the application's scale and operational requirements when choosing implementation approaches
+
+The goal is to deliver working, maintainable code that solves the actual problem without introducing unnecessary complexity or over-engineering concerns.
+
+## Required Context Loading
+**CRITICAL**: Before beginning execution, load both documents into context:
+
+1. **Implementation Plan**: The todo/plan document containing numbered tasks and implementation details
+2. **Specification Document**: The referenced specification document (found in the plan's "Specification Reference" section)
+
+Both documents are essential for successful execution - the plan provides the implementation roadmap while the specification provides the authoritative requirements and context.
+
+Execution Protocol:
+
+1. **Context Verification**: Confirm both plan and specification documents are loaded and accessible
+2. **Task Selection**: Identify next incomplete task from todo document
+3. **Dependency Analysis**: Map task relationships, prerequisites, and downstream effects within specification context and the application as a whole
+4. **Implementation Strategy**: Develop approach satisfying explicit requirements and implicit architectural goals
+5. **Risk Evaluation**: Catalog constraints, edge cases, and failure modes
+6. **Execution Plan**: Present detailed implementation strategy with specification alignment; require user approval
+7. **Annotate the Todo Task**: Add the implementation plan for this task to the task section in the Todo file 
+8. **Systematic Implementation**: Execute via logical decomposition (post-approval):
+   - Decompose into sequential, atomic steps
+   - Execute with explicit step rationale and intermediate validation
+   - Document decision points and architectural trade-offs
+   - Maintain specification fidelity throughout
+9. **Functional Verification**: Validate against specification requirements and behavioral expectations
+10. **Test Implementation**: Develop/update unit tests ensuring correctness and regression coverage
+11. **Test Validation**: Execute test suite confirming implementation integrity
+12. **Quality Assessment**: Analyze implementation efficacy and specification compliance
+13. **Deliverable Review**: Present completed work with impact analysis for user evaluation
+14. **Specification Update**: Revise documentation upon user approval
+15. **Progress Synchronization**: Align specification state with implementation reality
+16. **Protocol Iteration**: Return to step 1 until phase completion
+
+Operational Directives:
+
+- **Context Authority**: Both plan and specification documents must be loaded and accessible throughout execution
+- **Specification Authority**: Treat specification document as authoritative source
+- **Approval Gates**: Halt at steps 6 and 12 pending user validation
+- **Feedback Integration**: Incorporate user modifications into implementation and documentation
+- **Evidence-Based Execution**: Reference specification, codebase, and domain authorities over assumptions. The user is one such domain authority.
+- **Incremental Validation**: Verify each step before progression
+- **Architectural Coherence**: Maintain domain-idiomatic patterns and structures
+- **Process Visibility**: Declare current step and next action explicitly
+
+Iterate until phase objectives achieved per specification criteria. Think deeply.

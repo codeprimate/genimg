@@ -1,0 +1,191 @@
+---
+description: When the user wants to create a software specification for new development or features
+globs: 
+alwaysApply: false
+---
+---
+description: Specification creation protocol
+applies: "**"
+---
+
+
+# Specification Creation Protocol
+
+Create focused specifications for features and bugfixes through systematic stakeholder dialogue. Generate a markdown specification document suitable for implementation protocol creation. **Output the complete specification as a markdown document in docs/.**
+
+## Philosophy & Principles
+
+The specification document develops a partial "theory" of a software system. ABOVE ALL, we are collaboratively creating an understanding of the "why's" and "what's" of a part of the system. Both are deeply influenced by existing implementation, which is more than just instructions: implementation is full of latent information about intent. Keep this in mind when analyzing current implementation.
+
+### Simplicity and Appropriateness
+- **Match complexity to task complexity**: The sophistication of the solution should align with the inherent complexity of the problem and the overall application
+- **Avoid over-engineering**: Resist the temptation to introduce unnecessary complexity, excessive edge case handling, or overwrought architecture
+- **Appropriate exhaustiveness**: Be thorough where genuinely needed, but avoid exhaustive solutions when simple approaches suffice
+- **Context-aware solutions**: Consider the scale, scope, and maturity of the application when determining appropriate architectural patterns
+- **Progressive complexity**: Start with the simplest viable solution and add complexity only when requirements genuinely demand it
+
+These principles apply throughout the specification process - from requirements gathering to technical approach definition. The goal is creating specifications that solve the actual problem without introducing unnecessary complexity.
+
+
+## Execution Protocol:
+
+### 1. **Problem Identification & Context Gathering**
+- Extract core problem statement and triggering conditions
+- Determine work category (feature enhancement, bug resolution, technical debt)
+- Establish success criteria and measurable outcomes
+- Document current system behavior and desired end state
+
+### 2. **Requirements Elicitation via Socratic Method**
+- **Functional Requirements**: Use targeted questioning to surface what the system must do
+- **Technical Constraints**: Identify performance, security, compatibility, and integration requirements
+- **Edge Case Discovery**: Systematically explore boundary conditions and error scenarios
+- **Assumption Validation**: Challenge unstated assumptions through iterative questioning
+
+### 3. **Codebase Analysis & Solution Architecture**
+- **Code Exploration**: Examine existing implementation patterns, architecture, and conventions
+- **Test Analysis**: Review current test coverage, patterns, and testing strategies
+- **Dependency Mapping**: Trace component relationships and integration points through code inspection
+- **Pattern Recognition**: Identify established architectural patterns and coding standards to follow
+- **Implementation Strategy**: Define approach consistent with existing codebase patterns
+- **Testing Strategy**: Plan validation approach based on existing test infrastructure
+
+### 4. **Scope Definition & Boundary Setting**
+- Establish explicit inclusion/exclusion criteria
+- Define acceptance criteria with testable conditions
+- Identify related work for future consideration
+- Set implementation task boundaries
+
+### 5. **Risk Analysis & Mitigation Planning**
+- Identify breaking changes and backward compatibility issues
+- Catalog areas requiring investigation or prototyping
+- Define rollback strategies and failure recovery
+- Document uncertainty factors requiring resolution
+
+### 6. **Specification Synthesis & Validation**
+- Generate structured specification document following standard template
+- Present complete plan to stakeholder for approval
+- Incorporate feedback and refinements iteratively
+- Ask for permission to continue and perform a deep dive
+
+### 7. **Deep Dive**
+
+We are done with discovery, and you have created this draft specification document. A great start.
+
+Superficially it sounds good, but your aim is not superficial. You know that there is more to know about the system. And you are curious, what unintentional and 2nd order effects will there be on the rest of the application? Think of this as a depth first search exercise.
+
+You will think very deeply and share what you find.
+
+
+## Interaction Directives:
+
+**Socratic Questioning Approach:**
+- Use open-ended questions to reveal implicit requirements: "What should happen when...?"
+- Challenge assumptions systematically: "Why is this approach preferred?"
+- Explore edge cases through scenarios: "How should the system behave if...?"
+- Trace dependencies: "What other components are affected by this change?"
+
+**Root Cause Analysis for Bugs:**
+- Investigate underlying causes: "Why did this issue occur initially?"
+- Examine prevention mechanisms: "What prevented early detection?"
+- Assess systemic implications: "Could similar issues exist elsewhere?"
+
+**Codebase Investigation:**
+- Examine relevant source files and understand existing patterns: "Let me look at the current implementation..."
+- Review test files to understand testing approach: "What does the existing test suite cover?"
+- Trace dependencies through actual code structure: "How do these components currently interact?"
+- Reference similar existing implementations: "How is this pattern handled elsewhere in the codebase?"
+
+## Specification Template:
+
+Generate output following this structure:
+
+```markdown
+# [Feature/Bug]: [Concise Description]
+
+## Problem Statement
+[Clear description of issue or feature need with context]
+
+## Requirements
+### Functional Requirements
+- [What the system must do]
+- [User interactions and workflows]
+- [Data handling and processing needs]
+
+### Technical Constraints
+- [Performance requirements]
+- [Security considerations]
+- [Compatibility requirements]
+- [Integration constraints]
+
+### Edge Cases & Error Handling
+- [Boundary conditions]
+- [Error scenarios and recovery]
+- [Invalid input handling]
+
+## Technical Approach
+### Implementation Strategy
+- [High-level solution approach]
+- [Technology/framework choices]
+- [Architectural patterns to follow]
+- [Code quality tools to use and testing frameworks to apply]
+
+### Affected Components
+- [Code areas requiring modification - reference specific files/classes]
+- [Database schema changes - reference existing schema]
+- [API modifications - reference current API patterns]
+- [Test files requiring updates - reference existing test structure]
+
+### Dependencies & Integration
+- [External service dependencies]
+- [Internal component interactions]
+- [Third-party library requirements]
+
+## Acceptance Criteria
+- [ ] [Testable success condition 1]
+- [ ] [Testable success condition 2]
+- [ ] [Error handling verification]
+- [ ] [Performance benchmark achievement]
+
+## Implementation Tasks
+- [ ] [Atomic implementation task 1]
+- [ ] [Atomic implementation task 2]
+- [ ] [Testing implementation]
+- [ ] [Documentation updates]
+
+## Risk Assessment
+### Potential Issues
+- [Breaking change risks and impact]
+- [Performance degradation possibilities]
+- [Security vulnerabilities introduced]
+
+### Mitigation Strategies
+- [Risk prevention approaches]
+- [Monitoring and detection methods]
+- [Rollback procedures]
+
+### Investigation Requirements
+- [Areas needing prototyping]
+- [Uncertainty factors requiring research]
+```
+
+## Operational Directives:
+
+- **Stakeholder Authority**: Treat user as domain expert and requirements authority
+- **Codebase Authority**: Reference actual implementation code and tests as architectural truth
+- **Evidence-Based Planning**: Ground decisions in current system behavior, existing code patterns, and measurable criteria
+- **Implementation Consistency**: Ensure planned changes align with established codebase conventions and patterns
+- **Test-Driven Specification**: Plan testing approach based on existing test infrastructure and coverage patterns
+- **Incremental Validation**: Confirm understanding before progressing to next discovery phase
+- **Specification Completeness**: Ensure sufficient detail for systematic implementation
+- **Approval Gate**: Present completed specification for stakeholder validation before implementation handoff
+- **Implementation Readiness**: Structure specification for seamless transition to execution protocol
+- **Complexity Appropriateness**: Validate that proposed solutions match the genuine complexity of the problem and application context
+- **Simplicity Bias**: When multiple approaches are viable, prefer the simpler, more maintainable option
+
+## Process Flow:
+
+Execute steps 1-5 through iterative dialogue with active codebase exploration. Examine relevant source files, test suites, and architectural patterns during requirements gathering. Synthesize findings into specification document grounded in actual implementation context. Present for approval before declaring completion.
+
+**Success Criteria**: Specification provides unambiguous, testable, and implementable requirements suitable for systematic execution protocol.
+
+Maintain focus on feature/bugfix scope while ensuring comprehensive coverage of technical and functional requirements.

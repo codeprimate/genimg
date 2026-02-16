@@ -1,0 +1,215 @@
+---
+description: When the user wants to create an implementation plan (todo list) based on a specification document
+globs: 
+alwaysApply: false
+---
+# Create Implementation TODO Plan
+
+Analyze the provided specification document and create a detailed, phased implementation plan with granular subtasks. **Output the complete plan as a markdown document in docs/.** The plan must include an explicit reference to the specification document to ensure the AI agent loads both documents during execution.
+
+## Planning Philosophy
+
+### Simplicity and Proportional Complexity
+- **Complexity Budget**: Allocate complexity only where the problem domain genuinely requires it
+- **Incremental Complexity**: Start with the simplest viable approach and add sophistication only when proven necessary
+- **Architecture Alignment**: Match solution architecture to application scale and maturity level
+- **Practical Over Perfect**: Favor practical, maintainable solutions over theoretically optimal but complex approaches
+- **Complexity Justification**: Each layer of complexity should have a clear, specific justification tied to actual requirements
+
+Planning should produce implementations that are as simple as possible while still meeting genuine requirements. Avoid creating plans that introduce unnecessary abstraction layers, extensive configuration systems, or comprehensive error handling beyond what the application context requires.
+
+## Process You Must Follow:
+
+1. **Extract requirements** from the specification document with section references
+2. **Examine the codebase** to understand existing patterns and constraints  
+3. **Research and validate** any unfamiliar technologies or dependencies
+4. **Create numbered phases** that segment work into logical, incrementally functional chunks
+5. **Structure detailed tasks** within each phase with granular subtasks
+6. **Write the plan** to a markdown file in docs/
+7. **Perform critical sanity check** analyzing each phase and task holistically against the specification
+
+## Phase Structure Philosophy:
+
+Each phase should:
+- Deliver functional value that can be tested and validated independently
+- Build upon the foundation established by previous phases
+- Be small enough to complete without overwhelming complexity
+- Provide a natural checkpoint for validation and course correction
+- Enable early feedback and iterative improvement
+
+## Task Format:
+
+```markdown
+# Implementation TODO: [Feature Name]
+
+## Specification Reference
+**Source Document**: [Path to specification document - e.g., docs/feature-xyz-specification.md]
+*This specification document must be loaded alongside this plan during execution to provide complete context and requirements.*
+
+## Overview
+- **Complexity**: [Simple/Moderate/Complex]
+- **Risk Level**: [Low/Medium/High] 
+- **Key Dependencies**: [Critical components or services]
+- **Estimated Effort**: [Time estimate]
+- **Specification Sections**: [List of spec sections addressed]
+
+## Phase Strategy
+Brief description of how the implementation is divided into phases and why this approach enables incremental delivery of functional value.
+
+## Progress Indicators
+- 📋 **Planned** - Not started
+- 🔄 **In Progress** - Currently being worked on
+- ✅ **Completed** - Successfully finished
+- ❌ **Blocked/Failed** - Encountered issues or dependencies
+- ⏸️ **Paused** - Temporarily suspended
+- 🔍 **Under Review** - Completed but needs validation
+
+*Progress indicators should be placed at the end of phase, task, and subtask headings with format: "- 📋 Planned"*
+
+## Implementation Phases
+
+## Phase 1: [Foundation Phase Name] - 📋 Planned
+*Incremental Goal: [Core functionality that enables basic operation]*
+
+### Task 1.1: [Task Title] - 📋 Planned
+*Spec Reference: Section X.Y*
+
+- [ ] 1.1.1 **[Subtask Title with action verb]** - 📋 Planned
+  - *Hint*: [Reference to similar patterns/examples in existing codebase]
+  - *Consider*: [Key technical considerations, patterns, or approaches to keep in mind]
+  - *Files*: [Specific files to create or modify]
+  - *Risk*: [Potential issues, edge cases, or impacts to be aware of]
+  - **IMPLEMENTATION PLAN**:
+    - **[Implementation Section 1]**:
+      - [Specific implementation step with code patterns]
+      - [Another implementation detail]
+      - [Technical specifics and method calls]
+    - **[Implementation Section 2]**:
+      - [More implementation details]
+      - [Integration patterns to follow]
+      - [Error handling or validation steps]
+    - **[Implementation Section 3]**:
+      - [Final implementation steps]
+      - [UI/UX considerations if applicable]
+      - [Performance or monitoring considerations]
+    - **Testing Strategy**:
+      - **Code Quality**: [Tools that should be used to validate formatting/standards/correctness as appropriate]
+      - **Unit Testing**: [Component-level testing requirements and specific test cases]
+      - **Integration Testing**: [End-to-end workflow validation and external dependency testing]
+      - **Test Cases**: [Specific scenarios to test with detailed descriptions]
+      - **Mocks/Fixtures**: [Required test setup, data fixtures, and mock configurations]
+      - **Coverage**: [Critical code paths to verify and edge cases to validate]
+      
+
+[Continue with additional phase tasks following the same detailed structure...]
+
+### Phase 1 Validation - 📋 Planned
+- **Acceptance Criteria**: [Specific functional requirements that must work]
+- **Testing Strategy**: [How to validate this phase works end-to-end]
+- **Rollback Plan**: [How to safely revert this phase if issues arise]
+
+## Phase 2: [Enhancement Phase Name] - 📋 Planned
+*Incremental Goal: [Additional functionality building on Phase 1]*
+
+### Task 2.1: [Task Title] - 📋 Planned
+*Spec Reference: Section X.Y*
+
+- [ ] 2.1.1 **[Subtask Title with action verb]** - 📋 Planned
+  - *Hint*: [Reference to similar patterns/examples in existing codebase]
+  - *Consider*: [Key technical considerations, patterns, or approaches to keep in mind]
+  - *Files*: [Specific files to create or modify]
+  - *Risk*: [Potential issues, edge cases, or impacts to be aware of]
+  - **IMPLEMENTATION PLAN**:
+    - **[Implementation Section 1]**:
+      - [Implementation details following same structure as Phase 1]
+    - **[Implementation Section 2]**:
+      - [More implementation guidance]
+    - **Testing Strategy**:
+      - **Unit Testing**: [Component-level testing requirements and specific test cases]
+      - **Integration Testing**: [End-to-end workflow validation and external dependency testing]
+      - **Test Cases**: [Specific scenarios to test with detailed descriptions]
+      - **Mocks/Fixtures**: [Required test setup, data fixtures, and mock configurations]
+      - **Coverage**: [Critical code paths to verify and edge cases to validate]
+
+### Phase 2 Validation - 📋 Planned
+- **Acceptance Criteria**: [Specific functional requirements that must work]
+- **Testing Strategy**: [How to validate this phase works end-to-end]
+- **Rollback Plan**: [How to safely revert this phase if issues arise]
+
+[Continue with additional phases following the same detailed structure...]
+
+## Critical Considerations
+- **Performance**: [Performance concerns specific to this implementation]
+- **Security**: [Security considerations and requirements]
+- **Scalability**: [Scaling challenges and solutions]
+- **Monitoring**: [Observability and monitoring needs]
+- **Cross-Phase Dependencies**: [How phases depend on each other]
+
+## Research & Validation Completed
+- **Dependencies Verified**: [Confirmed libraries/services/tools available]
+- **Patterns Identified**: [Existing codebase patterns discovered]
+- **Assumptions Validated**: [Key assumptions verified against specification]
+```
+
+## Final Step: Critical Sanity Check & Auto-Correction
+
+After writing the implementation plan to a file, perform a comprehensive sanity check and automatically correct any issues found:
+
+### Sanity Check Process:
+
+1. **Phase-by-Phase Analysis**: For each numbered phase, verify:
+   - Does this phase deliver incremental functional value?
+   - Can this phase be tested and validated independently?
+   - Are the phase goals clear and measurable?
+   - Do the tasks within the phase logically build toward the phase goal?
+
+2. **Inter-Phase Dependencies**: For each phase, analyze:
+   - Does this phase properly build upon previous phases?
+   - Are there clear handoffs between phases?
+   - Can each phase be developed and tested without waiting for future phases?
+   - Are there any circular dependencies between phases?
+
+3. **Task-Level Analysis**: For each numbered task within phases, verify:
+   - Does this task directly contribute to the phase goal?
+   - Are the subtasks complete and in logical order?
+   - Do the testing subtasks adequately cover the implementation?
+   - Are dependencies properly identified and sequenced?
+
+4. **Specification Coverage**: Verify:
+   - Does every specification requirement have corresponding implementation tasks?
+   - Are specification requirements distributed logically across phases?
+   - Do the phases collectively fulfill the complete specification?
+   - Can early phases provide partial functionality as specified?
+
+5. **Implementation Feasibility**: Assess:
+   - Are the identified patterns and files realistic for the codebase?
+   - Are the estimated risks and mitigations reasonable?
+   - Is the overall phased approach technically sound?
+   - Does each phase represent a reasonable amount of work?
+
+### Auto-Correction:
+
+If issues are found during the sanity check, automatically update the implementation plan to:
+- Reorganize tasks into more logical phases that deliver incremental value
+- Add missing tasks for uncovered specification requirements
+- Reorder phases to resolve dependency conflicts
+- Break down overly complex phases into smaller, more focused phases
+- Add missing testing subtasks where coverage is insufficient
+- Correct unrealistic file paths or implementation approaches
+- Update inter-phase dependencies to ensure proper sequencing
+- Ensure each phase has clear validation criteria
+
+## Requirements:
+
+- **Number all phases and tasks** for clear reference and dependency tracking
+- **Include progress indicators** at the end of all phase, task, subtask, and validation headings (format: "- 📋 Planned")
+- **Ensure phases deliver incremental functional value** that can be tested independently
+- **Include granular subtasks** within each phase - break down complex work into manageable pieces
+- **Embed testing as subtasks** rather than separate phases
+- **Reference specification sections** for every task
+- **Follow discovered codebase patterns** rather than assuming technologies
+- **Keep subtasks actionable** with clear implementation guidance
+- **Define clear phase validation criteria** to ensure each phase works before moving to the next
+- **Perform thorough sanity check** after plan creation
+
+Generate a comprehensive, phased TODO plan with granular subtasks, then critically validate it against the specification for completeness, logical phase progression, and incremental functionality delivery.

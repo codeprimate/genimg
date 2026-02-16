@@ -1,0 +1,155 @@
+---
+description: When the user wants to create release notes
+globs: 
+alwaysApply: false
+---
+---
+description: Release notes creation protocol
+applies: "**"
+---
+
+# Create Release Notes
+
+Generate accurate release notes by verifying specification against implementation. Implementation is the source of truth. This is the final step in the systematic development workflow. **Output complete release notes as markdown in docs/releases/.**
+
+## Required Context
+
+**CRITICAL**: Load the specification document (created via ai_process_01) before beginning. This provides the requirements baseline for verification against actual implementation.
+
+**Process Integration**: Final step in systematic development:
+- ai_process_01: Creates specification document
+- ai_process_02: Creates implementation plan from specification  
+- ai_process_03: Executes implementation based on plan and specification
+- ai_process_04: Generates release notes by verifying specification against implementation
+
+## Core Principles
+
+**Implementation Authority**: Code implementation is the definitive source of truth. When specification conflicts with implementation, document what was actually delivered.
+
+**Relevant Content Only**: Include only sections with meaningful changes. Omit empty sections. Structure release notes based on actual changes implemented.
+
+**User-Focused Communication**: Emphasize user value over technical details. Use clear, accessible language. Never reference specification documents in release notes.
+
+## Execution Process
+
+### 1. Load and Analyze Specification
+- Load specification document from ai_process_01
+- Extract planned features, improvements, and changes
+- Identify expected user-facing functionality and behavior changes
+- Note specified breaking changes or deprecations
+
+### 2. Verify Against Implementation
+- Cross-reference specification requirements against actual code
+- Identify what was actually implemented vs. what was specified
+- Note additional functionality beyond specification
+- Document deviations from original specification
+
+### 3. Assess Implementation Reality
+- Use code inspection to verify functionality
+- Check available tests for validation evidence
+- Identify actual breaking changes in APIs or behavior
+- Measure actual performance improvements from implementation
+- Analyze actual dependency updates and impacts
+
+### 4. Filter Relevant Content
+- Determine which release note sections contain meaningful changes
+- Group implemented changes by type and user impact
+- Prioritize user-facing changes over internal modifications
+- Focus on changes that affect users or system behavior
+
+### 5. Generate Release Notes
+- Extract version from project configuration (pyproject.toml, etc.)
+- Structure findings using template below
+- Document only what was actually delivered
+- Provide clear upgrade instructions based on implementation
+
+## Release Notes Template
+
+Use this structure, including only sections with actual changes:
+
+```markdown
+# Release v[VERSION] - [RELEASE_DATE]
+
+## Overview
+[Brief summary of release focus and major themes]
+
+## 🚀 New Features
+- **[Feature Name]**: [User-focused description of what this enables]
+
+## 🛠️ Improvements
+- **[Improvement Area]**: [Description of enhancement and user impact]
+
+## 🐛 Bug Fixes
+- **[Issue Area]**: [Description of problem solved and user impact]
+
+## ⚠️ Breaking Changes
+- **[Breaking Change]**: [Clear description and migration guidance]
+  - *Migration*: [Step-by-step update instructions]
+  - *Affected*: [What users/use cases are affected]
+
+## 📦 Dependencies
+- **Updated**: [Dependency] from [old version] to [new version]
+- **Added**: [New dependency] for [purpose/feature]
+- **Removed**: [Removed dependency] (replaced by [alternative])
+
+## 🔧 Developer Experience
+- **[Development Area]**: [Changes affecting developers using this project]
+
+## 📚 Documentation
+- **[Documentation Area]**: [Significant documentation updates]
+
+## 🏗️ Internal Changes
+- **[Technical Area]**: [Internal improvements affecting stability/maintainability]
+
+## 📊 Statistics
+- **Commits**: [Number] commits since v[PREVIOUS_VERSION]
+- **Contributors**: [Number] contributors
+- **Files Changed**: [Number] files modified
+
+## 🙏 Contributors
+Thanks to contributors who made this release possible:
+- @[contributor1]
+- @[contributor2]
+
+## 🚨 Upgrade Instructions
+1. [Step-by-step upgrade instructions]
+2. [Configuration changes required]
+3. [Migration steps for breaking changes]
+
+## 📝 Notes
+- [Additional notes, known issues, or future plans]
+```
+
+## Content Guidelines
+
+**Language Style**:
+- Lead with user benefits: "You can now..." not "Added support for..."
+- Explain impact: "This improves performance by 40%" not "Optimized algorithm"
+- Provide context: "Previously, users had to... Now you can..."
+- Use active voice and direct language
+- Never reference specification documents
+
+**Accuracy Requirements**:
+- Verify version numbers and dates against project configuration
+- Confirm breaking changes through code analysis
+- Validate performance claims with implementation evidence
+- Document only changes present in actual implementation
+
+**Content Focus**:
+- Prioritize user-facing changes that are actually implemented
+- Include internal changes only when they meaningfully affect users
+- Omit sections without substantial changes
+- Focus on functionality that impacts user workflows or system behavior
+
+## Success Criteria
+
+Release notes must:
+- Accurately reflect implementation reality over original specifications
+- Focus on user value and practical impact
+- Include only relevant sections with meaningful changes
+- Provide clear upgrade guidance based on actual implementation
+- Use accessible language without referencing specification documents
+
+**Validation**: Ensure every item in release notes corresponds to actual implemented functionality verified through code inspection.
+
+Execute systematic verification of specification against implementation reality and generate user-focused release notes documenting delivered functionality.
