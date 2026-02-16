@@ -38,6 +38,7 @@ from genimg import (
     validate_prompt,
 )
 from genimg.core.config import DEFAULT_IMAGE_MODEL
+from genimg.core.providers import KNOWN_IMAGE_PROVIDERS
 from genimg.logging_config import get_logger, log_prompts
 
 logger = get_logger(__name__)
@@ -103,12 +104,13 @@ def _logo_data_url(size: int = 64) -> str | None:
     return f"data:image/png;base64,{b64}"
 
 
-def _load_ui_models() -> tuple[list[str], str, list[str], str]:
+def _load_ui_models() -> tuple[
+    list[str], list[str], str, str, str, list[str], str
+]:
     """
     Load image and optimization model lists from ui_models.yaml in the package.
-    Returns (image_models, default_image_model, optimization_models, default_optimization_model).
-
-    For optimization models, queries installed Ollama models dynamically.
+    Returns (image_models, ollama_image_models, default_image_provider, default_image_model,
+             default_ollama_model, optimization_models, default_optimization_model).
     """
     try:
         with (
@@ -120,28 +122,53 @@ def _load_ui_models() -> tuple[list[str], str, list[str], str]:
     except FileNotFoundError:
         data = {}
 
-    # Image models from YAML
+    # OpenRouter image models from YAML
     image_models: list[str] = data.get("image_models") or []
-    default_image: str = data.get("default_image_model") or DEFAULT_IMAGE_MODEL
-    if default_image and default_image not in image_models:
-        image_models = [default_image] + [m for m in image_models if m != default_image]
+    default_image_yaml: str = data.get("default_image_model") or DEFAULT_IMAGE_MODEL
+    if default_image_yaml and default_image_yaml not in image_models:
+        image_models = [default_image_yaml] + [m for m in image_models if m != default_image_yaml]
+
+    # Ollama image models from YAML or fallback (see https://ollama.com/blog/image-generation)
+    ollama_image_models: list[str] = data.get("ollama_image_models") or [
+        "x/z-image-turbo",   # Alibaba Tongyi Lab, photorealistic + bilingual text
+        "x/flux2-klein",    # Black Forest Labs FLUX.2 Klein, 4B/9B
+    ]
+    default_ollama: str = data.get("default_ollama_image_model") or (
+        ollama_image_models[0] if ollama_image_models else "x/z-image-turbo"
+    )
+    if default_ollama and default_ollama not in ollama_image_models:
+        ollama_image_models = [default_ollama] + [
+            m for m in ollama_image_models if m != default_ollama
+        ]
+
+    # Config: default provider and model for that provider
+    config = Config.from_env()
+    default_image_provider: str = config.default_image_provider
+    default_image_model: str = (
+        config.default_image_model
+        if default_image_provider == "openrouter"
+        else default_ollama
+    )
 
     # Optimization models from installed Ollama models
-    config = Config.from_env()
     default_opt: str = config.default_optimization_model
     opt_models: list[str] = list_ollama_models()
-
-    # Ensure default is in the list and appears first
     if default_opt and default_opt not in opt_models:
         opt_models = [default_opt] + opt_models
     elif default_opt and opt_models:
-        # Move default to front
         opt_models = [default_opt] + [m for m in opt_models if m != default_opt]
     elif not opt_models:
-        # No Ollama models found, use default only
         opt_models = [default_opt]
 
-    return image_models, default_image, opt_models, default_opt
+    return (
+        image_models,
+        ollama_image_models,
+        default_image_provider,
+        default_image_model,
+        default_ollama,
+        opt_models,
+        default_opt,
+    )
 
 
 def _exception_to_message(exc: BaseException) -> str:
@@ -237,6 +264,7 @@ def _run_generate(
     prompt: str,
     optimize: bool,
     reference_value: Any,
+    provider: str | None,
     model: str | None,
     optimization_model: str | None = None,
     cancel_check: Any | None = None,
@@ -291,6 +319,7 @@ def _run_generate(
             effective_prompt,
             model=model or None,
             reference_image_b64=ref_b64,
+            provider=provider,
             config=config,
             cancel_check=cancel_check,
         )
@@ -316,6 +345,7 @@ def _run_generate_stream(
     optimize: bool,
     optimized_prompt_value: str | None,
     reference_value: Any,
+    provider: str | None,
     model: str | None,
     optimization_model: str | None = None,
     cancel_check: Any | None = None,
@@ -410,6 +440,7 @@ def _run_generate_stream(
             effective_prompt,
             model=model or None,
             reference_image_b64=ref_b64,
+            provider=provider,
             config=config,
             cancel_check=cancel_check,
         )
@@ -441,6 +472,7 @@ def _generate_click_handler(
     opt: bool,
     opt_text: str,
     ref: Any,
+    provider: str | None,
     mod: str | None,
     opt_mod: str | None,
     optimized_for_state: dict[str, Any] | None = None,
@@ -455,6 +487,7 @@ def _generate_click_handler(
             opt,
             opt_text,
             ref,
+            provider,
             mod,
             optimization_model=opt_mod,
             cancel_check=lambda: _cancel_event.is_set(),
@@ -614,9 +647,24 @@ def _run_optimize_only_stream(
         yield _format_status(_exception_to_message(e), "error"), "", True, False, True, None
 
 
+# Message shown when provider does not support reference images
+_REF_NOT_SUPPORTED_MSG = (
+    "Reference images are not supported for this provider. "
+    "Switch to OpenRouter to use a reference image."
+)
+
+
 def _build_blocks() -> gr.Blocks:
     """Build the Gradio Blocks UI (layout + generate handler, no cancellation yet)."""
-    image_models, default_image, opt_models, default_opt = _load_ui_models()
+    (
+        image_models,
+        ollama_image_models,
+        default_image_provider,
+        default_image_model,
+        default_ollama,
+        opt_models,
+        default_opt,
+    ) = _load_ui_models()
 
     logo_img = ""
     logo_url = _logo_data_url(64)
@@ -682,19 +730,63 @@ def _build_blocks() -> gr.Blocks:
                             "Enhance Prompt", variant="secondary", interactive=False
                         )
             with gr.Column():
+                ref_message = gr.HTML(
+                    value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
+                    visible=(default_image_provider == "ollama"),
+                )
                 ref_image = gr.Image(
                     label="Reference image",
                     type="filepath",
                     sources=["upload", "clipboard"],
+                    visible=(default_image_provider != "ollama"),
                 )
 
-        model_dd = gr.Dropdown(
-            label="Image model",
-            value=default_image,
-            choices=image_models,
-            allow_custom_value=True,
-            visible=True,
-            info="OpenRouter image model. Type a model ID for another.",
+        with gr.Row():
+            with gr.Column(scale=1):
+                provider_dd = gr.Dropdown(
+                    label="Image provider",
+                    choices=list(KNOWN_IMAGE_PROVIDERS),
+                    value=default_image_provider,
+                    visible=True,
+                )
+            with gr.Column(scale=1):
+                model_dd = gr.Dropdown(
+                    label="Image model",
+                    value=default_image_model,
+                    choices=(
+                        image_models
+                        if default_image_provider == "openrouter"
+                        else ollama_image_models
+                    ),
+                    allow_custom_value=True,
+                    visible=True,
+                    info="Model for the selected provider. Type a model ID for another.",
+                )
+
+        def _on_provider_change(provider: str) -> tuple[Any, Any, Any]:
+            if provider == "ollama":
+                return (
+                    gr.update(choices=ollama_image_models, value=default_ollama),
+                    gr.update(visible=False),
+                    gr.update(
+                        visible=True,
+                        value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
+                    ),
+                )
+            config = Config.from_env()
+            openrouter_default = config.default_image_model or (
+                image_models[0] if image_models else "bytedance-seed/seedream-4.5"
+            )
+            return (
+                gr.update(choices=image_models, value=openrouter_default),
+                gr.update(visible=True),
+                gr.update(visible=False),
+            )
+
+        provider_dd.change(
+            fn=_on_provider_change,
+            inputs=[provider_dd],
+            outputs=[model_dd, ref_image, ref_message],
         )
         with gr.Row():
             generate_btn = gr.Button("Generate", variant="primary", interactive=False)
@@ -715,6 +807,7 @@ def _build_blocks() -> gr.Blocks:
                 optimize_cb,
                 optimized_tb,
                 ref_image,
+                provider_dd,
                 model_dd,
                 optimization_dd,
                 optimized_for_state,

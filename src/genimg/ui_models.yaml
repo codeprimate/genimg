@@ -22,6 +22,12 @@ image_models:
 
 default_image_model: "bytedance-seed/seedream-4.5"
 
+# Ollama image-generation models (see https://ollama.com/blog/image-generation).
+ollama_image_models:
+  - x/z-image-turbo
+  - x/flux2-klein
+default_ollama_image_model: "x/z-image-turbo"
+
 # Ollama models for prompt optimization (dropdown suggestions; user can type another).
 default_optimization_model: "svjack/gpt-oss-20b-heretic"
 optimization_models:

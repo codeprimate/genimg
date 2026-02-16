@@ -8,11 +8,10 @@ import pytest
 from PIL import Image
 
 from genimg.core.config import Config
-from genimg.core.image_gen import (
-    GenerationResult,
+from genimg.core.image_gen import GenerationResult, generate_image
+from genimg.core.providers.openrouter import (
     _format_from_content_type,
     _truncate_image_data_for_log,
-    generate_image,
 )
 from genimg.utils.exceptions import (
     APIError,
@@ -104,10 +103,53 @@ class TestGenerateImageValidation:
             generate_image("   \n", config=config)
 
     def test_missing_api_key_raises(self):
-        config = Config(openrouter_api_key="")
+        config = Config(
+            openrouter_api_key="",
+            default_image_provider="openrouter",
+        )
         with pytest.raises(ValidationError) as exc_info:
             generate_image("a cat", config=config)
         assert exc_info.value.field == "api_key"
+
+    def test_unknown_provider_raises(self):
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
+        with pytest.raises(ValidationError) as exc_info:
+            generate_image("a cat", config=config, provider="unknown")
+        assert exc_info.value.field == "provider"
+        assert "unknown" in str(exc_info.value).lower()
+
+    def test_reference_with_unsupported_provider_raises(self):
+        """When provider does not support reference images, ValidationError is raised."""
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
+        mock_provider = MagicMock()
+        mock_provider.supports_reference_image = False
+        with patch("genimg.core.image_gen.get_registry") as m_reg:
+            m_reg.return_value.get.return_value = mock_provider
+            with pytest.raises(ValidationError) as exc_info:
+                generate_image(
+                    "a cat",
+                    config=config,
+                    provider="no_ref_provider",
+                    reference_image_b64="YXNk",
+                )
+        assert exc_info.value.field == "reference_image"
+        mock_provider.generate.assert_not_called()
+
+    def test_reference_with_ollama_raises(self):
+        """Ollama does not support reference images; generate_image raises before calling provider."""
+        config = Config(
+            ollama_base_url="http://127.0.0.1:11434",
+            default_image_provider="ollama",
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            generate_image(
+                "a cat",
+                config=config,
+                provider="ollama",
+                reference_image_b64="YXNk",
+            )
+        assert exc_info.value.field == "reference_image"
+        assert "ollama" in str(exc_info.value).lower()
 
 
 @pytest.mark.unit
@@ -121,7 +163,7 @@ class TestGenerateImageMocked:
         mock_response.headers.get.return_value = "image/png"
         mock_response.content = MINIMAL_PNG
         mock_response.text = ""
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             result = generate_image("a cat", config=config)
         assert result.image is not None
         assert result.format == "png"
@@ -142,7 +184,7 @@ class TestGenerateImageMocked:
                 {"message": {"images": [{"image_url": {"url": f"data:image/png;base64,{b64}"}}]}}
             ]
         }
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             result = generate_image("a dog", config=config)
         assert result.image is not None
         assert result.format == "png"
@@ -158,7 +200,7 @@ class TestGenerateImageMocked:
         mock_response.json.return_value = {
             "choices": [{"message": {"images": [{"image_url": {"url": b64}}]}}]
         }
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             result = generate_image("bird", config=config)
         assert result.image is not None
         assert result.format == "png"
@@ -174,7 +216,7 @@ class TestGenerateImageMocked:
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "image/jpeg"
         mock_response.content = MINIMAL_JPEG
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response) as m:
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response) as m:
             generate_image("x", config=config)
         call_kw = m.call_args[1]
         assert call_kw["json"]["model"] == "custom/model"
@@ -186,7 +228,7 @@ class TestGenerateImageMocked:
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "image/png"
         mock_response.content = MINIMAL_PNG
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response) as m:
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response) as m:
             generate_image("same but blue", reference_image_b64="YXNk", config=config)
         payload = m.call_args[1]["json"]
         content = payload["messages"][0]["content"]
@@ -199,7 +241,7 @@ class TestGenerateImageMocked:
         mock_response = MagicMock()
         mock_response.status_code = 401
         mock_response.text = "Unauthorized"
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             with pytest.raises(APIError) as exc_info:
                 generate_image("x", config=config)
         assert exc_info.value.status_code == 401
@@ -209,7 +251,7 @@ class TestGenerateImageMocked:
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_response.text = "Not found"
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             with pytest.raises(APIError) as exc_info:
                 generate_image("x", config=config)
         assert exc_info.value.status_code == 404
@@ -219,7 +261,7 @@ class TestGenerateImageMocked:
         mock_response = MagicMock()
         mock_response.status_code = 429
         mock_response.text = "Rate limit"
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             with pytest.raises(APIError) as exc_info:
                 generate_image("x", config=config)
         assert exc_info.value.status_code == 429
@@ -229,7 +271,7 @@ class TestGenerateImageMocked:
         mock_response = MagicMock()
         mock_response.status_code = 502
         mock_response.text = "Bad gateway"
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             with pytest.raises(APIError) as exc_info:
                 generate_image("x", config=config)
         assert exc_info.value.status_code == 502
@@ -239,7 +281,7 @@ class TestGenerateImageMocked:
         mock_response = MagicMock()
         mock_response.status_code = 418
         mock_response.text = "teapot"
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             with pytest.raises(APIError) as exc_info:
                 generate_image("x", config=config)
         assert exc_info.value.status_code == 418
@@ -251,7 +293,7 @@ class TestGenerateImageMocked:
         mock_response.headers.get.return_value = "application/json"
         mock_response.json.side_effect = ValueError("bad json")
         mock_response.text = "{invalid"
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             with pytest.raises(APIError):
                 generate_image("x", config=config)
 
@@ -261,7 +303,7 @@ class TestGenerateImageMocked:
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "application/json"
         mock_response.json.return_value = {"choices": [{"message": {"images": []}}]}
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             with pytest.raises(APIError) as exc_info:
                 generate_image("x", config=config)
         assert "No images" in str(exc_info.value)
@@ -274,7 +316,7 @@ class TestGenerateImageMocked:
         mock_response.json.return_value = {
             "choices": [{"message": {"images": [{"image_url": {}}]}}]
         }
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             with pytest.raises(APIError):
                 generate_image("x", config=config)
 
@@ -285,7 +327,7 @@ class TestGenerateImageMocked:
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "application/json"
         mock_response.json.return_value = {"choices": []}  # no [0] -> IndexError
-        with patch("genimg.core.image_gen.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response):
             with pytest.raises(APIError) as exc_info:
                 generate_image("x", config=config)
         assert "extract" in str(exc_info.value).lower() or "response" in str(exc_info.value).lower()
@@ -294,7 +336,7 @@ class TestGenerateImageMocked:
         import requests
 
         config = Config(openrouter_api_key="sk-ok")
-        with patch("genimg.core.image_gen.requests.post") as m:
+        with patch("genimg.core.providers.openrouter.requests.post") as m:
             m.side_effect = requests.exceptions.Timeout()
             with pytest.raises(RequestTimeoutError):
                 generate_image("x", config=config, timeout=30)
@@ -303,7 +345,7 @@ class TestGenerateImageMocked:
         import requests
 
         config = Config(openrouter_api_key="sk-ok")
-        with patch("genimg.core.image_gen.requests.post") as m:
+        with patch("genimg.core.providers.openrouter.requests.post") as m:
             m.side_effect = requests.exceptions.ConnectionError("refused")
             with pytest.raises(NetworkError):
                 generate_image("x", config=config)
@@ -312,10 +354,36 @@ class TestGenerateImageMocked:
         import requests
 
         config = Config(openrouter_api_key="sk-ok")
-        with patch("genimg.core.image_gen.requests.post") as m:
+        with patch("genimg.core.providers.openrouter.requests.post") as m:
             m.side_effect = requests.exceptions.RequestException("other")
             with pytest.raises(NetworkError):
                 generate_image("x", config=config)
+
+    def test_ollama_provider_success_mocked(self):
+        """generate_image(provider='ollama') with mocked Ollama response returns GenerationResult."""
+        config = Config(
+            ollama_base_url="http://127.0.0.1:11434",
+            default_image_provider="ollama",
+        )
+        b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers.get.return_value = "application/json"
+        mock_response.json.return_value = {"image": b64}
+        with patch(
+            "genimg.core.providers.ollama.requests.post",
+            return_value=mock_response,
+        ):
+            result = generate_image(
+                "a cat",
+                config=config,
+                provider="ollama",
+                model="x/z-image-turbo",
+            )
+        assert result.image is not None
+        assert result.model_used == "x/z-image-turbo"
+        assert result.prompt_used == "a cat"
+        assert result.had_reference is False
 
     def test_cancel_check_raises_cancellation_error(self):
         """When cancel_check returns True during request, CancellationError is raised."""
@@ -334,7 +402,7 @@ class TestGenerateImageMocked:
             time.sleep(10)
             raise AssertionError("Should have been cancelled")
 
-        with patch("genimg.core.image_gen.requests.post", side_effect=blocking_post):
+        with patch("genimg.core.providers.openrouter.requests.post", side_effect=blocking_post):
             with pytest.raises(CancellationError) as exc_info:
                 generate_image("x", config=config, cancel_check=slow_then_cancel)
         assert "cancelled" in str(exc_info.value).lower()

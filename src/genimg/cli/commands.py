@@ -13,6 +13,7 @@ import click
 from genimg import (
     Config,
     GenerationResult,
+    ValidationError,
     __version__,
     generate_image,
     optimize_prompt,
@@ -28,6 +29,7 @@ from genimg.cli.handlers import (
     run_with_error_handling,
 )
 from genimg.cli.utils import default_output_path
+from genimg.core.providers import get_registry
 from genimg.logging_config import configure_logging, get_verbosity_from_env
 
 
@@ -90,6 +92,12 @@ def cli(ctx: click.Context) -> None:
     help="Increase verbosity: -v also show prompts, -vv show API/cache detail.",
 )
 @click.option(
+    "--provider",
+    type=click.Choice(["openrouter", "ollama"], case_sensitive=False),
+    default=None,
+    help="Image generation provider (default from config: openrouter or ollama).",
+)
+@click.option(
     "--debug-api",
     is_flag=True,
     help="Log raw API request payload and response (image data truncated) for debugging.",
@@ -103,6 +111,7 @@ def generate(
     optimization_model: str | None,
     save_prompt: Path | None,
     api_key: str | None,
+    provider: str | None,
     quiet: bool,
     verbose_count: int,
     debug_api: bool,
@@ -127,16 +136,29 @@ def generate(
 
         config.validate()
 
-        # 2. Validate prompt
+        # 2. Effective provider (CLI override or config default)
+        provider_eff = provider if provider is not None else config.default_image_provider
+        if reference is not None:
+            impl = get_registry().get(provider_eff)
+            if impl is not None and not getattr(
+                impl, "supports_reference_image", True
+            ):
+                raise ValidationError(
+                    f"Reference images are not supported for provider {provider_eff!r}. "
+                    "Use --provider openrouter for reference image support.",
+                    field="reference_image",
+                )
+
+        # 3. Validate prompt
         validate_prompt(prompt)
 
-        # 3. Reference image
+        # 4. Reference image
         ref_b64: str | None = None
         ref_hash: str | None = None
         if reference is not None:
             ref_b64, ref_hash = process_reference_image(reference, config=config)
 
-        # 4. Optional optimization
+        # 5. Optional optimization
         effective_prompt = prompt
         if not no_optimize:
             config.optimization_enabled = True
@@ -179,7 +201,16 @@ def generate(
                     else:
                         progress.print_warning(f"Could not save prompt to {save_prompt}: {e}")
 
-        # 5. Generate image
+        # 6. Generate image
+        gen_kw: dict = {
+            "model": model,
+            "reference_image_b64": ref_b64,
+            "config": config,
+            "cancel_check": cancel_check,
+        }
+        if provider is not None:
+            gen_kw["provider"] = provider
+
         result: GenerationResult
         if not quiet:
             with progress.generation_progress(
@@ -187,31 +218,19 @@ def generate(
                 reference_used=reference is not None,
                 optimized=not no_optimize,
             ):
-                result = generate_image(
-                    effective_prompt,
-                    model=model,
-                    reference_image_b64=ref_b64,
-                    config=config,
-                    cancel_check=cancel_check,
-                )
+                result = generate_image(effective_prompt, **gen_kw)
         else:
-            result = generate_image(
-                effective_prompt,
-                model=model,
-                reference_image_b64=ref_b64,
-                config=config,
-                cancel_check=cancel_check,
-            )
+            result = generate_image(effective_prompt, **gen_kw)
 
-        # 6. Output path
+        # 7. Output path
         out_path = out
         if out_path is None:
             out_path = Path(default_output_path(result.format))
 
-        # 7. Save
+        # 8. Save
         out_path.write_bytes(result.image_data)
 
-        # 8. Print result
+        # 9. Print result
         if quiet:
             # Quiet mode: only output path to stdout
             click.echo(str(out_path))

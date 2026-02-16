@@ -19,8 +19,13 @@ load_dotenv()
 
 # Default configuration constants
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_IMAGE_PROVIDER = "openrouter"
+DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
 DEFAULT_OPTIMIZATION_MODEL = "svjack/gpt-oss-20b-heretic"
+
+# Provider ids accepted by validate(); do not import from genimg.core.providers (circular import)
+KNOWN_IMAGE_PROVIDERS = ("openrouter", "ollama")
 
 
 @dataclass
@@ -32,17 +37,24 @@ class Config:
     openrouter_base_url: str = DEFAULT_OPENROUTER_BASE_URL
 
     # Model Configuration
+    default_image_provider: str = DEFAULT_IMAGE_PROVIDER
     default_image_model: str = DEFAULT_IMAGE_MODEL
     default_optimization_model: str = DEFAULT_OPTIMIZATION_MODEL
+
+    # Ollama (image generation when default_image_provider == "ollama")
+    ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL
 
     # Image Processing Configuration
     min_image_pixels: int = 2500  # minimum total pixels for reference images
     max_image_pixels: int = 2_000_000  # 2 megapixels
     default_image_quality: int = 95  # JPEG quality for saved images
-    aspect_ratio: tuple[int, int] = (1, 1)  # (width, height) ratio for output; images padded to match
+    aspect_ratio: tuple[int, int] = (
+        1,
+        1,
+    )  # (width, height) ratio for output; images padded to match
 
     # Timeout Configuration (seconds)
-    generation_timeout: int = 300  # 5 minutes
+    generation_timeout: int = 180  # 3 minutes
     optimization_timeout: int = 120  # 2 minutes
 
     # Debug: log raw API payload/response with image data truncated
@@ -76,13 +88,21 @@ class Config:
             return int(val) if val not in (None, "") else default
 
         debug_api = os.getenv("GENIMG_DEBUG_API", "").strip().lower() in ("1", "true", "yes")
+        default_image_provider = os.getenv("GENIMG_DEFAULT_IMAGE_PROVIDER", DEFAULT_IMAGE_PROVIDER)
+        ollama_base_url = (
+            os.getenv("OLLAMA_BASE_URL")
+            or os.getenv("GENIMG_OLLAMA_BASE_URL")
+            or DEFAULT_OLLAMA_BASE_URL
+        )
 
         config = cls(
             openrouter_api_key=api_key,
+            default_image_provider=default_image_provider,
             default_image_model=os.getenv("GENIMG_DEFAULT_MODEL", cls.default_image_model),
             default_optimization_model=os.getenv(
                 "GENIMG_OPTIMIZATION_MODEL", cls.default_optimization_model
             ),
+            ollama_base_url=ollama_base_url,
             min_image_pixels=_int_env("GENIMG_MIN_IMAGE_PIXELS", 2500),
             debug_api=debug_api,
         )
@@ -93,20 +113,13 @@ class Config:
         """
         Validate the configuration.
 
+        Only the default image provider is validated here. Override at runtime
+        is validated at generate time by the chosen provider.
+
         Raises:
             ConfigurationError: If configuration is invalid
         """
         logger.debug("Validating config")
-        if not self.openrouter_api_key:
-            raise ConfigurationError(
-                "OpenRouter API key is required. "
-                "Set OPENROUTER_API_KEY environment variable or provide it explicitly."
-            )
-
-        if not self.openrouter_api_key.startswith("sk-"):
-            raise ConfigurationError(
-                "OpenRouter API key appears to be invalid. It should start with 'sk-'."
-            )
 
         if self.min_image_pixels <= 0:
             raise ConfigurationError(
@@ -123,6 +136,24 @@ class Config:
             raise ConfigurationError(
                 f"aspect_ratio components must be positive, got {self.aspect_ratio}."
             )
+
+        provider = self.default_image_provider
+        if provider not in KNOWN_IMAGE_PROVIDERS:
+            raise ConfigurationError(
+                f"Unknown default_image_provider: {provider!r}. "
+                f"Must be one of: {', '.join(KNOWN_IMAGE_PROVIDERS)}."
+            )
+        if provider == "openrouter":
+            if not self.openrouter_api_key:
+                raise ConfigurationError(
+                    "OpenRouter API key is required when default provider is openrouter. "
+                    "Set OPENROUTER_API_KEY environment variable or provide it explicitly."
+                )
+            if not self.openrouter_api_key.startswith("sk-"):
+                raise ConfigurationError(
+                    "OpenRouter API key appears to be invalid. It should start with 'sk-'."
+                )
+        # provider == "ollama": no API key required; ollama_base_url can use default
 
         self._validated = True
 
@@ -160,17 +191,17 @@ class Config:
         """
         Set the default image generation model.
 
+        Model ID format is provider-specific (e.g. OpenRouter: 'provider/name';
+        Ollama: model name). Only non-empty is required here.
+
         Args:
-            model: Model ID in format 'provider/model-name'
+            model: Model ID for the configured image provider
 
         Raises:
-            ConfigurationError: If model ID is invalid
+            ConfigurationError: If model is empty
         """
         if not model:
             raise ConfigurationError("Model ID cannot be empty")
-
-        if "/" not in model:
-            raise ConfigurationError("Model ID should be in format 'provider/model-name'")
 
         self.default_image_model = model
 

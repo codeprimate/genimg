@@ -60,6 +60,7 @@ class TestGenerateCommand:
         """With --no-optimize, optimize_prompt is not called."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
@@ -101,6 +102,7 @@ class TestGenerateCommand:
         """With --reference, process_reference_image is called and result passed to generate_image."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         config.optimization_enabled = True
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
@@ -136,6 +138,76 @@ class TestGenerateCommand:
         call_args, call_kw = mock_generate.call_args[0], mock_generate.call_args[1]
         assert call_args[0] == "optimized prompt"
         assert call_kw["reference_image_b64"] == "base64data"
+
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_provider_ollama_passed_to_generate(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        _mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--provider ollama is passed to generate_image."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+
+        result_obj = MagicMock()
+        result_obj.image_data = b"\x89PNG\r\n\x1a\n"
+        result_obj.format = "png"
+        result_obj.generation_time = 1.0
+        result_obj.model_used = "test/model"
+        result_obj.prompt_used = "a cat"
+        result_obj.had_reference = False
+        mock_generate.return_value = result_obj
+
+        out_file = tmp_path / "out.png"
+        result = _run_cli(
+            "--prompt", "a cat", "--no-optimize", "--provider", "ollama", "--out", str(out_file)
+        )
+
+        assert result.exit_code == 0
+        mock_generate.assert_called_once()
+        call_kw = mock_generate.call_args[1]
+        assert call_kw.get("provider") == "ollama"
+
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_provider_ollama_with_reference_raises(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        _mock_optimize: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--provider ollama with --reference fails with ValidationError before process_reference_image."""
+        config = MagicMock()
+        config.default_image_provider = "openrouter"
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+
+        ref_file = tmp_path / "ref.png"
+        ref_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        result = _run_cli(
+            "--prompt", "a cat", "--provider", "ollama", "--reference", str(ref_file)
+        )
+
+        assert result.exit_code != 0
+        assert "reference" in result.output.lower() or "Reference" in result.output
+        assert "ollama" in result.output.lower()
+        _mock_ref.assert_not_called()
 
     @patch("genimg.cli.commands.generate_image")
     @patch("genimg.cli.commands.optimize_prompt")

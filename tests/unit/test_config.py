@@ -5,26 +5,38 @@ from unittest.mock import patch
 
 import pytest
 
-from genimg.core.config import Config, get_config, set_config
+from genimg.core.config import (
+    DEFAULT_IMAGE_PROVIDER,
+    DEFAULT_OLLAMA_BASE_URL,
+    KNOWN_IMAGE_PROVIDERS,
+    Config,
+    get_config,
+    set_config,
+)
 from genimg.utils.exceptions import ConfigurationError
 
 
 @pytest.mark.unit
 class TestConfig:
     def test_validate_raises_when_no_api_key(self):
-        c = Config(openrouter_api_key="")
+        c = Config(openrouter_api_key="", default_image_provider="openrouter")
         with pytest.raises(ConfigurationError) as exc_info:
             c.validate()
         assert "API key" in str(exc_info.value)
 
     def test_validate_raises_when_api_key_bad_prefix(self):
-        c = Config(openrouter_api_key="invalid")
+        c = Config(
+            openrouter_api_key="invalid", default_image_provider="openrouter"
+        )
         with pytest.raises(ConfigurationError) as exc_info:
             c.validate()
         assert "sk-" in str(exc_info.value)
 
     def test_validate_sets_validated(self):
-        c = Config(openrouter_api_key="sk-valid-key")
+        c = Config(
+            openrouter_api_key="sk-valid-key",
+            default_image_provider="openrouter",
+        )
         c.validate()
         assert c.is_valid() is True
 
@@ -39,16 +51,20 @@ class TestConfig:
             os.environ,
             {
                 "OPENROUTER_API_KEY": "sk-from-env",
+                "GENIMG_DEFAULT_IMAGE_PROVIDER": "ollama",
                 "GENIMG_DEFAULT_MODEL": "custom/model",
                 "GENIMG_OPTIMIZATION_MODEL": "custom-ollama",
+                "OLLAMA_BASE_URL": "http://localhost:11435",
                 "GENIMG_MIN_IMAGE_PIXELS": "5000",
             },
             clear=False,
         ):
             c = Config.from_env()
         assert c.openrouter_api_key == "sk-from-env"
+        assert c.default_image_provider == "ollama"
         assert c.default_image_model == "custom/model"
         assert c.default_optimization_model == "custom-ollama"
+        assert c.ollama_base_url == "http://localhost:11435"
         assert c.min_image_pixels == 5000
 
     def test_from_env_defaults_when_env_empty(self):
@@ -151,11 +167,13 @@ class TestConfig:
             c.set_image_model("")
         assert c.default_image_model != ""
 
-    def test_set_image_model_no_slash_raises(self):
+    def test_set_image_model_simple_name_succeeds(self):
+        """Provider-specific model IDs (e.g. Ollama) may not contain '/'."""
         c = Config()
-        with pytest.raises(ConfigurationError):
-            c.set_image_model("nomodel")
-        assert "/" in (c.default_image_model or "")
+        c.set_image_model("nomodel")
+        assert c.default_image_model == "nomodel"
+        c.set_image_model("simple")
+        assert c.default_image_model == "simple"
 
     def test_set_image_model_success(self):
         c = Config()
@@ -172,6 +190,35 @@ class TestConfig:
         c = Config()
         c.set_optimization_model("llama3")
         assert c.default_optimization_model == "llama3"
+
+
+@pytest.mark.unit
+class TestConfigProviderAwareValidation:
+    """Tests for provider-aware validate() (default_image_provider, ollama)."""
+
+    def test_validate_ollama_default_no_api_key_succeeds(self):
+        c = Config(
+            default_image_provider="ollama",
+            openrouter_api_key="",
+        )
+        c.validate()
+        assert c.is_valid() is True
+
+    def test_validate_unknown_provider_raises(self):
+        c = Config(
+            default_image_provider="unknown",
+            openrouter_api_key="sk-ok",
+        )
+        with pytest.raises(ConfigurationError) as exc_info:
+            c.validate()
+        assert "Unknown default_image_provider" in str(exc_info.value)
+        assert "unknown" in str(exc_info.value)
+
+    def test_known_image_providers_constant(self):
+        assert "openrouter" in KNOWN_IMAGE_PROVIDERS
+        assert "ollama" in KNOWN_IMAGE_PROVIDERS
+        assert DEFAULT_IMAGE_PROVIDER == "openrouter"
+        assert DEFAULT_OLLAMA_BASE_URL == "http://127.0.0.1:11434"
 
 
 @pytest.mark.unit

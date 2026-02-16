@@ -94,7 +94,7 @@ class TestRunGenerate:
         _mock_optimize: MagicMock,
         _mock_generate: MagicMock,
     ) -> None:
-        status, img, msg = gradio_app._run_generate("", True, None, None)
+        status, img, msg = gradio_app._run_generate("", True, None, None, None)
         assert img is None
         assert "prompt" in msg.lower() or "Enter" in msg
         _mock_validate.assert_not_called()
@@ -128,7 +128,7 @@ class TestRunGenerate:
         result.generation_time = 1.5
         mock_generate.return_value = result
 
-        status, img_path, msg = gradio_app._run_generate("a cat", False, None, None)
+        status, img_path, msg = gradio_app._run_generate("a cat", False, None, None, None)
         mock_optimize.assert_not_called()
         mock_generate.assert_called_once()
         call_kw = mock_generate.call_args[1]
@@ -167,7 +167,7 @@ class TestRunGenerate:
         result.generation_time = 2.0
         mock_generate.return_value = result
 
-        status, img_path, msg = gradio_app._run_generate("a dog", True, None, None)
+        status, img_path, msg = gradio_app._run_generate("a dog", True, None, None, None)
         mock_optimize.assert_called_once()
         mock_generate.assert_called_once()
         assert mock_generate.call_args[0][0] == "optimized prompt"
@@ -204,7 +204,7 @@ class TestRunGenerate:
         result.generation_time = 1.0
         mock_generate.return_value = result
 
-        status, img_path, msg = gradio_app._run_generate("a tree", True, ref_path, None)
+        status, img_path, msg = gradio_app._run_generate("a tree", True, ref_path, None, None)
         mock_ref.assert_called_once()
         mock_optimize.assert_called_once()
         assert mock_optimize.call_args[1].get("reference_hash") == "hash123"
@@ -226,7 +226,7 @@ class TestRunGenerate:
         mock_config_cls.from_env.return_value.validate.side_effect = ConfigurationError(
             "Missing API key"
         )
-        status, img_path, msg = gradio_app._run_generate("hello", False, None, None)
+        status, img_path, msg = gradio_app._run_generate("hello", False, None, None, None)
         assert img_path is None
         assert "API key" in msg or "Missing" in msg
 
@@ -251,7 +251,7 @@ class TestRunGenerate:
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
         mock_optimize.side_effect = CancellationError("Cancelled.")
-        status, img_path, msg = gradio_app._run_generate("hello", True, None, None)
+        status, img_path, msg = gradio_app._run_generate("hello", True, None, None, None)
         assert img_path is None
         assert "Cancelled" in msg
 
@@ -290,6 +290,7 @@ class TestRunGenerate:
             optimize=True,
             optimized_prompt_value="user edited prompt",
             reference_value=None,
+            provider=None,
             model=None,
             optimized_for_state=matching_state,
         )
@@ -334,6 +335,7 @@ class TestRunGenerate:
             optimize=True,
             optimized_prompt_value="old optimized text",
             reference_value=None,
+            provider=None,
             model=None,
             optimized_for_state=stale_state,
         )
@@ -361,7 +363,7 @@ class TestGenerateClickHandler:
                 ]
             )
             out = list(
-                gradio_app._generate_click_handler("a cat", False, "", None, None, None, state)
+                gradio_app._generate_click_handler("a cat", False, "", None, None, None, None, state)
             )
         assert len(out) == 2
         assert out[0][0] == "Generating…"
@@ -376,7 +378,7 @@ class TestGenerateClickHandler:
             mock_stream.side_effect = ConfigurationError("Bad config")
             out = list(
                 gradio_app._generate_click_handler(
-                    "x", True, "edited prompt", None, None, None, state
+                    "x", True, "edited prompt", None, None, None, None, state
                 )
             )
         assert len(out) == 1
@@ -389,7 +391,7 @@ class TestGenerateClickHandler:
             mock_stream.side_effect = RuntimeError("oops")
             out = list(
                 gradio_app._generate_click_handler(
-                    "x", False, "", None, None, None, {"prompt": "", "ref_hash": None}
+                    "x", False, "", None, None, None, None, {"prompt": "", "ref_hash": None}
                 )
             )
         assert len(out) == 1
