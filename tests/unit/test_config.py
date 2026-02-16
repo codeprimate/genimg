@@ -217,7 +217,7 @@ class TestConfigProviderAwareValidation:
     def test_known_image_providers_constant(self):
         assert "openrouter" in KNOWN_IMAGE_PROVIDERS
         assert "ollama" in KNOWN_IMAGE_PROVIDERS
-        assert DEFAULT_IMAGE_PROVIDER == "openrouter"
+        assert DEFAULT_IMAGE_PROVIDER == "ollama"
         assert DEFAULT_OLLAMA_BASE_URL == "http://127.0.0.1:11434"
 
 

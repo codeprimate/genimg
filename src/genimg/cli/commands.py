@@ -95,7 +95,7 @@ def cli(ctx: click.Context) -> None:
     "--provider",
     type=click.Choice(["openrouter", "ollama"], case_sensitive=False),
     default=None,
-    help="Image generation provider (default from config: openrouter or ollama).",
+    help="Image generation provider (default from config: ollama or openrouter).",
 )
 @click.option(
     "--debug-api",

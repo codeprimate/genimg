@@ -19,7 +19,7 @@ load_dotenv()
 
 # Default configuration constants
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_IMAGE_PROVIDER = "openrouter"
+DEFAULT_IMAGE_PROVIDER = "ollama"
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
 DEFAULT_OPTIMIZATION_MODEL = "svjack/gpt-oss-20b-heretic"
