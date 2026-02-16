@@ -688,7 +688,7 @@ def _build_blocks() -> gr.Blocks:
     </div>
     <div style="flex: 1; min-width: 200px;">
         <p style="font-size: 1.1em; color: #6b7280; margin: 0 0 4px 0; font-weight: 400;">AI-powered image generation with intelligent prompt optimization</p>
-        <p style="font-size: 0.9em; color: #9ca3af; margin: 0; font-weight: 400;">OpenRouter models • Ollama prompt enhancement • Reference images for style transfer</p>
+        <p style="font-size: 0.9em; color: #9ca3af; margin: 0; font-weight: 400;">Ollama prompt enhancement • Ollama/OpenRouter image models • Reference images for style transfer</p>
     </div>
 </div>
 """
