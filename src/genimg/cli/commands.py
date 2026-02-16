@@ -140,9 +140,7 @@ def generate(
         provider_eff = provider if provider is not None else config.default_image_provider
         if reference is not None:
             impl = get_registry().get(provider_eff)
-            if impl is not None and not getattr(
-                impl, "supports_reference_image", True
-            ):
+            if impl is not None and not getattr(impl, "supports_reference_image", True):
                 raise ValidationError(
                     f"Reference images are not supported for provider {provider_eff!r}. "
                     "Use --provider openrouter for reference image support.",

@@ -69,7 +69,19 @@ class TestGenerationResult:
         assert out == "<string, 300 chars>"
 
     def test_truncate_image_data_for_log_payload(self):
-        payload = {"model": "m", "messages": [{"content": [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + ("y" * 400)}}]}]}
+        payload = {
+            "model": "m",
+            "messages": [
+                {
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/jpeg;base64," + ("y" * 400)},
+                        }
+                    ]
+                }
+            ],
+        }
         out = _truncate_image_data_for_log(payload)
         assert out["model"] == "m"
         assert out["messages"][0]["content"][0]["image_url"]["url"] == "<data URL, 423 chars>"
@@ -79,7 +91,10 @@ class TestGenerationResult:
         long_prompt = "a" * 300
         long_error = "b" * 250
         long_raw = "Provider error: image too large" + "x" * 300
-        payload = {"messages": [{"content": [{"type": "text", "text": long_prompt}]}], "other": "z" * 300}
+        payload = {
+            "messages": [{"content": [{"type": "text", "text": long_prompt}]}],
+            "other": "z" * 300,
+        }
         response = {"error": {"message": long_error, "metadata": {"raw": long_raw}}}
         out_p = _truncate_image_data_for_log(payload)
         out_r = _truncate_image_data_for_log(response)
@@ -92,13 +107,13 @@ class TestGenerationResult:
 @pytest.mark.unit
 class TestGenerateImageValidation:
     def test_empty_prompt_raises(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         with pytest.raises(ValidationError) as exc_info:
             generate_image("", config=config)
         assert exc_info.value.field == "prompt"
 
     def test_whitespace_prompt_raises(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         with pytest.raises(ValidationError):
             generate_image("   \n", config=config)
 
@@ -154,10 +169,10 @@ class TestGenerateImageValidation:
 
 @pytest.mark.unit
 class TestGenerateImageMocked:
-    """Tests for generate_image with mocked requests.post."""
+    """Tests for generate_image with mocked requests.post (OpenRouter provider)."""
 
     def test_success_binary_image_response(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "image/png"
@@ -174,7 +189,7 @@ class TestGenerateImageMocked:
         assert result.had_reference is False
 
     def test_success_json_response_with_data_url(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -192,7 +207,7 @@ class TestGenerateImageMocked:
         assert result.prompt_used == "a dog"
 
     def test_success_json_response_raw_base64(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -209,6 +224,7 @@ class TestGenerateImageMocked:
     def test_config_override_used(self):
         config = Config(
             openrouter_api_key="sk-ok",
+            default_image_provider="openrouter",
             default_image_model="custom/model",
             openrouter_base_url="https://custom.example/v1",
         )
@@ -216,19 +232,23 @@ class TestGenerateImageMocked:
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "image/jpeg"
         mock_response.content = MINIMAL_JPEG
-        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response) as m:
+        with patch(
+            "genimg.core.providers.openrouter.requests.post", return_value=mock_response
+        ) as m:
             generate_image("x", config=config)
         call_kw = m.call_args[1]
         assert call_kw["json"]["model"] == "custom/model"
         assert "custom.example" in m.call_args[0][0]
 
     def test_reference_image_in_payload(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "image/png"
         mock_response.content = MINIMAL_PNG
-        with patch("genimg.core.providers.openrouter.requests.post", return_value=mock_response) as m:
+        with patch(
+            "genimg.core.providers.openrouter.requests.post", return_value=mock_response
+        ) as m:
             generate_image("same but blue", reference_image_b64="YXNk", config=config)
         payload = m.call_args[1]["json"]
         content = payload["messages"][0]["content"]
@@ -237,7 +257,7 @@ class TestGenerateImageMocked:
         assert any("image_url" in str(p) for p in content)
 
     def test_http_401_raises_api_error(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 401
         mock_response.text = "Unauthorized"
@@ -247,7 +267,7 @@ class TestGenerateImageMocked:
         assert exc_info.value.status_code == 401
 
     def test_http_404_raises_api_error(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_response.text = "Not found"
@@ -257,7 +277,7 @@ class TestGenerateImageMocked:
         assert exc_info.value.status_code == 404
 
     def test_http_429_raises_api_error(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 429
         mock_response.text = "Rate limit"
@@ -267,7 +287,7 @@ class TestGenerateImageMocked:
         assert exc_info.value.status_code == 429
 
     def test_http_500_raises_api_error(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 502
         mock_response.text = "Bad gateway"
@@ -277,7 +297,7 @@ class TestGenerateImageMocked:
         assert exc_info.value.status_code == 502
 
     def test_http_non_200_raises_api_error(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 418
         mock_response.text = "teapot"
@@ -287,7 +307,7 @@ class TestGenerateImageMocked:
         assert exc_info.value.status_code == 418
 
     def test_json_parse_error_raises_api_error(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "application/json"
@@ -298,7 +318,7 @@ class TestGenerateImageMocked:
                 generate_image("x", config=config)
 
     def test_no_images_in_response_raises_api_error(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "application/json"
@@ -309,7 +329,7 @@ class TestGenerateImageMocked:
         assert "No images" in str(exc_info.value)
 
     def test_no_image_url_in_response_raises_api_error(self):
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "application/json"
@@ -322,7 +342,7 @@ class TestGenerateImageMocked:
 
     def test_malformed_json_response_raises_api_error(self):
         """KeyError/IndexError when extracting image from response raises APIError."""
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers.get.return_value = "application/json"
@@ -335,7 +355,7 @@ class TestGenerateImageMocked:
     def test_timeout_raises_request_timeout_error(self):
         import requests
 
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         with patch("genimg.core.providers.openrouter.requests.post") as m:
             m.side_effect = requests.exceptions.Timeout()
             with pytest.raises(RequestTimeoutError):
@@ -344,7 +364,7 @@ class TestGenerateImageMocked:
     def test_connection_error_raises_network_error(self):
         import requests
 
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         with patch("genimg.core.providers.openrouter.requests.post") as m:
             m.side_effect = requests.exceptions.ConnectionError("refused")
             with pytest.raises(NetworkError):
@@ -353,7 +373,7 @@ class TestGenerateImageMocked:
     def test_request_exception_raises_network_error(self):
         import requests
 
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         with patch("genimg.core.providers.openrouter.requests.post") as m:
             m.side_effect = requests.exceptions.RequestException("other")
             with pytest.raises(NetworkError):
@@ -389,7 +409,7 @@ class TestGenerateImageMocked:
         """When cancel_check returns True during request, CancellationError is raised."""
         import time
 
-        config = Config(openrouter_api_key="sk-ok")
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
         call_count = [0]
 
         def slow_then_cancel():

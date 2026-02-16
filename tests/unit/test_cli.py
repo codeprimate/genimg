@@ -200,9 +200,7 @@ class TestGenerateCommand:
         ref_file = tmp_path / "ref.png"
         ref_file.write_bytes(b"\x89PNG\r\n\x1a\n")
 
-        result = _run_cli(
-            "--prompt", "a cat", "--provider", "ollama", "--reference", str(ref_file)
-        )
+        result = _run_cli("--prompt", "a cat", "--provider", "ollama", "--reference", str(ref_file))
 
         assert result.exit_code != 0
         assert "reference" in result.output.lower() or "Reference" in result.output

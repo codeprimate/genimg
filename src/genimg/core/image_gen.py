@@ -94,9 +94,7 @@ def generate_image(
     if impl is None:
         raise ValidationError(f"Unknown image provider: {provider_id!r}", field="provider")
 
-    if reference_image_b64 is not None and not getattr(
-        impl, "supports_reference_image", True
-    ):
+    if reference_image_b64 is not None and not getattr(impl, "supports_reference_image", True):
         raise ValidationError(
             f"Reference images are not supported for provider {provider_id!r}. "
             "Use OpenRouter for reference image support.",

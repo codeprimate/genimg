@@ -10,6 +10,7 @@ import hashlib
 import io
 import time
 from pathlib import Path
+from typing import Any, cast
 
 from PIL import Image
 
@@ -216,7 +217,8 @@ def _pad_to_aspect(
     if (final_w, final_h) == (out_w, out_h):
         return image
 
-    canvas = Image.new(image.mode, (final_w, final_h), fill)
+    # PIL Image.new fill accepts int or tuple of 1–4 ints; we pass tuple[int, ...]
+    canvas = Image.new(image.mode, (final_w, final_h), cast(Any, fill))
     paste_x = (final_w - out_w) // 2
     paste_y = (final_h - out_h) // 2
     canvas.paste(image, (paste_x, paste_y))

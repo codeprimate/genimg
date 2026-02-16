@@ -85,7 +85,10 @@ class Config:
 
         def _int_env(name: str, default: int) -> int:
             val = os.getenv(name)
-            return int(val) if val not in (None, "") else default
+            if val is None or val == "":
+                return default
+            # val is str here; mypy narrows after the None/empty check
+            return int(val)
 
         debug_api = os.getenv("GENIMG_DEBUG_API", "").strip().lower() in ("1", "true", "yes")
         default_image_provider = os.getenv("GENIMG_DEFAULT_IMAGE_PROVIDER", DEFAULT_IMAGE_PROVIDER)

@@ -358,12 +358,30 @@ class TestGenerateClickHandler:
         with patch("genimg.ui.gradio_app._run_generate_stream") as mock_stream:
             mock_stream.return_value = iter(
                 [
-                    ("Generating…", None, False, True, "", state, "[Generating] genimg – AI image generation"),
-                    ("Done in 1.0s", "/tmp/123.jpg", True, False, "", state, "[DONE] genimg – AI image generation"),
+                    (
+                        "Generating…",
+                        None,
+                        False,
+                        True,
+                        "",
+                        state,
+                        "[Generating] genimg – AI image generation",
+                    ),
+                    (
+                        "Done in 1.0s",
+                        "/tmp/123.jpg",
+                        True,
+                        False,
+                        "",
+                        state,
+                        "[DONE] genimg – AI image generation",
+                    ),
                 ]
             )
             out = list(
-                gradio_app._generate_click_handler("a cat", False, "", None, None, None, None, state)
+                gradio_app._generate_click_handler(
+                    "a cat", False, "", None, None, None, None, state
+                )
             )
         assert len(out) == 2
         assert out[0][0] == "Generating…"
@@ -408,8 +426,24 @@ class TestOptimizeClickHandler:
         with patch("genimg.ui.gradio_app._run_optimize_only_stream") as mock_stream:
             mock_stream.return_value = iter(
                 [
-                    ("Optimizing…", "", False, True, False, None, "[Optimizing] genimg – AI image generation"),
-                    ("Done.", "optimized text", True, False, True, {"prompt": "a dog", "ref_hash": None}, "[DONE] genimg – AI image generation"),
+                    (
+                        "Optimizing…",
+                        "",
+                        False,
+                        True,
+                        False,
+                        None,
+                        "[Optimizing] genimg – AI image generation",
+                    ),
+                    (
+                        "Done.",
+                        "optimized text",
+                        True,
+                        False,
+                        True,
+                        {"prompt": "a dog", "ref_hash": None},
+                        "[DONE] genimg – AI image generation",
+                    ),
                 ]
             )
             out = list(gradio_app._optimize_click_handler("a dog", None, None, state))
@@ -433,9 +467,11 @@ class TestStopAndPromptHandlers:
 
     def test_stop_click_sets_event_and_returns_updates(self) -> None:
         gradio_app._cancel_event.clear()
-        a, b, page_title = gradio_app._stop_click_handler()
+        status_html, gen_btn_update, stop_btn_update, page_title = gradio_app._stop_click_handler()
         assert gradio_app._cancel_event.is_set()
-        assert a is not None and b is not None
+        assert "Stopped" in status_html or "Cancelled" in status_html
+        assert gen_btn_update is not None and gen_btn_update["interactive"] is True
+        assert stop_btn_update is not None and stop_btn_update["interactive"] is False
         assert page_title == gradio_app.BASE_PAGE_TITLE
 
     def test_prompt_change_empty_disabled(self) -> None:

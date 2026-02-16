@@ -25,9 +25,7 @@ class TestConfig:
         assert "API key" in str(exc_info.value)
 
     def test_validate_raises_when_api_key_bad_prefix(self):
-        c = Config(
-            openrouter_api_key="invalid", default_image_provider="openrouter"
-        )
+        c = Config(openrouter_api_key="invalid", default_image_provider="openrouter")
         with pytest.raises(ConfigurationError) as exc_info:
             c.validate()
         assert "sk-" in str(exc_info.value)

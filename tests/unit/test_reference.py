@@ -174,9 +174,7 @@ class TestResizeImage:
     def test_aspect_ratio_pad_top_bottom(self):
         # 20x10 (wide) with aspect 1:1 -> padded to 20x20 (top/bottom white)
         img = Image.new("RGB", (20, 10), color=(100, 100, 100))
-        out = resize_image(
-            img, max_pixels=1_000_000, min_pixels=1, aspect_ratio=(1, 1)
-        )
+        out = resize_image(img, max_pixels=1_000_000, min_pixels=1, aspect_ratio=(1, 1))
         assert out.size == (20, 20)
         # Center of pasted image (original 20x10 at paste_y=5)
         assert out.getpixel((10, 10)) == (100, 100, 100)
@@ -187,9 +185,7 @@ class TestResizeImage:
     def test_aspect_ratio_pad_left_right(self):
         # 10x20 (tall) with aspect 1:1 -> padded to 20x20 (left/right white)
         img = Image.new("RGB", (10, 20), color=(100, 100, 100))
-        out = resize_image(
-            img, max_pixels=1_000_000, min_pixels=1, aspect_ratio=(1, 1)
-        )
+        out = resize_image(img, max_pixels=1_000_000, min_pixels=1, aspect_ratio=(1, 1))
         assert out.size == (20, 20)
         assert out.getpixel((5, 10)) == (100, 100, 100)
         assert out.getpixel((0, 10)) == (255, 255, 255)
@@ -197,9 +193,7 @@ class TestResizeImage:
 
     def test_aspect_ratio_no_pad_when_already_matches(self):
         img = Image.new("RGB", (10, 10))
-        out = resize_image(
-            img, max_pixels=1_000_000, min_pixels=1, aspect_ratio=(1, 1)
-        )
+        out = resize_image(img, max_pixels=1_000_000, min_pixels=1, aspect_ratio=(1, 1))
         assert out.size == (10, 10)
 
 
@@ -271,9 +265,7 @@ class TestProcessReferenceImage:
     def test_from_bytes_returns_encoded_and_hash(self):
         png = _minimal_png_bytes()
         config = Config(openrouter_api_key="", min_image_pixels=1)
-        encoded, ref_hash = process_reference_image(
-            png, format_hint="PNG", config=config
-        )
+        encoded, ref_hash = process_reference_image(png, format_hint="PNG", config=config)
         assert isinstance(encoded, str)
         assert len(ref_hash) == 64
         assert ref_hash == __import__("hashlib").sha256(png).hexdigest()
