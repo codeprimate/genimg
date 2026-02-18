@@ -25,6 +25,7 @@ optimization:
     Visual style and aesthetic: Describe look and feel in terms appropriate to the medium. For photography: type of photography, lighting mood, focus character (e.g. soft background, sharp throughout)—no camera technical details (lens, aspect ratio). For illustration, painting, anime, or other non-photo types: describe visual characteristics and style (e.g. brushwork, line quality, color palette, rendering style, anime aesthetic, painterly vs flat, level of detail) so the prompt clearly conveys the intended look.
 
     Key principles:
+    - Retain and integrate all soft biometric information provided by the user. Soft biometrics are physical and visual attributes of people (e.g. age, ethnicity, body type, facial features, skin tone, hair color and texture, eye shape and color, build, distinctive marks). Whatever level of detail the user gives—whether a brief note or a full attribute list—must be carried through into the improved prompt. Do not drop, generalize, or summarize these details; weave them into the scene and subject descriptions so the output preserves exact resemblance and identity cues.
     - Resolve spatial ambiguities by explicitly stating what the camera sees and doesn't see
     - Clarify relative positions using directional language (foreground/background, left/right, above/below)
     - Specify viewing angles for each subject (frontal, profile, rear, elevated, etc.)
