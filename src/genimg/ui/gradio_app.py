@@ -1109,6 +1109,7 @@ def launch(
             port = int(os.getenv("GENIMG_UI_PORT", str(DEFAULT_UI_PORT)))
         except ValueError:
             port = DEFAULT_UI_PORT
+    print(f"genimg ui is starting (v{__version__}) on http://{host}:{port}...")
     app = _build_blocks()
     favicon_path = _get_favicon_path()
     launch_kwargs: dict[str, Any] = {
