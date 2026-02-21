@@ -1010,10 +1010,6 @@ def _build_blocks() -> gr.Blocks:
                             "Enhance Prompt", variant="secondary", interactive=False
                         )
             with gr.Column():
-                ref_message = gr.HTML(
-                    value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
-                    visible=(default_image_provider == "ollama"),
-                )
                 with gr.Tabs():
                     with gr.Tab("Reference image"):
                         ref_image = gr.Image(
@@ -1023,17 +1019,18 @@ def _build_blocks() -> gr.Blocks:
                             visible=True,
                         )
                     with gr.Tab("Description"):
-                        desc_method_dd = gr.Dropdown(
-                            label="Method",
-                            choices=["Prose (Florence)", "Tags (JoyTag)"],
-                            value="Prose (Florence)",
-                        )
-                        desc_verbosity_dd = gr.Dropdown(
-                            label="Prose verbosity",
-                            choices=["brief", "detailed", "more_detailed"],
-                            value="detailed",
-                            visible=True,
-                        )
+                        with gr.Row():
+                            desc_method_dd = gr.Dropdown(
+                                label="Method",
+                                choices=["Prose (Florence)", "Tags (JoyTag)"],
+                                value="Prose (Florence)",
+                            )
+                            desc_verbosity_dd = gr.Dropdown(
+                                label="Prose verbosity",
+                                choices=["brief", "detailed", "more_detailed"],
+                                value="detailed",
+                                visible=True,
+                            )
                         describe_btn = gr.Button("Describe", interactive=False)
                         describe_output_tb = gr.Textbox(
                             label="Description",
@@ -1068,6 +1065,10 @@ def _build_blocks() -> gr.Blocks:
                     allow_custom_value=True,
                     visible=True,
                     info="Model for the selected provider. Type a model ID for another.",
+                )
+                ref_message = gr.HTML(
+                    value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
+                    visible=(default_image_provider == "ollama"),
                 )
 
         def _on_provider_change(provider: str) -> tuple[Any, Any]:
