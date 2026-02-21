@@ -19,26 +19,36 @@ class PromptCache:
         """Initialize an empty cache."""
         self._cache: dict[str, str] = {}
 
-    def _generate_key(self, prompt: str, model: str, reference_hash: str | None = None) -> str:
+    def _generate_key(
+        self,
+        prompt: str,
+        model: str,
+        reference_hash: str | None = None,
+        description_key: str | None = None,
+    ) -> str:
         """
-        Generate a cache key from prompt, model, and optional reference image hash.
+        Generate a cache key from prompt, model, and optional reference/description.
 
-        Args:
-            prompt: The original prompt text
-            model: The optimization model name
-            reference_hash: Hash of reference image (if any)
-
-        Returns:
-            A hash string to use as cache key
+        When description_key is set (description-based optimization), the key is distinct
+        from the non-description path. REQ-014: exact key strategy may be refined later.
         """
         key_parts = [prompt, model]
         if reference_hash:
             key_parts.append(reference_hash)
+        if description_key is not None:
+            key_parts.append("desc")
+            key_parts.append(description_key)
 
         key_string = "|".join(key_parts)
         return hashlib.sha256(key_string.encode()).hexdigest()
 
-    def get(self, prompt: str, model: str, reference_hash: str | None = None) -> str | None:
+    def get(
+        self,
+        prompt: str,
+        model: str,
+        reference_hash: str | None = None,
+        description_key: str | None = None,
+    ) -> str | None:
         """
         Retrieve an optimized prompt from cache.
 
@@ -46,11 +56,12 @@ class PromptCache:
             prompt: The original prompt text
             model: The optimization model name
             reference_hash: Hash of reference image (if any)
+            description_key: When set, use description-based cache key (REQ-014).
 
         Returns:
             The cached optimized prompt, or None if not found
         """
-        key = self._generate_key(prompt, model, reference_hash)
+        key = self._generate_key(prompt, model, reference_hash, description_key)
         hit = key in self._cache
         logger.debug("Cache get model=%s hit=%s", model, hit)
         return self._cache.get(key)
@@ -61,6 +72,7 @@ class PromptCache:
         model: str,
         optimized_prompt: str,
         reference_hash: str | None = None,
+        description_key: str | None = None,
     ) -> None:
         """
         Store an optimized prompt in cache.
@@ -70,8 +82,9 @@ class PromptCache:
             model: The optimization model name
             optimized_prompt: The optimized prompt to cache
             reference_hash: Hash of reference image (if any)
+            description_key: When set, use description-based cache key (REQ-014).
         """
-        key = self._generate_key(prompt, model, reference_hash)
+        key = self._generate_key(prompt, model, reference_hash, description_key)
         self._cache[key] = optimized_prompt
         logger.debug("Cache set model=%s", model)
 

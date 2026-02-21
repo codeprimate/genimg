@@ -346,6 +346,66 @@ class TestRunGenerate:
         assert mock_generate.call_args[0][0] == "new optimized prompt"
         assert any("Done" in (item[0] or "") for item in items)
 
+    @patch("genimg.ui.gradio_app.generate_image")
+    @patch("genimg.ui.gradio_app.optimize_prompt")
+    @patch("genimg.ui.gradio_app.unload_describe_models")
+    @patch("genimg.ui.gradio_app.get_description")
+    @patch("genimg.ui.gradio_app.process_reference_image")
+    @patch("genimg.ui.gradio_app.validate_prompt")
+    @patch("genimg.ui.gradio_app.Config")
+    def test_use_description_ollama_unloads_and_does_not_send_ref(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_validate: MagicMock,
+        mock_process_ref: MagicMock,
+        mock_get_description: MagicMock,
+        mock_unload: MagicMock,
+        mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """With use_description=True and provider ollama: unload_describe_models called, ref image not sent."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.openrouter_api_key = "sk-test"
+        config.generation_timeout = 60
+        config.max_image_pixels = 2_000_000
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+
+        ref_file = tmp_path / "ref.png"
+        ref_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+        mock_process_ref.return_value = ("b64data", "hash123")
+        mock_get_description.return_value = "a fluffy cat"
+        mock_optimize.return_value = "optimized prompt"
+        pil_image = Image.new("RGB", (10, 10), color="blue")
+        result = MagicMock()
+        result.image = pil_image
+        result.generation_time = 1.0
+        mock_generate.return_value = result
+
+        stream = gradio_app._run_generate_stream(
+            "a cat",
+            optimize=True,
+            optimized_prompt_value="",
+            reference_value=str(ref_file),
+            provider="ollama",
+            model="test/model",
+            optimized_for_state={"prompt": "", "ref_hash": None},
+            use_description=True,
+            description_method="prose",
+            description_verbosity="detailed",
+        )
+        items = list(stream)
+
+        mock_get_description.assert_called_once()
+        mock_unload.assert_called_once()
+        mock_optimize.assert_called_once()
+        assert mock_optimize.call_args[1].get("reference_description") == "a fluffy cat"
+        mock_generate.assert_called_once()
+        assert mock_generate.call_args[1].get("reference_image_b64") is None
+        assert any("Done" in (item[0] or "") for item in items)
+
 
 @pytest.mark.unit
 class TestGenerateClickHandler:

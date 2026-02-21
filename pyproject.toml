@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "genimg"
-version = "0.9.9"
+version = "0.10.0"
 description = "AI image generation tool with prompt optimization"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,6 +36,14 @@ dependencies = [
     "pyyaml>=6.0.0",
     "rich>=13.0.0",
     "pydantic>=2.0.0",
+    # Image analysis (describe): Florence-2, JoyTag
+    "torch>=2.0.0",
+    "transformers>=4.40.0",
+    "huggingface_hub>=0.20.0",
+    "safetensors>=0.4.0",
+    "timm>=0.9.0",
+    "torchvision>=0.15.0",
+    "einops>=0.7.0",
 ]
 
 [project.optional-dependencies]
@@ -84,8 +92,6 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
-    "-m",
-    "not integration",
     "--cov=src/genimg",
     "--cov-report=term-missing",
     "--cov-report=html",
@@ -93,14 +99,14 @@ addopts = [
 ]
 markers = [
     "unit: Unit tests",
-    "integration: Integration tests (real API, run manually)",
-    "slow: Slow running tests",
-    "expensive: Expensive tests (API cost, run manually)",
+    "integration: Integration tests (real backend/API)",
+    "slow: Slow tests (run with pytest --run-slow to include)",
+    "expensive: Expensive tests (API cost)",
 ]
 
 [tool.coverage.run]
 source = ["src/genimg"]
-omit = ["tests/*", "src/genimg/__main__.py"]
+omit = ["tests/*", "src/genimg/__main__.py", "src/genimg/core/image_analysis/backends/_joytag_models.py"]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -122,6 +128,7 @@ exclude = '''
   | \.venv
   | build
   | dist
+  | _joytag_models\.py
 )/
 '''
 
@@ -133,6 +140,7 @@ exclude = [
     "__pycache__",
     "build",
     "dist",
+    "src/genimg/core/image_analysis/backends/_joytag_models.py",  # vendored; do not lint/format
 ]
 
 [tool.ruff.lint]
@@ -156,6 +164,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "N806", "SIM117"]  # assert in tests; mock names (Popen); nested with
 "src/genimg/ui/gradio_app.py" = ["N806", "SIM117"]  # UI constants (_UI_CONCURRENCY_ID, _JS_SET_PAGE_TITLE); nested with for Gradio layout
+"src/genimg/core/image_analysis/backends/joytag.py" = ["N812"]  # TVF common alias for torchvision.transforms.functional
 
 [tool.mypy]
 python_version = "3.10"
@@ -169,11 +178,14 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
+exclude = ["src/genimg/core/image_analysis/backends/_joytag_models.py"]
 
 [[tool.mypy.overrides]]
 module = [
     "gradio.*",
     "PIL.*",
     "pillow_heif.*",
+    "torch.*",
+    "torchvision.*",
 ]
 ignore_missing_imports = true

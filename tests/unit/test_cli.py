@@ -209,6 +209,71 @@ class TestGenerateCommand:
 
     @patch("genimg.cli.commands.generate_image")
     @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.unload_describe_models")
+    @patch("genimg.cli.commands.get_description")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_use_reference_description_ollama_unloads_and_does_not_send_ref(
+        self,
+        mock_config_cls: MagicMock,
+        mock_process_ref: MagicMock,
+        _mock_validate: MagicMock,
+        mock_get_description: MagicMock,
+        mock_unload: MagicMock,
+        mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """With --use-reference-description and --provider ollama: unload_describe_models called, ref image not sent."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.default_image_provider = "ollama"
+        config.default_optimization_model = "llama3.2"
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+
+        ref_file = tmp_path / "ref.png"
+        ref_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+        out_file = tmp_path / "out.png"
+        mock_process_ref.return_value = ("b64data", "hash123")
+        mock_get_description.return_value = "a fluffy cat"
+        mock_optimize.return_value = "optimized prompt"
+        result_obj = MagicMock()
+        result_obj.image_data = b"\x89PNG"
+        result_obj.format = "png"
+        result_obj.generation_time = 1.0
+        result_obj.model_used = "test/model"
+        result_obj.prompt_used = "optimized prompt"
+        result_obj.had_reference = False
+        mock_generate.return_value = result_obj
+
+        result = _run_cli(
+            "--prompt",
+            "a cat",
+            "--reference",
+            str(ref_file),
+            "--use-reference-description",
+            "--provider",
+            "ollama",
+            "--out",
+            str(out_file),
+        )
+
+        assert result.exit_code == 0
+        mock_get_description.assert_called_once()
+        call_kw = mock_get_description.call_args[1]
+        assert call_kw.get("method") == "prose"
+        assert call_kw.get("verbosity") == "detailed"
+        mock_unload.assert_called_once()
+        mock_optimize.assert_called_once()
+        opt_kw = mock_optimize.call_args[1]
+        assert opt_kw.get("reference_description") == "a fluffy cat"
+        mock_generate.assert_called_once()
+        assert mock_generate.call_args[1].get("reference_image_b64") is None
+
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
     @patch("genimg.cli.commands.validate_prompt")
     @patch("genimg.cli.commands.process_reference_image")
     @patch("genimg.cli.commands.Config")

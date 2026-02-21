@@ -29,6 +29,7 @@ from genimg.cli.handlers import (
     run_with_error_handling,
 )
 from genimg.cli.utils import default_output_path
+from genimg.core.image_analysis import get_description, unload_describe_models
 from genimg.core.providers import get_registry
 from genimg.logging_config import configure_logging, get_verbosity_from_env
 
@@ -102,6 +103,23 @@ def cli(ctx: click.Context) -> None:
     is_flag=True,
     help="Log raw API request payload and response (image data truncated) for debugging.",
 )
+@click.option(
+    "--use-reference-description",
+    is_flag=True,
+    help="Use reference image description during optimization (describe then optimize with description; with Ollama the image is not sent).",
+)
+@click.option(
+    "--reference-description-model",
+    type=click.Choice(["tags", "prose"], case_sensitive=False),
+    default="prose",
+    help="How to describe the reference image: 'tags' (JoyTag) or 'prose' (Florence-2). Default: prose.",
+)
+@click.option(
+    "--reference-description-verbosity",
+    type=click.Choice(["brief", "detailed", "more_detailed"], case_sensitive=False),
+    default="detailed",
+    help="Prose description verbosity (only for --reference-description-model prose). Default: detailed.",
+)
 def generate(
     prompt: str,
     model: str | None,
@@ -115,6 +133,9 @@ def generate(
     quiet: bool,
     verbose_count: int,
     debug_api: bool,
+    use_reference_description: bool,
+    reference_description_model: str,
+    reference_description_verbosity: str,
 ) -> None:
     """Generate an image from a text prompt (optionally with optimization and reference)."""
     # Reset cancel event for this run (in case CLI is invoked again in same process)
@@ -138,7 +159,7 @@ def generate(
 
         # 2. Effective provider (CLI override or config default)
         provider_eff = provider if provider is not None else config.default_image_provider
-        if reference is not None:
+        if reference is not None and not use_reference_description:
             impl = get_registry().get(provider_eff)
             if impl is not None and not getattr(impl, "supports_reference_image", True):
                 raise ValidationError(
@@ -156,10 +177,23 @@ def generate(
         if reference is not None:
             ref_b64, ref_hash = process_reference_image(reference, config=config)
 
+        # 4b. Reference description (when --use-reference-description)
+        description: str | None = None
+        if use_reference_description and reference is not None:
+            description = get_description(
+                reference,
+                ref_hash,
+                method=reference_description_model,
+                verbosity=reference_description_verbosity,
+            )
+            if provider_eff == "ollama":
+                unload_describe_models()
+
         # 5. Optional optimization
         effective_prompt = prompt
         if not no_optimize:
             config.optimization_enabled = True
+            ref_desc = description if (use_reference_description and description) else None
             if not quiet:
                 with progress.optimization_progress(
                     model=optimization_model or config.default_optimization_model,
@@ -169,6 +203,7 @@ def generate(
                         prompt,
                         model=optimization_model,
                         reference_hash=ref_hash,
+                        reference_description=ref_desc,
                         config=config,
                         cancel_check=cancel_check,
                     )
@@ -177,6 +212,7 @@ def generate(
                     prompt,
                     model=optimization_model,
                     reference_hash=ref_hash,
+                    reference_description=ref_desc,
                     config=config,
                     cancel_check=cancel_check,
                 )
@@ -199,10 +235,16 @@ def generate(
                     else:
                         progress.print_warning(f"Could not save prompt to {save_prompt}: {e}")
 
-        # 6. Generate image
+        # 6. Generate image (pass reference image only if provider supports it)
+        impl = get_registry().get(provider_eff)
+        ref_b64_to_send = (
+            ref_b64
+            if (impl is not None and getattr(impl, "supports_reference_image", True))
+            else None
+        )
         gen_kw: dict = {
             "model": model,
-            "reference_image_b64": ref_b64,
+            "reference_image_b64": ref_b64_to_send,
             "config": config,
             "cancel_check": cancel_check,
         }

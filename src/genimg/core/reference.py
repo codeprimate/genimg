@@ -135,6 +135,35 @@ def _load_image_source(
     return image, suffix
 
 
+def load_image_to_rgb_pil(
+    source: Image.Image | str | Path | bytes,
+    format_hint: str | None = None,
+) -> Image.Image:
+    """
+    Load an image from any supported source and return as RGB PIL.
+
+    Used by image_analysis and any caller that needs a normalized RGB image.
+    Same loading contract as _load_image_source; output is always RGB.
+
+    Args:
+        source: PIL Image, file path (str or Path), or raw image bytes
+        format_hint: Optional format/MIME hint when source is bytes (e.g. 'PNG', 'image/jpeg')
+
+    Returns:
+        PIL Image in RGB mode
+
+    Raises:
+        ValidationError: If format is unsupported or cannot be inferred
+        ImageProcessingError: If image cannot be loaded
+    """
+    if isinstance(source, Image.Image):
+        if source.mode == "RGB":
+            return source
+        return source.convert("RGB")
+    image, _ = _load_image_source(source, format_hint)
+    return image.convert("RGB") if image.mode != "RGB" else image
+
+
 def validate_image_format(image_path: str) -> None:
     """
     Validate that an image file has a supported format.

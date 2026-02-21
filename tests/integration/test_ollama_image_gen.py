@@ -1,16 +1,9 @@
 """
-Optional integration tests for Ollama image generation.
+Integration tests for Ollama image generation.
 
-These tests call a local Ollama instance. They are skipped unless opted in.
-Run when Ollama is running with an image model (e.g. x/z-image-turbo) pulled.
-
-To run:
-  GENIMG_OLLAMA_IMAGE_TEST=1 pytest tests/integration/test_ollama_image_gen.py -m integration
-  # or with custom base URL:
-  GENIMG_OLLAMA_IMAGE_TEST=1 OLLAMA_BASE_URL=http://localhost:11434 pytest ...
+Requires a local Ollama instance with an image model (e.g. x/z-image-turbo) pulled.
+Run with: pytest --run-slow
 """
-
-import os
 
 import pytest
 
@@ -18,21 +11,10 @@ from genimg.core.config import Config
 from genimg.core.image_gen import GenerationResult, generate_image
 
 
-def _ollama_image_test_enabled() -> bool:
-    return os.getenv("GENIMG_OLLAMA_IMAGE_TEST", "").strip() == "1"
-
-
 @pytest.mark.integration
+@pytest.mark.slow
 class TestOllamaImageGeneration:
-    """Ollama image generation (requires local Ollama + opt-in env)."""
-
-    @pytest.fixture(autouse=True)
-    def _require_opt_in(self) -> None:
-        if not _ollama_image_test_enabled():
-            pytest.skip(
-                "Ollama image integration tests are disabled. "
-                "Set GENIMG_OLLAMA_IMAGE_TEST=1 to run (requires Ollama with an image model)."
-            )
+    """Ollama image generation (requires local Ollama with image model)."""
 
     def test_generate_image_returns_valid_result(self) -> None:
         """Call Ollama with provider=ollama and assert result shape and sanity."""

@@ -81,6 +81,8 @@ Users must be able to:
 - **As a user**, I can provide a reference image to guide the generation (when using the OpenRouter provider)
 - **As a user**, I can upload images in common formats (PNG, JPEG, WebP, HEIC, HEIF)
 - **As a user**, I can describe how the reference image should influence the output via my prompt
+- **As a user**, I can generate a text description of my reference image (tags or prose) in the UI and use that description during prompt optimization
+- **As a user**, I can choose “Use image description/tags” so optimization uses the description instead of sending the image; with the Ollama provider the reference image is not sent to the model but the description is used to improve the prompt
 
 ### 2.4 Operation Control
 
@@ -443,7 +445,7 @@ flowchart TD
 - System shall accept PNG, JPEG, WebP, HEIC, and HEIF formats
 - System shall validate image format on upload
 - System shall provide clear feedback on unsupported formats
-- **Note:** Reference images are only supported when the **OpenRouter** provider is used; if the user supplies a reference image with another provider, the system shall reject or guide the user (e.g. suggest `--provider openrouter`)
+- **Note:** Sending the reference image to the model is only supported with the **OpenRouter** provider. With Ollama, the user can still use a reference image via “Use image description/tags” (or CLI `--use-reference-description`), where the image is described locally and only the description is used in optimization; the image is not sent.
 
 #### 5.3.2 Image Processing
 - System shall resize images exceeding size limits
@@ -457,6 +459,13 @@ flowchart TD
 - System shall store uploaded images temporarily during session
 - System shall clean up temporary files after use
 - System shall allow user to clear/replace reference image
+
+#### 5.3.4 Reference Image Description
+- System shall offer a **Describe** flow in the UI (Reference area, Description tab): method choice (Tags via JoyTag or Prose via Florence-2) and, for Prose, verbosity (brief, detailed, more_detailed)
+- System shall allow the user to request a description of the reference image and display it in a read-only field
+- System shall support a “Use image description/tags” option; when enabled and a reference image is present, optimization shall use the description (from cache or fresh describe) instead of reference-image instructions
+- When “Use image description/tags” is enabled and the image provider is Ollama, the system shall not send the reference image to the model and shall unload describe models before calling Ollama
+- CLI shall support `--use-reference-description`, `--reference-description-model` (tags | prose), and `--reference-description-verbosity` (brief | detailed | more_detailed) for the same description-based optimization path
 
 ### 5.4 Operation Control
 

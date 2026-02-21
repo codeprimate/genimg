@@ -272,6 +272,45 @@ class TestOptimizePrompt:
         assert "not found" in str(exc_info.value).lower() or "PATH" in str(exc_info.value)
         cache.clear()
 
+    def test_optimize_prompt_with_reference_description_uses_description_template(self):
+        """When reference_description is set, description-based template is used and cached with description_key."""
+        cache = get_cache()
+        cache.clear()
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+        ref_hash = "abc123"
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch(
+                "genimg.core.prompt.get_optimization_template_with_description",
+                return_value="Use this: {reference_description}",
+            ) as get_desc_tpl:
+                with patch("genimg.core.prompt.get_optimization_template") as get_std_tpl:
+                    with patch("genimg.core.prompt.subprocess.Popen") as Popen:
+                        proc = MagicMock()
+                        proc.returncode = 0
+                        proc.communicate.return_value = ("  improved  \n", "")
+                        Popen.return_value = proc
+                        result = optimize_prompt(
+                            "a cat",
+                            config=config,
+                            reference_hash=ref_hash,
+                            reference_description="fluffy orange tabby",
+                            enable_cache=True,
+                        )
+        assert result == "improved"
+        get_desc_tpl.assert_called()
+        get_std_tpl.assert_not_called()
+        # Cache uses description_key (ref_hash) so same prompt+description hits cache
+        assert (
+            cache.get(
+                "a cat", config.default_optimization_model, ref_hash, description_key=ref_hash
+            )
+            == "improved"
+        )
+        # Input to Ollama should contain the description (communicate(input=...))
+        sent_input = proc.communicate.call_args[1]["input"]
+        assert "fluffy orange tabby" in sent_input
+        cache.clear()
+
     def test_optimization_template_contains_placeholder(self):
         assert "{reference_image_instruction}" in OPTIMIZATION_TEMPLATE
         assert (

@@ -21,6 +21,10 @@ class OptimizationPrompt(BaseModel):
     """Schema for optimization prompt configuration."""
 
     template: str = Field(..., min_length=1, description="Optimization template string")
+    template_with_description: str | None = Field(
+        default=None,
+        description="Template when reference image description is used; must contain {reference_description}",
+    )
 
 
 class PromptsSchema(BaseModel):
@@ -120,5 +124,29 @@ def get_optimization_template() -> str:
     if "{reference_image_instruction}" not in template:
         raise ConfigurationError(
             "optimization.template must contain {reference_image_instruction} placeholder."
+        )
+    return template
+
+
+def get_optimization_template_with_description() -> str:
+    """
+    Return the optimization template used when a reference image description is provided.
+    Must contain {reference_description} placeholder.
+
+    Returns:
+        The template string from prompts.yaml (optimization.template_with_description).
+
+    Raises:
+        ConfigurationError: If template is missing or does not contain the placeholder.
+    """
+    template = get_prompt("optimization", "template_with_description")
+    if not template:
+        raise ConfigurationError(
+            "optimization.template_with_description not found in prompts.yaml. "
+            "Required when using description-based optimization."
+        )
+    if "{reference_description}" not in template:
+        raise ConfigurationError(
+            "optimization.template_with_description must contain {reference_description} placeholder."
         )
     return template

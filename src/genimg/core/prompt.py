@@ -11,7 +11,10 @@ import warnings
 from collections.abc import Callable
 
 from genimg.core.config import Config, get_config
-from genimg.core.prompts_loader import get_optimization_template
+from genimg.core.prompts_loader import (
+    get_optimization_template,
+    get_optimization_template_with_description,
+)
 from genimg.logging_config import get_logger, log_prompts
 from genimg.utils.cache import PromptCache, get_cache
 from genimg.utils.exceptions import (
@@ -169,6 +172,7 @@ def optimize_prompt_with_ollama(
     prompt: str,
     model: str | None = None,
     reference_hash: str | None = None,
+    reference_description: str | None = None,
     timeout: int | None = None,
     config: Config | None = None,
     cancel_check: Callable[[], bool] | None = None,
@@ -181,6 +185,7 @@ def optimize_prompt_with_ollama(
         prompt: The original prompt to optimize
         model: The Ollama model to use (defaults to config value)
         reference_hash: Hash of reference image if present (for caching)
+        reference_description: When set, use description-based template (REQ-014 cache key)
         timeout: Timeout in seconds (defaults to config value)
         config: Optional config to use; if None, uses shared config from get_config()
         cancel_check: Optional callable returning True to cancel; polled during the run.
@@ -206,8 +211,10 @@ def optimize_prompt_with_ollama(
         timeout = config.optimization_timeout
 
     cache = get_cache()
+    # REQ-014: description-based path uses description_key (reference_hash or description id)
+    description_key = reference_hash if reference_description else None
     if not force_refresh:
-        cached = cache.get(prompt, model, reference_hash)
+        cached = cache.get(prompt, model, reference_hash, description_key=description_key)
         if cached:
             logger.debug("Cache hit for model=%s", model)
             logger.info("Optimized (from cache) model=%s", model)
@@ -226,17 +233,28 @@ def optimize_prompt_with_ollama(
             "Visit https://ollama.ai for installation instructions."
         )
 
-    # Prepare the optimization prompt: system template (with optional reference instruction) + "Original prompt: ... Improved prompt:"
-    reference_instruction = REFERENCE_IMAGE_INSTRUCTION if reference_hash else ""
-    system_part = get_optimization_template().format(
-        reference_image_instruction=reference_instruction
-    )
+    # Prepare the optimization prompt: use description-based or standard template
+    if reference_description is not None:
+        system_part = get_optimization_template_with_description().format(
+            reference_description=reference_description
+        )
+    else:
+        reference_instruction = REFERENCE_IMAGE_INSTRUCTION if reference_hash else ""
+        system_part = get_optimization_template().format(
+            reference_image_instruction=reference_instruction
+        )
     optimization_prompt = system_part + "\n\nOriginal prompt: " + prompt + "\n\nImproved prompt:"
 
     start_time = time.time()
     if cancel_check is None:
         result = _run_ollama_sync(
-            prompt, model, reference_hash, timeout, optimization_prompt, cache
+            prompt,
+            model,
+            reference_hash,
+            timeout,
+            optimization_prompt,
+            cache,
+            description_key=description_key,
         )
         elapsed = time.time() - start_time
         logger.info("Optimized in %.1fs model=%s", elapsed, model)
@@ -325,7 +343,7 @@ def optimize_prompt_with_ollama(
     optimized = _strip_ollama_thinking((stdout or "").strip())
     if not optimized:
         raise APIError("Ollama returned an empty response")
-    cache.set(prompt, model, optimized, reference_hash)
+    cache.set(prompt, model, optimized, reference_hash, description_key=description_key)
     elapsed = time.time() - start_time
     logger.info("Optimized in %.1fs model=%s", elapsed, model)
     if log_prompts():
@@ -370,6 +388,7 @@ def _run_ollama_sync(
     timeout: int,
     optimization_prompt: str,
     cache: PromptCache,
+    description_key: str | None = None,
 ) -> str:
     """Run Ollama without cancellation; used when cancel_check is None."""
     try:
@@ -381,7 +400,7 @@ def _run_ollama_sync(
     optimized = _strip_ollama_thinking(stdout.strip())
     if not optimized:
         raise APIError("Ollama returned an empty response")
-    cache.set(prompt, model, optimized, reference_hash)
+    cache.set(prompt, model, optimized, reference_hash, description_key=description_key)
     return optimized
 
 
@@ -389,6 +408,7 @@ def optimize_prompt(
     prompt: str,
     model: str | None = None,
     reference_hash: str | None = None,
+    reference_description: str | None = None,
     enable_cache: bool = True,
     config: Config | None = None,
     cancel_check: Callable[[], bool] | None = None,
@@ -400,6 +420,7 @@ def optimize_prompt(
         prompt: The original prompt to optimize
         model: The optimization model to use (defaults to config)
         reference_hash: Hash of reference image if present
+        reference_description: When set, use description-based template (REQ-014)
         enable_cache: Whether to use caching (default: True)
         config: Optional config to use; if None, uses shared config from get_config()
         cancel_check: Optional callable returning True to cancel; polled during the run.
@@ -423,11 +444,12 @@ def optimize_prompt(
         return prompt
 
     # Check cache if enabled
+    description_key = reference_hash if reference_description else None
     if enable_cache:
         cache = get_cache()
         if model is None:
             model = config.default_optimization_model
-        cached = cache.get(prompt, model, reference_hash)
+        cached = cache.get(prompt, model, reference_hash, description_key=description_key)
         if cached:
             logger.debug("Cache hit for model=%s", model)
             logger.info("Optimized (from cache) model=%s", model)
@@ -438,6 +460,7 @@ def optimize_prompt(
         prompt,
         model,
         reference_hash,
+        reference_description=reference_description,
         config=config,
         cancel_check=cancel_check,
         force_refresh=not enable_cache,

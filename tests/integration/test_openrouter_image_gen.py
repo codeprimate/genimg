@@ -1,13 +1,8 @@
 """
 Integration tests for OpenRouter image generation.
 
-These tests call the real OpenRouter API. They are slow and cost money.
-Run rarely and only when you need to verify the live API path.
-
-To run:
-  GENIMG_RUN_INTEGRATION_TESTS=1 OPENROUTER_API_KEY=sk-... pytest -m integration
-  # or
-  GENIMG_RUN_INTEGRATION_TESTS=1 make test-integration
+Calls the real OpenRouter API (slow, costs money). Skips if OPENROUTER_API_KEY not set.
+Run with: pytest --run-slow
 """
 
 import os
@@ -24,27 +19,18 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _TMP_DIR = _PROJECT_ROOT / "tmp"
 
 
-def _integration_enabled() -> bool:
-    return os.getenv("GENIMG_RUN_INTEGRATION_TESTS", "").strip() == "1"
-
-
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.expensive
 class TestOpenRouterImageGeneration:
-    """Real OpenRouter image generation (requires API key and opt-in env)."""
+    """Real OpenRouter image generation (skips if OPENROUTER_API_KEY not set)."""
 
     @pytest.fixture(autouse=True)
-    def _require_opt_in(self) -> None:
-        if not _integration_enabled():
-            pytest.skip(
-                "Integration tests are disabled. "
-                "Set GENIMG_RUN_INTEGRATION_TESTS=1 to run (slow, costs money)."
-            )
+    def _require_api_key(self) -> None:
         if not os.getenv("OPENROUTER_API_KEY", "").strip().startswith("sk-"):
             pytest.skip(
-                "OPENROUTER_API_KEY not set or invalid. "
-                "Set it in .env or environment to run integration tests."
+                "OPENROUTER_API_KEY not set or invalid (needs sk-...). "
+                "Set in .env or environment to run this test."
             )
 
     def test_generate_image_returns_valid_result(self) -> None:

@@ -40,6 +40,11 @@ from genimg import (
     validate_prompt,
 )
 from genimg.core.config import DEFAULT_IMAGE_MODEL
+from genimg.core.image_analysis import (
+    describe_image,
+    get_description,
+    unload_describe_models,
+)
 from genimg.core.providers import KNOWN_IMAGE_PROVIDERS
 from genimg.logging_config import get_logger, log_prompts
 
@@ -394,6 +399,9 @@ def _run_generate_stream(
     optimization_model: str | None = None,
     cancel_check: Any | None = None,
     optimized_for_state: dict[str, Any] | None = None,
+    use_description: bool = False,
+    description_method: str = "prose",
+    description_verbosity: str = "detailed",
 ) -> Generator[tuple[str, str | None, bool, bool, str, dict[str, Any], str], None, None]:
     """
     Generate flow: use Optimized prompt box only when it was produced for the current
@@ -465,6 +473,29 @@ def _run_generate_stream(
                 BASE_PAGE_TITLE,
             )
             return
+    description: str | None = None
+    if use_description and ref_source is not None:
+        try:
+            description = get_description(
+                ref_source,
+                ref_hash,
+                method=description_method,
+                verbosity=description_verbosity or "detailed",
+            )
+            if provider == "ollama":
+                unload_describe_models()
+        except Exception as e:
+            yield (
+                _format_status(_exception_to_message(e), "error"),
+                None,
+                True,
+                False,
+                box_value,
+                state,
+                BASE_PAGE_TITLE,
+            )
+            return
+    ref_b64_to_send = ref_b64 if provider != "ollama" else None
     # Use optimized box only if it was produced for this exact (prompt, ref_hash)
     state_matches = (
         state.get(OPTIMIZED_FOR_PROMPT) == prompt and state.get(OPTIMIZED_FOR_REF_HASH) == ref_hash
@@ -488,6 +519,7 @@ def _run_generate_stream(
                 prompt,
                 model=optimization_model,
                 reference_hash=ref_hash,
+                reference_description=description if (use_description and description) else None,
                 config=config,
                 cancel_check=cancel_check,
             )
@@ -523,6 +555,7 @@ def _run_generate_stream(
                 prompt,
                 model=optimization_model,
                 reference_hash=ref_hash,
+                reference_description=description if (use_description and description) else None,
                 config=config,
                 cancel_check=cancel_check,
             )
@@ -554,7 +587,7 @@ def _run_generate_stream(
         result = generate_image(
             effective_prompt,
             model=model or None,
-            reference_image_b64=ref_b64,
+            reference_image_b64=ref_b64_to_send,
             provider=provider,
             config=config,
             cancel_check=cancel_check,
@@ -601,11 +634,16 @@ def _generate_click_handler(
     mod: str | None,
     opt_mod: str | None,
     optimized_for_state: dict[str, Any] | None = None,
+    use_description: bool = False,
+    desc_method_ui: str = "Prose (Florence)",
+    desc_verbosity: str = "detailed",
 ) -> Generator[tuple[Any, ...], None, None]:
     """Generate button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     logger.debug("Generate clicked")
     _cancel_event.clear()
     state = optimized_for_state or _initial_optimized_for_state()
+    ui_to_method = {"Prose (Florence)": "prose", "Tags (JoyTag)": "tags"}
+    description_method = ui_to_method.get(desc_method_ui, "prose")
     try:
         for (
             status_msg,
@@ -625,6 +663,9 @@ def _generate_click_handler(
             optimization_model=opt_mod,
             cancel_check=lambda: _cancel_event.is_set(),
             optimized_for_state=state,
+            use_description=use_description,
+            description_method=description_method,
+            description_verbosity=desc_verbosity or "detailed",
         ):
             state = new_state
             yield (
@@ -663,11 +704,17 @@ def _optimize_click_handler(
     ref: Any,
     opt_mod: str | None,
     optimized_for_state: dict[str, Any] | None = None,
+    use_description: bool = False,
+    desc_method_ui: str = "Prose (Florence)",
+    desc_verbosity: str = "detailed",
+    provider: str | None = None,
 ) -> Generator[tuple[Any, ...], None, None]:
     """Optimize button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     logger.debug("Optimize clicked")
     _cancel_event.clear()
     state = optimized_for_state or _initial_optimized_for_state()
+    ui_to_method = {"Prose (Florence)": "prose", "Tags (JoyTag)": "tags"}
+    description_method = ui_to_method.get(desc_method_ui, "prose")
     try:
         for (
             status_msg,
@@ -678,7 +725,14 @@ def _optimize_click_handler(
             state_update,
             page_title,
         ) in _run_optimize_only_stream(
-            p, ref, optimization_model=opt_mod, cancel_check=lambda: _cancel_event.is_set()
+            p,
+            ref,
+            optimization_model=opt_mod,
+            cancel_check=lambda: _cancel_event.is_set(),
+            use_description=use_description,
+            description_method=description_method,
+            description_verbosity=desc_verbosity or "detailed",
+            provider=provider,
         ):
             if state_update is not None:
                 state = state_update
@@ -741,6 +795,10 @@ def _run_optimize_only_stream(
     reference_value: Any,
     optimization_model: str | None = None,
     cancel_check: Any | None = None,
+    use_description: bool = False,
+    description_method: str = "prose",
+    description_verbosity: str = "detailed",
+    provider: str | None = None,
 ) -> Generator[tuple[str, str, bool, bool, bool, dict[str, Any] | None, str], None, None]:
     """
     Run optimization only; yields (status_msg, optimized_text, optimize_btn_on, stop_btn_on, generate_btn_on, state_update, page_title).
@@ -807,6 +865,28 @@ def _run_optimize_only_stream(
                 BASE_PAGE_TITLE,
             )
             return
+    description: str | None = None
+    if use_description and ref_source is not None:
+        try:
+            description = get_description(
+                ref_source,
+                ref_hash,
+                method=description_method,
+                verbosity=description_verbosity or "detailed",
+            )
+            if provider == "ollama":
+                unload_describe_models()
+        except Exception as e:
+            yield (
+                _format_status(_exception_to_message(e), "error"),
+                "",
+                True,
+                False,
+                True,
+                None,
+                BASE_PAGE_TITLE,
+            )
+            return
     config.optimization_enabled = True
     yield (
         _format_status("Optimizing…", "info"),
@@ -822,6 +902,7 @@ def _run_optimize_only_stream(
             prompt,
             model=optimization_model,
             reference_hash=ref_hash,
+            reference_description=description if (use_description and description) else None,
             enable_cache=False,  # Optimize button always forces a fresh run
             config=config,
             cancel_check=cancel_check,
@@ -933,11 +1014,38 @@ def _build_blocks() -> gr.Blocks:
                     value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
                     visible=(default_image_provider == "ollama"),
                 )
-                ref_image = gr.Image(
-                    label="Reference image",
-                    type="filepath",
-                    sources=["upload", "clipboard"],
-                    visible=(default_image_provider != "ollama"),
+                with gr.Tabs():
+                    with gr.Tab("Reference image"):
+                        ref_image = gr.Image(
+                            label="Reference image",
+                            type="filepath",
+                            sources=["upload", "clipboard"],
+                            visible=True,
+                        )
+                    with gr.Tab("Description"):
+                        desc_method_dd = gr.Dropdown(
+                            label="Method",
+                            choices=["Prose (Florence)", "Tags (JoyTag)"],
+                            value="Prose (Florence)",
+                        )
+                        desc_verbosity_dd = gr.Dropdown(
+                            label="Prose verbosity",
+                            choices=["brief", "detailed", "more_detailed"],
+                            value="detailed",
+                            visible=True,
+                        )
+                        describe_btn = gr.Button("Describe", interactive=False)
+                        describe_output_tb = gr.Textbox(
+                            label="Description",
+                            lines=6,
+                            max_lines=12,
+                            interactive=False,
+                            placeholder="Upload a reference image and click Describe.",
+                        )
+                use_description_cb = gr.Checkbox(
+                    label="Use image description/tags",
+                    value=False,
+                    info="Use description in optimization; when provider is Ollama, ref image is not sent.",
                 )
 
         with gr.Row():
@@ -962,11 +1070,10 @@ def _build_blocks() -> gr.Blocks:
                     info="Model for the selected provider. Type a model ID for another.",
                 )
 
-        def _on_provider_change(provider: str) -> tuple[Any, Any, Any]:
+        def _on_provider_change(provider: str) -> tuple[Any, Any]:
             if provider == "ollama":
                 return (
                     gr.update(choices=ollama_image_models, value=default_ollama),
-                    gr.update(visible=False),
                     gr.update(
                         visible=True,
                         value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
@@ -978,14 +1085,53 @@ def _build_blocks() -> gr.Blocks:
             )
             return (
                 gr.update(choices=image_models, value=openrouter_default),
-                gr.update(visible=True),
                 gr.update(visible=False),
             )
 
         provider_dd.change(
             fn=_on_provider_change,
             inputs=[provider_dd],
-            outputs=[model_dd, ref_image, ref_message],
+            outputs=[model_dd, ref_message],
+        )
+
+        def _on_desc_method_change(method: str) -> Any:
+            return gr.update(visible=(method == "Prose (Florence)"))
+
+        desc_method_dd.change(
+            fn=_on_desc_method_change,
+            inputs=[desc_method_dd],
+            outputs=[desc_verbosity_dd],
+        )
+
+        def _ref_image_change(ref_value: Any) -> Any:
+            src = _reference_source_for_process(ref_value)
+            return gr.update(interactive=(src is not None))
+
+        ref_image.change(
+            fn=_ref_image_change,
+            inputs=[ref_image],
+            outputs=[describe_btn],
+        )
+
+        def _describe_click(ref_value: Any, method: str, verbosity: str) -> tuple[str, str]:
+            ref_source = _reference_source_for_process(ref_value)
+            if ref_source is None:
+                return "", _format_status("No reference image.", "warning")
+            ui_to_method = {"Prose (Florence)": "prose", "Tags (JoyTag)": "tags"}
+            method_val = ui_to_method.get(method, "prose")
+            try:
+                desc = describe_image(
+                    ref_source, method=method_val, verbosity=verbosity or "detailed"
+                )
+                return (desc or "").strip(), _format_status("Description ready.", "success")
+            except Exception as e:
+                return "", _format_status(_exception_to_message(e), "error")
+
+        describe_btn.click(
+            fn=_describe_click,
+            inputs=[ref_image, desc_method_dd, desc_verbosity_dd],
+            outputs=[describe_output_tb, status_html],
+            concurrency_id="genimg_ui",
         )
         with gr.Row():
             generate_btn = gr.Button("Generate", variant="primary", interactive=False)
@@ -1032,6 +1178,9 @@ def _build_blocks() -> gr.Blocks:
                 model_dd,
                 optimization_dd,
                 optimized_for_state,
+                use_description_cb,
+                desc_method_dd,
+                desc_verbosity_dd,
             ],
             outputs=_gen_outputs,
             concurrency_id=_UI_CONCURRENCY_ID,
@@ -1039,7 +1188,16 @@ def _build_blocks() -> gr.Blocks:
         gen_ev.then(js=_JS_SET_PAGE_TITLE, inputs=_gen_outputs, outputs=_gen_outputs)
         opt_ev = optimize_btn.click(
             fn=_optimize_click_handler,
-            inputs=[prompt_tb, ref_image, optimization_dd, optimized_for_state],
+            inputs=[
+                prompt_tb,
+                ref_image,
+                optimization_dd,
+                optimized_for_state,
+                use_description_cb,
+                desc_method_dd,
+                desc_verbosity_dd,
+                provider_dd,
+            ],
             outputs=_opt_outputs,
             concurrency_id=_UI_CONCURRENCY_ID,
         )
