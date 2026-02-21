@@ -1,8 +1,8 @@
 # AI Image Generator - Functional Specification
 
-**Version:** 1.1  
-**Date:** February 7, 2026  
-**Status:** Implemented (matches v0.1.0)
+**Version:** 1.2  
+**Date:** February 20, 2026  
+**Status:** Implemented (matches current implementation)
 
 ---
 
@@ -63,7 +63,7 @@ Users must be able to:
 ### 2.1 Image Generation
 
 - **As a user**, I can provide a text description of an image I want to create
-- **As a user**, I can select from multiple AI image generation models to find the one that best suits my needs
+- **As a user**, I can select image generation provider (e.g. OpenRouter or Ollama) and model to find what best suits my needs
 - **As a user**, I can generate images without writing code or calling APIs directly
 - **As a user**, I can see the generated image immediately after creation
 - **As a user**, I can download generated images in standard formats
@@ -78,8 +78,8 @@ Users must be able to:
 
 ### 2.3 Reference Images
 
-- **As a user**, I can provide a reference image to guide the generation
-- **As a user**, I can upload images in common formats (PNG, JPEG, WebP, HEIC)
+- **As a user**, I can provide a reference image to guide the generation (when using the OpenRouter provider)
+- **As a user**, I can upload images in common formats (PNG, JPEG, WebP, HEIC, HEIF)
 - **As a user**, I can describe how the reference image should influence the output via my prompt
 
 ### 2.4 Operation Control
@@ -90,8 +90,8 @@ Users must be able to:
 
 ### 2.5 Configuration
 
-- **As a user**, I can provide my API credentials for external services
-- **As a user**, I can select which AI models to use for optimization and generation
+- **As a user**, I can provide my API credentials when using the OpenRouter provider (optional when using Ollama only)
+- **As a user**, I can select image generation provider and models for optimization and generation
 - **As a user**, I can configure settings via environment variables or `.env` file
 - **As a user**, I can launch the web UI with custom host, port, and sharing options
 - **As a user**, I can specify where to save the optimized prompt for later reproduction
@@ -142,20 +142,19 @@ A **reference image** is an optional visual input provided by the user to guide 
 - Subject to size constraints for API compatibility
 - Described via prompt text (tool doesn't automatically interpret the image)
 
-### 3.4 Image Generation Model
+### 3.4 Image Generation Provider and Model
 
-An **image generation model** is an AI service capable of creating images from text and/or image inputs. Different models have different capabilities, styles, speeds, costs, and availability.
+An **image generation provider** is a backend that can generate images (e.g. **openrouter**, **ollama**). The system uses a provider registry; the user selects a provider (or uses the default) and a **model** ID that is meaningful for that provider.
 
-**Examples:**
-- Text-to-image models (FLUX, Seedream)
-- Multimodal models with image generation (Gemini, GPT-5 Image)
-- Specialized models (Riverflow)
+- **OpenRouter**: Cloud API; supports text and optional reference images; requires an API key; model IDs are OpenRouter-style (e.g. `google/gemini-2.5-flash-image`, `bytedance-seed/seedream-4.5`).
+- **Ollama**: Local service; text-to-image only (no reference images); no API key; model IDs are Ollama model names (e.g. `x/z-image-turbo`, `x/flux2-klein`).
+
+An **image generation model** is a specific model within a provider (e.g. a given OpenRouter or Ollama model). Different models have different capabilities, styles, speeds, costs, and availability.
 
 **Characteristics:**
-- Accessed via API
-- Different pricing and rate limits
-- Different quality and style characteristics
-- Different capabilities (some support reference images, others don't)
+- Provider is selected via config or CLI (`--provider`); default is configurable (default: **ollama**).
+- Reference images are only supported when the **OpenRouter** provider is used.
+- OpenRouter: API key required; internet required. Ollama: no API key; local only.
 
 ### 3.5 Generated Image
 
@@ -195,10 +194,10 @@ flowchart TD
 
 **Steps:**
 1. User enters a text description of desired image
-2. User selects an AI model for generation
-3. User provides API credentials (if not already configured)
+2. User selects image generation provider (openrouter or ollama) and model
+3. User provides API credentials only if using OpenRouter and not already configured
 4. User initiates generation
-5. System generates image
+5. System generates image via selected provider
 6. User views and downloads result
 
 **Exit Conditions:**
@@ -237,11 +236,11 @@ flowchart TD
 **Steps:**
 1. User enters a text description
 2. User enables prompt optimization feature
-3. User selects optimization model (Ollama) and generation model
+3. User selects optimization model (Ollama) and image generation provider/model
 4. User initiates generation
-5. System optimizes the prompt
+5. System optimizes the prompt (Ollama)
 6. User reviews, edits, or regenerates optimized prompt
-7. System generates image using optimized prompt
+7. System generates image using optimized prompt (selected provider)
 8. User views and downloads result
 
 **Key Differences from Basic:**
@@ -326,6 +325,7 @@ flowchart TD
 7. User iterates or downloads
 
 **Reference Image Considerations:**
+- Reference-based generation requires the **OpenRouter** provider (not ollama)
 - Prompt must describe relationship to reference (style, subject, composition)
 - Optimization must preserve reference-related instructions
 - Some models may interpret references differently
@@ -414,23 +414,25 @@ flowchart TD
 
 ### 5.2 Image Generation
 
-#### 5.2.1 Model Selection
-- System shall support multiple image generation models
-- System shall provide a default model that works reliably
-- System shall allow user to select any OpenRouter-compatible model
-- System shall provide list of recommended models
-- System shall support custom model IDs for flexibility
+#### 5.2.1 Provider and Model Selection
+- System shall support multiple image generation **providers** (openrouter, ollama) via a provider registry
+- System shall allow user to select provider via CLI `--provider` or config default (default provider: ollama)
+- System shall allow user to select image generation model per provider (OpenRouter model IDs or Ollama model names)
+- System shall provide a default model per provider (from config and/or `ui_models.yaml`)
+- System shall maintain recommended model lists: OpenRouter models in `ui_models.yaml` (`image_models`), Ollama image models in `ui_models.yaml` (`ollama_image_models`)
+- System shall support custom model IDs for flexibility (provider-specific format)
 
 #### 5.2.2 Generation Execution
-- System shall send prompt and optional reference image to selected model
-- System shall handle API authentication securely
+- System shall delegate to the selected provider (openrouter or ollama); each provider implements the same protocol (prompt, optional reference_image_b64, timeout, cancel_check)
+- System shall send prompt and optional reference image (OpenRouter only) to the selected model
+- System shall handle API authentication when provider is OpenRouter (Bearer token); no auth for Ollama
 - System shall track generation time for user feedback
-- System shall retrieve generated image in appropriate format
-- System shall handle NSFW content detection if provided by API
+- System shall retrieve generated image in appropriate format (PIL Image; format from API)
+- System shall handle NSFW content detection if provided by API (provider-dependent)
 
 #### 5.2.3 Generation Parameters
 - System shall use prompt (original or optimized) as primary input
-- System shall include reference image when provided
+- System shall include reference image when provided (OpenRouter provider only)
 - System shall configure API to return image output
 - System shall handle model-specific parameter requirements
 
@@ -441,6 +443,7 @@ flowchart TD
 - System shall accept PNG, JPEG, WebP, HEIC, and HEIF formats
 - System shall validate image format on upload
 - System shall provide clear feedback on unsupported formats
+- **Note:** Reference images are only supported when the **OpenRouter** provider is used; if the user supplies a reference image with another provider, the system shall reject or guide the user (e.g. suggest `--provider openrouter`)
 
 #### 5.3.2 Image Processing
 - System shall resize images exceeding size limits
@@ -502,19 +505,26 @@ flowchart TD
 ### 5.6 Configuration
 
 #### 5.6.1 API Credentials
-- System shall require OpenRouter API key for generation
-- System shall accept API key via environment variable
-- System shall accept API key via user input
+- System shall require an OpenRouter API key only when the **OpenRouter** image generation provider is used
+- When the default or selected provider is **Ollama**, no API key is required for image generation
+- System shall accept OpenRouter API key via environment variable (`OPENROUTER_API_KEY`) or CLI (`--api-key`)
 - System shall store credentials securely during session
 - System shall not log or display credentials in plain text
 
-#### 5.6.2 Model Configuration
-- System shall allow selection of image generation model
-- System shall allow selection of prompt optimization model
-- System shall maintain list of available models via `ui_models.yaml` configuration
-- System shall provide reasonable defaults for all models
+#### 5.6.2 Model and Provider Configuration
+- System shall allow selection of image generation **provider** (openrouter | ollama) and **model** (provider-specific ID)
+- System shall allow selection of prompt optimization model (Ollama)
+- System shall maintain model lists via `ui_models.yaml`: `image_models` (OpenRouter), `ollama_image_models` (Ollama), `optimization_models` (Ollama); UI loads these from the package
+- System shall provide reasonable defaults: default provider **ollama**, default image model and optimization model from config / YAML
 - System shall allow custom model IDs for flexibility
-- System shall support model selection via environment variables (`GENIMG_DEFAULT_MODEL`, `GENIMG_OPTIMIZATION_MODEL`)
+- System shall support configuration via environment variables:
+  - `GENIMG_DEFAULT_IMAGE_PROVIDER` — default image provider (default: ollama)
+  - `GENIMG_DEFAULT_MODEL` — default image generation model for the chosen provider
+  - `GENIMG_OPTIMIZATION_MODEL` — default Ollama model for prompt optimization
+  - `GENIMG_VERBOSITY` — logging verbosity: 0 (default), 1 (also prompts), 2 (API/cache detail); CLI `-v`/`-vv` override
+  - `GENIMG_DEBUG_API` — when set (1/true/yes), log raw API request/response (image data truncated)
+  - `GENIMG_OLLAMA_BASE_URL` or `OLLAMA_BASE_URL` — Ollama service URL (for image generation and optimization when not local)
+  - `GENIMG_MIN_IMAGE_PIXELS` — minimum total pixels for reference images (default 2500)
 
 #### 5.6.3 Preferences
 - System shall remember model selections during session (process-scoped)
@@ -524,11 +534,12 @@ flowchart TD
 
 #### 5.6.4 CLI Parameters
 - System shall support `--prompt` or `-p` for text description input (required)
-- System shall support `--model` or `-m` for image generation model selection
-- System shall support `--reference` or `-r` for reference image file path
+- System shall support `--model` or `-m` for image generation model selection (provider-specific)
+- System shall support `--provider` for image generation provider: `openrouter` or `ollama` (default from config)
+- System shall support `--reference` or `-r` for reference image file path (valid only with provider openrouter)
 - System shall support `--no-optimize` flag to skip prompt optimization
 - System shall support `--out` or `-o` for output image file path
-- System shall support `--optimization-model` for selecting optimization model
+- System shall support `--optimization-model` for selecting optimization model (Ollama)
 - System shall support `--save-prompt` for saving optimized prompt to file
   - Accepts relative paths (resolved from current working directory)
   - Accepts absolute file paths
@@ -536,7 +547,10 @@ flowchart TD
   - Creates parent directories if they don't exist
   - Overwrites existing files without warning
   - Reports errors if file cannot be written
+- System shall support `--api-key` for OpenRouter API key (overrides `OPENROUTER_API_KEY`; only used when provider is openrouter)
 - System shall support `--quiet` or `-q` for minimal output mode
+- System shall support `--verbose` or `-v` (repeatable) for increased logging: `-v` also show prompts, `-vv` show API/cache detail; overrides `GENIMG_VERBOSITY`
+- System shall support `--debug-api` to log raw API request/response (image data truncated) for debugging
 
 **Note:** The `--save-prompt` feature is CLI-only. The web UI allows users to copy/paste optimized prompts from the interface but does not automatically save them to files.
 
@@ -565,10 +579,14 @@ Reference Image:
 #### 6.1.3 Configuration Data
 ```
 Configuration:
-  - openrouter_api_key: string (required, sensitive)
-  - image_generation_model: string (required)
-  - optimization_model: string (optional)
-  - optimization_enabled: boolean
+  - openrouter_api_key: string (required when provider is openrouter, sensitive)
+  - default_image_provider: string (e.g. "openrouter" | "ollama", default: "ollama")
+  - default_image_model: string (provider-specific model ID)
+  - default_optimization_model: string (Ollama model name)
+  - optimization_enabled: boolean (runtime)
+  - ollama_base_url: string (optional; for Ollama provider and optimization)
+  - debug_api: boolean (optional)
+  - min_image_pixels, max_image_pixels: int (reference image constraints)
 ```
 
 ### 6.2 Processed Data
@@ -671,9 +689,18 @@ Cache Entry:
 
 ## 7. Integration Points
 
+### 7.0 Provider Architecture
+
+Image generation is abstracted behind a **provider registry**. Built-in providers:
+
+- **openrouter** — Cloud API (OpenRouter); supports reference images; requires API key.
+- **ollama** — Local Ollama service; text-to-image only; no API key; uses `ollama_base_url` (default `http://127.0.0.1:11434`).
+
+The default provider is **ollama**. Users select provider via `--provider` (CLI) or config (`GENIMG_DEFAULT_IMAGE_PROVIDER`). Reference images are only supported with the OpenRouter provider; the CLI and library validate and guide the user when a reference is supplied with another provider.
+
 ### 7.1 OpenRouter API
 
-**Purpose:** Primary image generation service
+**Purpose:** Image generation when provider is **openrouter**
 
 **Capabilities Required:**
 - Chat completions endpoint with modalities support
@@ -726,59 +753,26 @@ Error:
 
 ### 7.2 Ollama
 
-**Purpose:** Local prompt optimization service
+**Purpose:** (1) Local prompt optimization (always via Ollama subprocess). (2) Image generation when provider is **ollama** (HTTP API).
 
-**Capabilities Required:**
-- Text generation via installed models
-- Streaming output (not currently used)
-- Model management (list, pull)
-
-**Execution:**
-- Subprocess execution (`subprocess.Popen`)
-- Threading for cancellation support
-- No authentication required (local service)
-
-**Invocation Format:**
-```
-Command: ollama run {model}
-Stdin: Optimization prompt (system template + user prompt)
-Stdout: Generated optimized prompt
-Stderr: Error messages
-Exit code: 0 (success) or non-zero (error)
-Timeout: Managed via threading and process termination
-```
-
-**Optimization Template:**
-- Loaded from `src/genimg/prompts.yaml` at runtime
-- Contains system instructions for optimization
-- Injected with reference image instructions when applicable
+**Optimization (subprocess):**
+- Text generation via `ollama run {model}` (subprocess, stdin/stdout)
+- Threading for cancellation support; no authentication
+- Template loaded from package `prompts.yaml` (bundled with genimg; contains `optimization.template` with `{reference_image_instruction}` placeholder)
 - Format: `{template}\n\nOriginal prompt: {user_prompt}\n\nImproved prompt:`
+- Output processing: strips "Thinking..." blocks and markdown code fences
 
-**Output Processing:**
-- Strips "Thinking..." blocks from thinking models
-- Strips markdown code fences if present
-- Returns cleaned prompt text
+**Image generation (when provider is ollama):**
+- HTTP API: `POST {ollama_base_url}/api/generate` (or equivalent) with image-capable models (e.g. x/z-image-turbo, x/flux2-klein)
+- No reference image support
+- No API key; uses `GENIMG_OLLAMA_BASE_URL` or `OLLAMA_BASE_URL` (default `http://127.0.0.1:11434`)
 
-**Model Management:**
-```
-Command: ollama list
-Stdout: Table of installed models
-Format: NAME  ID  SIZE  MODIFIED
+**Model management (optimization):**
+- `ollama list` / `ollama pull {model}` for installing optimization models
 
-Command: ollama pull {model}
-Effect: Downloads and installs model
-```
+**Error scenarios:** Model not found, Ollama not installed, timeout (>120s optimization), process killed (cancellation).
 
-**Error Scenarios:**
-- Model not found: User needs to install model
-- Ollama not installed: User needs to install Ollama
-- Timeout: Optimization taking too long (>120s)
-- Process killed: Cancellation or system issue
-
-**Assumptions:**
-- Ollama installed and available in PATH
-- At least one compatible model installed
-- Sufficient system resources for model execution
+**Assumptions:** Ollama installed and available (PATH for optimization; base URL for image generation). At least one compatible model installed for the chosen use (optimization and/or image generation).
 
 ---
 
@@ -874,19 +868,19 @@ Effect: Downloads and installs model
 ### 9.1 Technical Constraints
 
 #### 9.1.1 Network Connectivity
-- **Constraint:** Internet connection required for image generation
-- **Impact:** Tool unusable in offline scenarios
-- **Rationale:** OpenRouter is cloud-based service
+- **Constraint:** Internet connection required only when using **OpenRouter** provider for image generation
+- **Impact:** With **ollama** provider, image generation can run fully local (no internet)
+- **Rationale:** OpenRouter is cloud-based; Ollama is local
 
 #### 9.1.2 Service Dependencies
-- **Constraint:** Depends on OpenRouter API availability
-- **Impact:** Service outages prevent image generation
-- **Mitigation:** Multiple model options provide some redundancy
+- **Constraint:** When provider is **openrouter**, depends on OpenRouter API availability and internet
+- **Impact:** OpenRouter outages prevent image generation when using that provider
+- **Mitigation:** User can switch to **ollama** provider for local image generation without internet
 
 #### 9.1.3 Local Service Dependency
-- **Constraint:** Prompt optimization requires Ollama installation
-- **Impact:** Optimization unavailable without Ollama
-- **Mitigation:** Optimization is optional feature
+- **Constraint:** Prompt optimization requires Ollama (subprocess). Image generation when provider is **ollama** requires Ollama service (HTTP).
+- **Impact:** Optimization unavailable without Ollama; ollama-provider image generation unavailable without Ollama
+- **Mitigation:** Optimization is optional; user can use **openrouter** provider for image generation without running Ollama
 
 #### 9.1.4 Image Size Limits
 - **Constraint:** Reference images limited to 2 megapixels
