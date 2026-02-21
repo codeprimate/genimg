@@ -1024,12 +1024,14 @@ def _build_blocks() -> gr.Blocks:
                                 label="Method",
                                 choices=["Prose (Florence)", "Tags (JoyTag)"],
                                 value="Prose (Florence)",
+                                interactive=False,
                             )
                             desc_verbosity_dd = gr.Dropdown(
                                 label="Prose verbosity",
                                 choices=["brief", "detailed", "more_detailed"],
                                 value="detailed",
                                 visible=True,
+                                interactive=False,
                             )
                         describe_btn = gr.Button("Describe", interactive=False)
                         describe_output_tb = gr.Textbox(
@@ -1042,6 +1044,7 @@ def _build_blocks() -> gr.Blocks:
                 use_description_cb = gr.Checkbox(
                     label="Use image description/tags",
                     value=False,
+                    interactive=False,
                     info="Use description in optimization; when provider is Ollama, ref image is not sent.",
                 )
 
@@ -1104,14 +1107,23 @@ def _build_blocks() -> gr.Blocks:
             outputs=[desc_verbosity_dd],
         )
 
-        def _ref_image_change(ref_value: Any) -> Any:
+        def _ref_image_change(ref_value: Any) -> tuple[Any, ...]:
             src = _reference_source_for_process(ref_value)
-            return gr.update(interactive=(src is not None))
+            enabled = src is not None
+            cb_update = (
+                gr.update(interactive=False, value=False) if not enabled else gr.update(interactive=True)
+            )
+            return (
+                gr.update(interactive=enabled),
+                cb_update,
+                gr.update(interactive=enabled),
+                gr.update(interactive=enabled),
+            )
 
         ref_image.change(
             fn=_ref_image_change,
             inputs=[ref_image],
-            outputs=[describe_btn],
+            outputs=[describe_btn, use_description_cb, desc_method_dd, desc_verbosity_dd],
         )
 
         def _describe_click(ref_value: Any, method: str, verbosity: str) -> tuple[str, str]:
