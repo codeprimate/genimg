@@ -500,7 +500,7 @@ def _run_generate_stream(
     state_matches = (
         state.get(OPTIMIZED_FOR_PROMPT) == prompt and state.get(OPTIMIZED_FOR_REF_HASH) == ref_hash
     )
-    if box_value and state_matches:
+    if box_value and state_matches and optimize:
         effective_prompt = box_value
     elif box_value and not state_matches and optimize:
         # Prompt or ref changed; re-optimize for current prompt
