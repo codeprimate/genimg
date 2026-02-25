@@ -354,10 +354,13 @@ class TestRunGenerate:
         # Generation must use the edited box content, not a re-optimized result
         mock_generate.assert_called_once()
         assert mock_generate.call_args[0][0] == edited_box_content
-        # Every yield must return the same edited box value so the UI does not replace the text area
+        # Stream must not overwrite the text area with a different value; final yield uses gr.skip() to preserve in-UI edits
         # Yield tuple: (status, img_path, gen_on, stop_on, optimized_box_value, state, page_title, notify_msg)
         for item in items:
-            assert item[4] == edited_box_content, "Stream must not overwrite optimized box with previous value"
+            box_val = item[4]
+            assert box_val == edited_box_content or (
+                isinstance(box_val, dict) and box_val.get("__type__") == "update"
+            ), "Stream must not overwrite optimized box with a different value"
         assert any("Done" in (item[0] or "") for item in items)
 
     @patch("genimg.ui.gradio_app.generate_image")

@@ -655,7 +655,7 @@ def _run_generate_stream(
             None,
             True,
             False,
-            box_value,
+            gr.skip(),  # preserve user edits made during generation
             state,
             BASE_PAGE_TITLE,
             _generate_notify_msg_on_error(e),
@@ -671,7 +671,7 @@ def _run_generate_stream(
         str(out_path),
         True,
         False,
-        box_value,
+        gr.skip(),  # preserve user edits made during generation
         state,
         _page_title_with_status("[DONE]"),
         f"Done in {elapsed:.1f}s",
