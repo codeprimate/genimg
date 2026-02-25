@@ -223,6 +223,32 @@ def _load_ui_models() -> tuple[list[str], list[str], str, str, str, list[str], s
     )
 
 
+# Max length for browser notification body (truncate long error messages)
+_NOTIFY_BODY_MAX_LEN = 80
+
+
+def _notification_body(prefix: str, message: str) -> str:
+    """Build a short notification body; truncate to _NOTIFY_BODY_MAX_LEN."""
+    s = f"{prefix}{message}"
+    if len(s) > _NOTIFY_BODY_MAX_LEN:
+        return s[:_NOTIFY_BODY_MAX_LEN - 1] + "…"
+    return s
+
+
+def _generate_notify_msg_on_error(exc: BaseException) -> str:
+    """Notification message for generate flow on error; empty for user cancellation."""
+    if isinstance(exc, CancellationError):
+        return ""
+    return _notification_body("Generation failed: ", _exception_to_message(exc))
+
+
+def _optimize_notify_msg_on_error(exc: BaseException) -> str:
+    """Notification message for optimize flow on error; empty for user cancellation."""
+    if isinstance(exc, CancellationError):
+        return ""
+    return _notification_body("Optimization failed: ", _exception_to_message(exc))
+
+
 def _exception_to_message(exc: BaseException) -> str:
     """Map library and known exceptions to a short user-facing message (same as CLI)."""
     if isinstance(exc, ValidationError):
@@ -407,11 +433,11 @@ def _run_generate_stream(
     use_description: bool = False,
     description_method: str = "prose",
     description_verbosity: str = "detailed",
-) -> Generator[tuple[str, str | None, bool, bool, str, dict[str, Any], str], None, None]:
+) -> Generator[tuple[str, str | None, bool, bool, str, dict[str, Any], str, str], None, None]:
     """
     Generate flow: use Optimized prompt box only when it was produced for the current
     (prompt, ref_hash); otherwise run optimize when checkbox on, else use Prompt.
-    Yields (status, img_path, gen_on, stop_on, optimized_box_value, optimized_for_state, page_title).
+    Yields (status, img_path, gen_on, stop_on, optimized_box_value, optimized_for_state, page_title, notify_msg).
     """
     state = optimized_for_state or _initial_optimized_for_state()
     # Preserve exact box content (user may have edited); only overwrite when we run optimize
@@ -427,6 +453,7 @@ def _run_generate_stream(
             box_value,
             state,
             BASE_PAGE_TITLE,
+            "",
         )
         return
     logger.info("Generate requested")
@@ -447,6 +474,7 @@ def _run_generate_stream(
             box_value,
             state,
             BASE_PAGE_TITLE,
+            _notification_body("Generation failed: ", _exception_to_message(e)),
         )
         return
     try:
@@ -460,6 +488,7 @@ def _run_generate_stream(
             box_value,
             state,
             BASE_PAGE_TITLE,
+            _notification_body("Generation failed: ", _exception_to_message(e)),
         )
         return
     ref_b64: str | None = None
@@ -477,6 +506,7 @@ def _run_generate_stream(
                 box_value,
                 state,
                 BASE_PAGE_TITLE,
+                _notification_body("Generation failed: ", _exception_to_message(e)),
             )
             return
     description: str | None = None
@@ -499,6 +529,7 @@ def _run_generate_stream(
                 box_value,
                 state,
                 BASE_PAGE_TITLE,
+                _notification_body("Generation failed: ", _exception_to_message(e)),
             )
             return
     ref_b64_to_send = ref_b64 if provider != "ollama" else None
@@ -522,6 +553,7 @@ def _run_generate_stream(
             box_value,
             state,
             _page_title_with_status("[Optimizing]"),
+            "",
         )
         try:
             effective_prompt = optimize_prompt(
@@ -546,6 +578,7 @@ def _run_generate_stream(
                 box_value,
                 state,
                 BASE_PAGE_TITLE,
+                _generate_notify_msg_on_error(e),
             )
             return
     elif has_box_content and not state_matches and not optimize:
@@ -561,6 +594,7 @@ def _run_generate_stream(
             box_value,
             state,
             _page_title_with_status("[Optimizing]"),
+            "",
         )
         try:
             effective_prompt = optimize_prompt(
@@ -585,6 +619,7 @@ def _run_generate_stream(
                 box_value,
                 state,
                 BASE_PAGE_TITLE,
+                _generate_notify_msg_on_error(e),
             )
             return
     else:
@@ -597,6 +632,7 @@ def _run_generate_stream(
         box_value,
         state,
         _page_title_with_status("[Generating]"),
+        "",
     )
     try:
         result = generate_image(
@@ -622,6 +658,7 @@ def _run_generate_stream(
             box_value,
             state,
             BASE_PAGE_TITLE,
+            _generate_notify_msg_on_error(e),
         )
         return
     elapsed = result.generation_time
@@ -637,6 +674,7 @@ def _run_generate_stream(
         box_value,
         state,
         _page_title_with_status("[DONE]"),
+        f"Done in {elapsed:.1f}s",
     )
 
 
@@ -668,6 +706,7 @@ def _generate_click_handler(
             box_val,
             new_state,
             page_title,
+            notify_msg,
         ) in _run_generate_stream(
             p,
             opt,
@@ -691,6 +730,7 @@ def _generate_click_handler(
                 box_val,
                 state,
                 page_title,
+                notify_msg,
             )
     except GenimgError as e:
         yield (
@@ -701,6 +741,7 @@ def _generate_click_handler(
             opt_text,
             state,
             BASE_PAGE_TITLE,
+            _generate_notify_msg_on_error(e),
         )
     except Exception as e:
         yield (
@@ -711,6 +752,7 @@ def _generate_click_handler(
             opt_text,
             state,
             BASE_PAGE_TITLE,
+            _notification_body("Generation failed: ", str(e)),
         )
 
 
@@ -739,6 +781,7 @@ def _optimize_click_handler(
             gen_on,
             state_update,
             page_title,
+            notify_msg,
         ) in _run_optimize_only_stream(
             p,
             ref,
@@ -759,6 +802,7 @@ def _optimize_click_handler(
                 gr.update(interactive=gen_on),
                 state,
                 page_title,
+                notify_msg,
             )
     except GenimgError as e:
         yield (
@@ -769,6 +813,7 @@ def _optimize_click_handler(
             gr.update(interactive=True),
             state,
             BASE_PAGE_TITLE,
+            _optimize_notify_msg_on_error(e),
         )
     except Exception as e:
         yield (
@@ -779,6 +824,7 @@ def _optimize_click_handler(
             gr.update(interactive=True),
             state,
             BASE_PAGE_TITLE,
+            _notification_body("Optimization failed: ", str(e)),
         )
 
 
@@ -814,9 +860,9 @@ def _run_optimize_only_stream(
     description_method: str = "prose",
     description_verbosity: str = "detailed",
     provider: str | None = None,
-) -> Generator[tuple[str, str, bool, bool, bool, dict[str, Any] | None, str], None, None]:
+) -> Generator[tuple[str, str, bool, bool, bool, dict[str, Any] | None, str, str], None, None]:
     """
-    Run optimization only; yields (status_msg, optimized_text, optimize_btn_on, stop_btn_on, generate_btn_on, state_update, page_title).
+    Run optimization only; yields (status_msg, optimized_text, optimize_btn_on, stop_btn_on, generate_btn_on, state_update, page_title, notify_msg).
     state_update is None for intermediate yields; on success final yield it is {prompt, ref_hash}.
     """
     prompt_ok = bool(prompt and prompt.strip())
@@ -829,6 +875,7 @@ def _run_optimize_only_stream(
             False,
             None,
             BASE_PAGE_TITLE,
+            "",
         )
         return
     logger.info("Optimize requested")
@@ -849,6 +896,7 @@ def _run_optimize_only_stream(
             True,
             None,
             BASE_PAGE_TITLE,
+            _notification_body("Optimization failed: ", _exception_to_message(e)),
         )
         return
     try:
@@ -862,6 +910,7 @@ def _run_optimize_only_stream(
             True,
             None,
             BASE_PAGE_TITLE,
+            _notification_body("Optimization failed: ", _exception_to_message(e)),
         )
         return
     ref_hash: str | None = None
@@ -878,6 +927,7 @@ def _run_optimize_only_stream(
                 True,
                 None,
                 BASE_PAGE_TITLE,
+                _notification_body("Optimization failed: ", _exception_to_message(e)),
             )
             return
     description: str | None = None
@@ -900,6 +950,7 @@ def _run_optimize_only_stream(
                 True,
                 None,
                 BASE_PAGE_TITLE,
+                _notification_body("Optimization failed: ", _exception_to_message(e)),
             )
             return
     config.optimization_enabled = True
@@ -911,6 +962,7 @@ def _run_optimize_only_stream(
         False,
         None,
         _page_title_with_status("[Optimizing]"),
+        "",
     )
     try:
         optimized = optimize_prompt(
@@ -934,6 +986,7 @@ def _run_optimize_only_stream(
             True,
             state_update,
             _page_title_with_status("[DONE]"),
+            "Optimization complete",
         )
     except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
         yield (
@@ -944,6 +997,7 @@ def _run_optimize_only_stream(
             True,
             None,
             BASE_PAGE_TITLE,
+            _optimize_notify_msg_on_error(e),
         )
 
 
@@ -994,6 +1048,7 @@ def _build_blocks() -> gr.Blocks:
         gr.HTML(header_html)
         status_html = gr.HTML(value="", visible=True)
         page_title = gr.Textbox(value=BASE_PAGE_TITLE, visible=False, elem_id="genimg-page-title")
+        notify_msg = gr.Textbox(value="", visible=False, elem_id="genimg-notify-msg")
 
         with gr.Row():
             with gr.Column():
@@ -1179,6 +1234,12 @@ def _build_blocks() -> gr.Blocks:
         # Shared queue so generate/optimize/stop/prompt_tb updates run serially (avoids button re-enable race).
         _UI_CONCURRENCY_ID = "genimg_ui"
         _JS_SET_PAGE_TITLE = "function(...args) { if (args.length) document.title = args[args.length - 1] || ''; return args; }"
+        _JS_REQUEST_NOTIFICATION_PERMISSION = (
+            "function() { if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission(); }"
+        )
+        _JS_NOTIFY_IF_MSG = (
+            "function(...args) { var n = args.length; if (n > 0 && args[n-1] && typeof Notification !== 'undefined' && Notification.permission === 'granted') { new Notification('genimg', { body: args[n-1] }); var out = args.slice(); out[n-1] = ''; return out; } return args; }"
+        )
         _gen_outputs = [
             status_html,
             out_image,
@@ -1187,6 +1248,7 @@ def _build_blocks() -> gr.Blocks:
             optimized_tb,
             optimized_for_state,
             page_title,
+            notify_msg,
         ]
         _opt_outputs = [
             status_html,
@@ -1196,6 +1258,7 @@ def _build_blocks() -> gr.Blocks:
             generate_btn,
             optimized_for_state,
             page_title,
+            notify_msg,
         ]
 
         gen_ev = generate_btn.click(
@@ -1217,6 +1280,7 @@ def _build_blocks() -> gr.Blocks:
             concurrency_id=_UI_CONCURRENCY_ID,
         )
         gen_ev.then(js=_JS_SET_PAGE_TITLE, inputs=_gen_outputs, outputs=_gen_outputs)
+        gen_ev.then(js=_JS_NOTIFY_IF_MSG, inputs=_gen_outputs, outputs=_gen_outputs)
         opt_ev = optimize_btn.click(
             fn=_optimize_click_handler,
             inputs=[
@@ -1233,6 +1297,7 @@ def _build_blocks() -> gr.Blocks:
             concurrency_id=_UI_CONCURRENCY_ID,
         )
         opt_ev.then(js=_JS_SET_PAGE_TITLE, inputs=_opt_outputs, outputs=_opt_outputs)
+        opt_ev.then(js=_JS_NOTIFY_IF_MSG, inputs=_opt_outputs, outputs=_opt_outputs)
         _stop_outputs = [status_html, generate_btn, stop_btn, page_title]
         stop_btn.click(
             fn=_stop_click_handler,
@@ -1274,6 +1339,8 @@ def _build_blocks() -> gr.Blocks:
     " onmouseover="this.style.color='#764ba2'" onmouseout="this.style.color='#667eea'">GitHub Repository ↗</a></p>
 </div>
 """)
+
+        app.load(js=_JS_REQUEST_NOTIFICATION_PERMISSION)
 
     return cast(gr.Blocks, app)
 

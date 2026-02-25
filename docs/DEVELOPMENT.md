@@ -159,6 +159,8 @@ Edit `src/genimg/ui/gradio_app.py`:
 2. Event handlers are connected with `.click()`, `.change()`, etc.
 3. Use `gr.update()` to modify component state (e.g. button `interactive`).
 
+For browser notifications (generate/optimize completion), see [Browser notifications](browser-notifications.md) for the architecture and flow.
+
 **Running the UI:** `genimg-ui` or `genimg ui` (with optional `--port`, `--host`, `--share`). Environment: `GENIMG_UI_PORT` (default 7860), `GENIMG_UI_HOST` (default 127.0.0.1), `GENIMG_UI_SHARE` (set to `1` or `true` for a public link).
 
 ### Adding a New Error Type

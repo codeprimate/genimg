@@ -355,7 +355,7 @@ class TestRunGenerate:
         mock_generate.assert_called_once()
         assert mock_generate.call_args[0][0] == edited_box_content
         # Every yield must return the same edited box value so the UI does not replace the text area
-        # Yield tuple: (status, img_path, gen_on, stop_on, optimized_box_value, state, page_title)
+        # Yield tuple: (status, img_path, gen_on, stop_on, optimized_box_value, state, page_title, notify_msg)
         for item in items:
             assert item[4] == edited_box_content, "Stream must not overwrite optimized box with previous value"
         assert any("Done" in (item[0] or "") for item in items)
@@ -486,6 +486,7 @@ class TestGenerateClickHandler:
                         "",
                         state,
                         "[Generating] genimg – AI image generation",
+                        "",
                     ),
                     (
                         "Done in 1.0s",
@@ -495,6 +496,7 @@ class TestGenerateClickHandler:
                         "",
                         state,
                         "[DONE] genimg – AI image generation",
+                        "Done in 1.0s",
                     ),
                 ]
             )
@@ -554,6 +556,7 @@ class TestOptimizeClickHandler:
                         False,
                         None,
                         "[Optimizing] genimg – AI image generation",
+                        "",
                     ),
                     (
                         "Done.",
@@ -563,6 +566,7 @@ class TestOptimizeClickHandler:
                         True,
                         {"prompt": "a dog", "ref_hash": None},
                         "[DONE] genimg – AI image generation",
+                        "Optimization complete",
                     ),
                 ]
             )
