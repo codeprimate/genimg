@@ -97,6 +97,11 @@ def _initial_optimized_for_state() -> dict[str, Any]:
     return {OPTIMIZED_FOR_PROMPT: "", OPTIMIZED_FOR_REF_HASH: None}
 
 
+def _normalize_prompt(s: str | None) -> str:
+    """Normalize prompt for state store/compare so whitespace differences don't trigger re-optimize."""
+    return (s or "").strip()
+
+
 # Logo assets (package data); populated on first use
 _logo_favicon_path: str | None = None
 
@@ -409,8 +414,9 @@ def _run_generate_stream(
     Yields (status, img_path, gen_on, stop_on, optimized_box_value, optimized_for_state, page_title).
     """
     state = optimized_for_state or _initial_optimized_for_state()
-    # Value to show in Optimized prompt box; keep unchanged unless we run optimize
-    box_value = (optimized_prompt_value or "").strip() or ""
+    # Preserve exact box content (user may have edited); only overwrite when we run optimize
+    box_value = optimized_prompt_value if optimized_prompt_value is not None else ""
+    has_box_content = bool((box_value or "").strip())
 
     if not prompt or not prompt.strip():
         yield (
@@ -496,13 +502,16 @@ def _run_generate_stream(
             )
             return
     ref_b64_to_send = ref_b64 if provider != "ollama" else None
-    # Use optimized box only if it was produced for this exact (prompt, ref_hash)
+    # Use optimized box only if it was produced for this exact (prompt, ref_hash).
+    # Normalize prompt so whitespace differences don't trigger re-optimize and overwrite user edits.
     state_matches = (
-        state.get(OPTIMIZED_FOR_PROMPT) == prompt and state.get(OPTIMIZED_FOR_REF_HASH) == ref_hash
+        _normalize_prompt(state.get(OPTIMIZED_FOR_PROMPT)) == _normalize_prompt(prompt)
+        and state.get(OPTIMIZED_FOR_REF_HASH) == ref_hash
     )
-    if box_value and state_matches and optimize:
+    if has_box_content and state_matches and optimize:
+        # Use current box content (may be user-edited); do not run optimize or overwrite box
         effective_prompt = box_value
-    elif box_value and not state_matches and optimize:
+    elif has_box_content and not state_matches and optimize:
         # Prompt or ref changed; re-optimize for current prompt
         config.optimization_enabled = True
         yield (
@@ -524,7 +533,10 @@ def _run_generate_stream(
                 cancel_check=cancel_check,
             )
             box_value = effective_prompt
-            state = {OPTIMIZED_FOR_PROMPT: prompt, OPTIMIZED_FOR_REF_HASH: ref_hash}
+            state = {
+                OPTIMIZED_FOR_PROMPT: _normalize_prompt(prompt),
+                OPTIMIZED_FOR_REF_HASH: ref_hash,
+            }
         except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
             yield (
                 _format_status(_exception_to_message(e), "error"),
@@ -536,8 +548,8 @@ def _run_generate_stream(
                 BASE_PAGE_TITLE,
             )
             return
-    elif box_value and not state_matches and not optimize:
-        # Stale box from different prompt; user has optimization off so use raw prompt
+    elif has_box_content and not state_matches and not optimize:
+        # Stale box from different prompt/ref; user has optimization off so use raw prompt
         effective_prompt = prompt
     elif optimize:
         config.optimization_enabled = True
@@ -560,7 +572,10 @@ def _run_generate_stream(
                 cancel_check=cancel_check,
             )
             box_value = effective_prompt
-            state = {OPTIMIZED_FOR_PROMPT: prompt, OPTIMIZED_FOR_REF_HASH: ref_hash}
+            state = {
+                OPTIMIZED_FOR_PROMPT: _normalize_prompt(prompt),
+                OPTIMIZED_FOR_REF_HASH: ref_hash,
+            }
         except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
             yield (
                 _format_status(_exception_to_message(e), "error"),
@@ -907,7 +922,10 @@ def _run_optimize_only_stream(
             config=config,
             cancel_check=cancel_check,
         )
-        state_update = {OPTIMIZED_FOR_PROMPT: prompt, OPTIMIZED_FOR_REF_HASH: ref_hash}
+        state_update = {
+            OPTIMIZED_FOR_PROMPT: _normalize_prompt(prompt),
+            OPTIMIZED_FOR_REF_HASH: ref_hash,
+        }
         yield (
             _format_status("Optimized. Edit above if needed, then Generate.", "success"),
             optimized,

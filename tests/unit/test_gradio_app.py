@@ -305,6 +305,66 @@ class TestRunGenerate:
     @patch("genimg.ui.gradio_app.process_reference_image")
     @patch("genimg.ui.gradio_app.validate_prompt")
     @patch("genimg.ui.gradio_app.Config")
+    def test_edited_optimized_prompt_preserved_and_used_when_enhancement_on(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_validate: MagicMock,
+        _mock_ref: MagicMock,
+        mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+    ) -> None:
+        """With enhancement on and state matching: user-edited optimized box is used for generation and stream never overwrites it.
+
+        Bug scenario: user had a previous run (optimized prompt in box), then edited the optimized
+        text area and clicked Generate. Expected: edited text is used for generation and the text
+        area is not replaced with the previous optimized result.
+        """
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.openrouter_api_key = "sk-test"
+        config.generation_timeout = 60
+        config.max_image_pixels = 2_000_000
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+
+        pil_image = Image.new("RGB", (10, 10), color="red")
+        result = MagicMock()
+        result.image = pil_image
+        result.generation_time = 1.0
+        mock_generate.return_value = result
+
+        main_prompt = "a red apple"
+        # Simulate: box was filled by a previous optimize run, then user edited it
+        edited_box_content = "a shiny red apple on a wooden table, soft lighting"
+        matching_state = {"prompt": main_prompt, "ref_hash": None}
+
+        stream = gradio_app._run_generate_stream(
+            main_prompt,
+            optimize=True,
+            optimized_prompt_value=edited_box_content,
+            reference_value=None,
+            provider=None,
+            model=None,
+            optimized_for_state=matching_state,
+        )
+        items = list(stream)
+
+        # Must not re-run optimization (would overwrite the user's edit)
+        mock_optimize.assert_not_called()
+        # Generation must use the edited box content, not a re-optimized result
+        mock_generate.assert_called_once()
+        assert mock_generate.call_args[0][0] == edited_box_content
+        # Every yield must return the same edited box value so the UI does not replace the text area
+        # Yield tuple: (status, img_path, gen_on, stop_on, optimized_box_value, state, page_title)
+        for item in items:
+            assert item[4] == edited_box_content, "Stream must not overwrite optimized box with previous value"
+        assert any("Done" in (item[0] or "") for item in items)
+
+    @patch("genimg.ui.gradio_app.generate_image")
+    @patch("genimg.ui.gradio_app.optimize_prompt")
+    @patch("genimg.ui.gradio_app.process_reference_image")
+    @patch("genimg.ui.gradio_app.validate_prompt")
+    @patch("genimg.ui.gradio_app.Config")
     def test_prompt_changed_reoptimizes_despite_box_content(
         self,
         mock_config_cls: MagicMock,
