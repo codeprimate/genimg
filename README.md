@@ -2,14 +2,16 @@
 
 A Python package for generating AI images with intelligent prompt optimization. Generate high-quality images from simple text descriptions using multiple AI models via OpenRouter, with optional local prompt enhancement via Ollama.
 
-**Current version:** 0.9.x (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
+**Current version:** 0.10.x (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
 
 ## Features
 
-- 🎨 **Multiple AI Models**: Access various image generation models through OpenRouter (configurable in UI and CLI)
+- 🎨 **Multiple AI Models & Providers**: Generate images via **OpenRouter** (cloud) or **Ollama** (local). Choose provider and model in the UI or config.
 - ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama models; optional in both CLI and web UI
-- 🖼️ **Reference Images**: Use reference images to guide generation (CLI and web UI)
+- 🖼️ **Reference Images**: Use reference images to guide style/generation (OpenRouter); process refs for optimization context (both providers). CLI and web UI.
+- 📷 **Reference Image Description**: In the web UI, describe a reference image (prose or tags via Florence/JoyTag) and optionally feed that into prompt optimization
 - 💻 **Dual Interface**: Both CLI and web UI (Gradio) interfaces
+- 🔔 **Browser Notifications**: Web UI can notify when generation or optimization completes (optional; permission on first load)
 - 🎭 **Rich CLI**: Beautiful progress displays with spinners, progress bars, and formatted results; cancellation via Ctrl+C
 - 📦 **Library Usage**: Use as a Python library with `generate_image`, `optimize_prompt`, `Config`, and configurable logging
 - 🔧 **Type-Safe**: Full type hints for better IDE support
@@ -22,8 +24,8 @@ A Python package for generating AI images with intelligent prompt optimization. 
 ### Prerequisites
 
 - Python 3.10 or higher
-- OpenRouter API key ([get one here](https://openrouter.ai/keys))
-- (Optional) Ollama installed locally for prompt optimization ([install here](https://ollama.ai))
+- **OpenRouter API key** ([get one here](https://openrouter.ai/keys)) — required for cloud image generation. Not needed if you use only Ollama for image generation.
+- **Ollama** ([install here](https://ollama.ai)) — optional for prompt optimization; required if you use Ollama as the image provider.
 
 ### Install from GitHub
 
@@ -65,12 +67,14 @@ pip install -r requirements-dev.txt
 Copy `.env.example` to `.env` and configure:
 
 ```bash
-# Required
+# Required (for OpenRouter image generation)
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
 # Optional
 GENIMG_DEFAULT_MODEL=bytedance-seed/seedream-4.5
+GENIMG_DEFAULT_IMAGE_PROVIDER=openrouter   # or "ollama" for local image generation
 GENIMG_OPTIMIZATION_MODEL=svjack/gpt-oss-20b-heretic
+GENIMG_VERBOSITY=0                        # 0=default, 1=+prompts, 2=+API/cache (CLI/UI/library)
 ```
 
 Or set environment variables directly:
@@ -78,6 +82,8 @@ Or set environment variables directly:
 ```bash
 export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
 ```
+
+See [DEVELOPMENT.md](docs/DEVELOPMENT.md) and `.env.example` for all options (UI port/host/share, Ollama base URL, etc.).
 
 ### CLI API Key Override
 
@@ -121,7 +127,16 @@ genimg ui --share          # Create a public gradio.live link
 
 Then open your browser to the displayed URL (default: http://127.0.0.1:7860).
 
-The web UI supports: prompt input with optional optimization (checkbox), reference image upload, image and optimization model dropdowns (from package config and installed Ollama models), generation with progress and **Stop** to cancel, and download of the result (JPG, timestamped filename). The app uses a package logo and favicon when available.
+The web UI supports:
+
+- **Prompt & optimization**: Main prompt, optional enhancement (checkbox), and an editable optimized-prompt box. Use **Enhance Prompt** to run optimization, or **Generate** with optimization on to optimize then generate in one go.
+- **Reference image**: Upload a reference image. With **OpenRouter** as image provider it is sent for style/guidance; with **Ollama** it is used only as context for optimization (reference not sent to the image model). Optional **Describe** (prose or tags) and **Use image description** to feed the description into optimization.
+- **Provider & models**: Choose image provider (**OpenRouter** or **Ollama**) and pick image/optimization models from dropdowns (package config and installed Ollama models).
+- **Generation**: **Generate** with progress, **Stop** to cancel, then view or download the result (JPG, timestamped filename).
+- **Browser notifications**: Optional alerts when generation or optimization completes (permission on first load; useful if the tab is in the background).
+- **Edits preserved**: Changes to the optimized prompt made while generation is running are kept when the run finishes.
+
+The app uses a package logo and favicon when available.
 
 **UI environment variables:**
 
@@ -211,28 +226,31 @@ from genimg import generate_image, optimize_prompt, Config
 config = Config.from_env()
 config.validate()
 
-# Generate an image
+# Generate an image (default: OpenRouter)
 result = generate_image(
     prompt="a serene mountain landscape at dawn",
     model="bytedance-seed/seedream-4.5"
 )
 
+# Or use Ollama for image generation
+result = generate_image("a cat", provider="ollama", model="llama3.2-vision")
+
 # Save the image (result.image is a PIL Image; result.image_data is bytes)
 with open("output.png", "wb") as f:
     f.write(result.image_data)
-# Or save as JPEG with quality: result.image.save("output.jpg", "JPEG", quality=90)
+# Or: result.image.save("output.jpg", "JPEG", quality=90)
 
 print(f"Generated in {result.generation_time:.2f}s")
 
-# Or with optimization
+# Optimize a prompt (Ollama)
 optimized = optimize_prompt("a mountain landscape")
-print(f"Optimized prompt: {optimized}")
-
 result = generate_image(prompt=optimized)
 
-# Control logging verbosity (0=default activity/performance, 1=+prompts, 2=+API/cache)
+# Reference image (OpenRouter): process_reference_image() + pass reference_image_b64
+# Describe image: describe_image() from genimg.core.image_analysis
+# List Ollama models: list_ollama_models()
 from genimg import set_verbosity
-set_verbosity(1)  # or set GENIMG_VERBOSITY=1 in the environment
+set_verbosity(1)  # 0=default, 1=+prompts, 2=+API/cache; or GENIMG_VERBOSITY
 ```
 
 ## Prompt Optimization
@@ -250,18 +268,21 @@ Prompt optimization uses Ollama to enhance your simple descriptions into detaile
 
 ## Available Models
 
-The default image model is `bytedance-seed/seedream-4.5` and the default optimization model is `svjack/gpt-oss-20b-heretic`. You can use any OpenRouter-compatible image generation model. Check [OpenRouter's model list](https://openrouter.ai/models) for more options.
+- **Image generation**: Default is OpenRouter model `bytedance-seed/seedream-4.5`. You can switch the provider to **Ollama** and use local image models (see [Ollama image models](https://ollama.com/blog/image-generation)). Set `GENIMG_DEFAULT_IMAGE_PROVIDER=ollama` or choose in the UI.
+- **Prompt optimization**: Uses Ollama (default `svjack/gpt-oss-20b-heretic`). Pull the model with `ollama pull svjack/gpt-oss-20b-heretic`.
+
+Check [OpenRouter's model list](https://openrouter.ai/models) for more cloud image models.
 
 ## Development
 
 ### Setup
 
 ```bash
-# Install development dependencies
+# Install package in development mode with dev dependencies (recommended)
 make install-dev
 
-# Or manually
-pip install -r requirements-dev.txt
+# Or manually: install editable + dev extras
+pip install -e ".[dev]"
 ```
 
 ### Code Quality
@@ -317,12 +338,13 @@ genimg/
 
 ## Documentation
 
-- [SPEC.md](docs/SPEC.md) - Complete functional specification (product)
-- [AGENT.md](AGENT.md) - AI agent development guide
-- [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Developer guide
-- [DECISIONS.md](docs/DECISIONS.md) - Architecture decisions
-- [EXAMPLES.md](docs/EXAMPLES.md) - Usage examples
-- [CHANGELOG.md](docs/CHANGELOG.md) - Change history
+- [SPEC.md](docs/SPEC.md) — Product / functional specification
+- [DEVELOPMENT.md](docs/DEVELOPMENT.md) — Developer guide (setup, testing, modifying UI)
+- [AGENT.md](AGENT.md) — AI agent development guide
+- [DECISIONS.md](docs/DECISIONS.md) — Architecture decisions
+- [EXAMPLES.md](docs/EXAMPLES.md) — Usage examples
+- [browser-notifications.md](docs/browser-notifications.md) — Web UI notification flow
+- [CHANGELOG.md](docs/CHANGELOG.md) — Change history
 
 ## Troubleshooting
 
@@ -337,7 +359,11 @@ You can generate images without Ollama by skipping optimization.
 
 ### "OpenRouter API key is required"
 
-Make sure you've set the `OPENROUTER_API_KEY` environment variable or configured it in your `.env` file.
+This appears when using OpenRouter for image generation. Set `OPENROUTER_API_KEY` in your environment or `.env`, or switch the image provider to Ollama (UI dropdown or `GENIMG_DEFAULT_IMAGE_PROVIDER=ollama`) if you want to generate images locally only.
+
+### Reference images with Ollama
+
+Reference images are sent to the image model only when using the **OpenRouter** provider. With **Ollama**, the reference is used only as context for prompt optimization (e.g. with "Use image description"); the image is not sent to the Ollama image model.
 
 ### Image Processing Errors
 
