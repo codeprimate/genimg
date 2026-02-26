@@ -77,10 +77,27 @@ OPTIMIZED_FOR_REF_HASH = "ref_hash"
 
 # Temp paths we create (favicon, reference images, output JPGs); cleaned on process exit
 _temp_paths: set[str] = set()
+# Temp image paths (reference + output JPGs); cleaned each time Generate is clicked
+_temp_image_paths: set[str] = set()
 
 
 def _register_temp_path(path: str) -> None:
     _temp_paths.add(path)
+
+
+def _register_temp_image_path(path: str) -> None:
+    """Register a temp path that is an image (ref or output); cleaned on each Generate click."""
+    _temp_paths.add(path)
+    _temp_image_paths.add(path)
+
+
+def _cleanup_temp_images() -> None:
+    """Delete all temp images (reference and output JPGs). Called when Generate is clicked."""
+    for path in _temp_image_paths:
+        with contextlib.suppress(OSError):
+            Path(path).unlink(missing_ok=True)
+        _temp_paths.discard(path)
+    _temp_image_paths.clear()
 
 
 def _cleanup_temp_paths() -> None:
@@ -321,7 +338,7 @@ def _reference_source_for_process(value: Any) -> str | None:
             fd, path = tempfile.mkstemp(suffix=".png", prefix="genimg_ref_")
             os.close(fd)
             value.save(path, "PNG")
-            _register_temp_path(path)
+            _register_temp_image_path(path)
             return path
         except Exception:
             return None
@@ -416,7 +433,7 @@ def _run_generate(
     ts = int(time.time())
     out_path = Path(tempfile.gettempdir()) / f"{ts}.jpg"
     result.image.save(str(out_path), "JPEG", quality=90)
-    _register_temp_path(str(out_path))
+    _register_temp_image_path(str(out_path))
     return f"Done in {elapsed:.1f}s", str(out_path), f"Done in {elapsed:.1f}s"
 
 
@@ -665,7 +682,7 @@ def _run_generate_stream(
     ts = int(time.time())
     out_path = Path(tempfile.gettempdir()) / f"{ts}.jpg"
     result.image.save(str(out_path), "JPEG", quality=90)
-    _register_temp_path(str(out_path))
+    _register_temp_image_path(str(out_path))
     yield (
         _format_status(f"Done in {elapsed:.1f}s", "success"),
         str(out_path),
@@ -693,6 +710,7 @@ def _generate_click_handler(
 ) -> Generator[tuple[Any, ...], None, None]:
     """Generate button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     logger.debug("Generate clicked")
+    _cleanup_temp_images()
     _cancel_event.clear()
     state = optimized_for_state or _initial_optimized_for_state()
     ui_to_method = {"Prose (Florence)": "prose", "Tags (JoyTag)": "tags"}
