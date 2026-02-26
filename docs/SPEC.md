@@ -1,7 +1,7 @@
 # AI Image Generator - Functional Specification
 
-**Version:** 1.2  
-**Date:** February 20, 2026  
+**Version:** 1.3  
+**Date:** February 25, 2026  
 **Status:** Implemented (matches current implementation)
 
 ---
@@ -89,6 +89,7 @@ Users must be able to:
 - **As a user**, I can cancel a long-running generation or optimization operation
 - **As a user**, I can see clear status indicators showing what operation is in progress
 - **As a user**, I can receive meaningful error messages when something goes wrong
+- **As a user**, I can optionally receive browser (system) notifications when image generation or prompt optimization completes, so I get feedback even if the tab is in the background (permission requested on load)
 
 ### 2.5 Configuration
 
@@ -97,6 +98,7 @@ Users must be able to:
 - **As a user**, I can configure settings via environment variables or `.env` file
 - **As a user**, I can launch the web UI with custom host, port, and sharing options
 - **As a user**, I can specify where to save the optimized prompt for later reproduction
+- **As a user**, I can see the application version on startup in the web UI
 
 ---
 
@@ -397,6 +399,8 @@ flowchart TD
 - System shall allow user to regenerate optimized prompt
 - System shall handle reference image context in optimization
 - System shall allow user to save optimized prompt to a file for reproducibility
+- System shall normalize prompt text (strip leading/trailing whitespace) for state and comparison so "optimized for" and re-optimization decisions are consistent
+- System shall preserve user edits to the prompt textbox when a generation run completes (completion shall not overwrite the prompt with the run's prompt)
 
 #### 5.1.3 Prompt Optimization Behavior
 - Optimization shall add technical detail (lighting, camera specs, composition)
@@ -448,16 +452,17 @@ flowchart TD
 - **Note:** Sending the reference image to the model is only supported with the **OpenRouter** provider. With Ollama, the user can still use a reference image via “Use image description/tags” (or CLI `--use-reference-description`), where the image is described locally and only the description is used in optimization; the image is not sent.
 
 #### 5.3.2 Image Processing
-- System shall resize images exceeding size limits
-- System shall maintain aspect ratio during resizing
+- System shall resize reference images to fit within configurable maximum pixel count (`max_image_pixels`), preserving aspect ratio
+- System shall pad resized images to a configurable target aspect ratio (e.g. 1:1) when specified
+- System shall reject images that would fall below configurable minimum pixel count (`min_image_pixels`) with a validation error
 - System shall convert images to RGB format as needed
 - System shall encode images as JPEG for API transmission (for smaller payload)
-- System shall enforce maximum resolution constraint (2 megapixels)
 - System shall support data URLs, file paths (str/Path), and raw bytes as input sources
+- Default maximum resolution is 2 megapixels; config and environment (e.g. `GENIMG_MIN_IMAGE_PIXELS`) allow tuning
 
 #### 5.3.3 Image Management
-- System shall store uploaded images temporarily during session
-- System shall clean up temporary files after use
+- System shall store uploaded images and generated output in temporary files for display; track all temp paths (module-level sets)
+- System shall clean up "image" temp paths (reference and output) when the user starts a new generation run; clean all temp paths at process exit (atexit)
 - System shall allow user to clear/replace reference image
 
 #### 5.3.4 Reference Image Description
@@ -486,6 +491,7 @@ flowchart TD
 - System shall display clear status messages for each operation
 - System shall show operation results (success/failure/cancellation)
 - System shall report generation time on success
+- System shall optionally show browser (system) notifications when image generation or prompt optimization completes (success or error); permission requested on app load; no notification on user cancellation, description, or validation warnings
 
 #### 5.4.3 State Management
 - System shall track current operation state
@@ -563,6 +569,10 @@ flowchart TD
 
 **Note:** The `--save-prompt` feature is CLI-only. The web UI allows users to copy/paste optimized prompts from the interface but does not automatically save them to files.
 
+#### 5.6.5 Web UI Behavior
+- System shall display application version on startup in the Gradio UI (startup message)
+- System shall request browser notification permission on app load when notifications are supported; behavior is optional and degrades gracefully if denied or unsupported (see `docs/browser-notifications.md`)
+
 ---
 
 ## 6. Data Requirements
@@ -581,7 +591,7 @@ Prompt:
 Reference Image:
   - file: binary image data
   - format: PNG | JPEG | WebP | HEIC | HEIF
-  - dimensions: width × height (max 2MP)
+  - dimensions: width × height (bounded by max_image_pixels; min_image_pixels for rejection)
   - hash: unique identifier for caching
 ```
 
@@ -595,7 +605,8 @@ Configuration:
   - optimization_enabled: boolean (runtime)
   - ollama_base_url: string (optional; for Ollama provider and optimization)
   - debug_api: boolean (optional)
-  - min_image_pixels, max_image_pixels: int (reference image constraints)
+  - min_image_pixels, max_image_pixels: int (reference image constraints; config validated at load)
+  - aspect_ratio: (width, height) optional; pad resized image to this ratio (default 1:1)
 ```
 
 ### 6.2 Processed Data
@@ -892,9 +903,9 @@ Error:
 - **Mitigation:** Optimization is optional; user can use **openrouter** provider for image generation without running Ollama
 
 #### 9.1.4 Image Size Limits
-- **Constraint:** Reference images limited to 2 megapixels
-- **Impact:** Large images automatically resized
-- **Rationale:** API payload size and processing limits
+- **Constraint:** Reference images bounded by configurable `max_image_pixels` (default 2MP) and rejected if below `min_image_pixels`; optional `aspect_ratio` for pad-after-resize
+- **Impact:** Large images resized to fit; very small images rejected; config allows tuning per API or use case
+- **Rationale:** API payload size and processing limits; consistent input shape when aspect ratio is specified
 
 #### 9.1.5 Format Support
 - **Constraint:** Limited to specific image formats

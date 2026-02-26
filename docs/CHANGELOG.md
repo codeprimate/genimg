@@ -10,6 +10,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - (none)
 
+## [0.10.1] - 2026-02-24
+
+### Added
+- Browser notifications when image generation or prompt optimization completes (optional; permission requested on load).
+
+### Changed
+- Gradio app: improved temporary image path management; prompt normalization; optimization condition and output handling.
+
+### Fixed
+- Optimized prompt edits are now preserved when generation completes.
+
+## [0.10.0] - 2026-02-21
+
+### Added
+- Startup message in Gradio app showing version.
+
+### Changed
+- Gradio app layout and reference image messaging; enhanced image description features. Functional specification updated to 1.2.
+
+## [0.9.9] - 2026-02-18
+
+### Changed
+- Gradio app: dynamic page titles and version constraints; clearer prompt optimization guidelines and elaboration; refined default provider and configuration.
+
+## [0.9.8] - 2026-02-16
+
+### Added
+- Support for multiple image generation providers (Ollama and OpenRouter); CLI `--provider` option; provider-specific model loading in Gradio.
+- AI process rules for specification, planning, execution, and release notes (`.cursor/rules`).
+- Temporary path cleanup in Gradio app.
+
+### Changed
+- Gradio app text for image generation models (clarity).
+
+## [0.9.6] - 2026-02-09
+
+### Added
+- Debug API logging (verbose/debug logging for API and cache).
+- Image resizing with aspect ratio support.
+
+### Changed
+- Image processing configuration and validation improvements.
+
+## [0.9.4] - 2026-02-07
+
+### Changed
+- Optimized prompt handling in Gradio app; enhanced output image display. DEVELOPMENT.md documentation updates.
+
+## [0.9.3] - 2026-02-07
+
+### Added
+- Gradio UI: logo integration and asset management.
+
+### Changed
+- Launch functionality in Gradio app; README updates for new features and enhancements.
+
 ## [0.9.2] - 2026-02-07
 
 ### Added
