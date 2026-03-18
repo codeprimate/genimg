@@ -26,11 +26,11 @@ help:
 
 install: build uninstall
 	@echo "📦 Installing built package locally..."
-	.venv/bin/pip install dist/*.whl
+	pip install dist/*.whl
 
 install-dev: uninstall
 	@echo "🔧 Installing package in development mode with dev dependencies..."
-	.venv/bin/pip install -e ".[dev]"
+	pip install -e ".[dev]"
 
 build: clean
 	@echo "🔨 Building package..."
