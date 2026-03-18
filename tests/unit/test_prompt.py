@@ -108,7 +108,7 @@ class TestListOllamaModels:
 
     def test_parses_ollama_list_output(self):
         output = """NAME                            ID              SIZE    MODIFIED
-svjack/gpt-oss-20b-heretic:latest   abc123def456    10 GB   2 days ago
+huihui_ai/qwen3.5-abliterated:4b:latest   abc123def456    10 GB   2 days ago
 llama2:latest                   def456abc789    4 GB    1 week ago
 mistral:7b                      ghi789jkl012    4 GB    3 days ago"""
 
@@ -116,7 +116,7 @@ mistral:7b                      ghi789jkl012    4 GB    3 days ago"""
             with patch("genimg.core.prompt.subprocess.run") as m:
                 m.return_value = MagicMock(returncode=0, stdout=output)
                 models = list_ollama_models()
-                assert models == ["svjack/gpt-oss-20b-heretic", "llama2", "mistral:7b"]
+                assert models == ["huihui_ai/qwen3.5-abliterated:4b", "llama2", "mistral:7b"]
 
     def test_strips_latest_tag(self):
         output = """NAME                    ID          SIZE    MODIFIED

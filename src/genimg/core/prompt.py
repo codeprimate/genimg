@@ -126,10 +126,10 @@ def list_ollama_models() -> list[str]:
 
     Example output parsing:
         NAME                            ID              SIZE    MODIFIED
-        svjack/gpt-oss-20b-heretic:latest   abc123def456    10 GB   2 days ago
+        huihui_ai/qwen3.5-abliterated:4b:latest   abc123def456    10 GB   2 days ago
         llama2:latest                   def456abc789    4 GB    1 week ago
 
-        Returns: ["svjack/gpt-oss-20b-heretic", "llama2"]
+        Returns: ["huihui_ai/qwen3.5-abliterated:4b", "llama2"]
     """
     if not check_ollama_available():
         return []

@@ -22,7 +22,7 @@ DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_IMAGE_PROVIDER = "ollama"
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
-DEFAULT_OPTIMIZATION_MODEL = "svjack/gpt-oss-20b-heretic"
+DEFAULT_OPTIMIZATION_MODEL = "huihui_ai/qwen3.5-abliterated:4b"
 
 # Provider ids accepted by validate(); do not import from genimg.core.providers (circular import)
 KNOWN_IMAGE_PROVIDERS = ("openrouter", "ollama")

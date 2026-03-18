@@ -73,7 +73,7 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here
 # Optional
 GENIMG_DEFAULT_MODEL=bytedance-seed/seedream-4.5
 GENIMG_DEFAULT_IMAGE_PROVIDER=openrouter   # or "ollama" for local image generation
-GENIMG_OPTIMIZATION_MODEL=svjack/gpt-oss-20b-heretic
+GENIMG_OPTIMIZATION_MODEL=huihui_ai/qwen3.5-abliterated:4b
 GENIMG_VERBOSITY=0                        # 0=default, 1=+prompts, 2=+API/cache (CLI/UI/library)
 ```
 
@@ -154,7 +154,7 @@ genimg generate "a red sports car at sunset" --output car.png
 
 **Example output:**
 ```
-⠋ Optimizing prompt (svjack/gpt-oss-20b-heretic) 2.3s
+⠋ Optimizing prompt (huihui_ai/qwen3.5-abliterated:4b) 2.3s
 ⠙ Generating image (bytedance-seed/seedream-4.5) • optimized 12.1s
 
 ╭──────────────────────────── ✓ Image Generated ───────────────────────────────╮
@@ -269,7 +269,7 @@ Prompt optimization uses Ollama to enhance your simple descriptions into detaile
 ## Available Models
 
 - **Image generation**: Default is OpenRouter model `bytedance-seed/seedream-4.5`. You can switch the provider to **Ollama** and use local image models (see [Ollama image models](https://ollama.com/blog/image-generation)). Set `GENIMG_DEFAULT_IMAGE_PROVIDER=ollama` or choose in the UI.
-- **Prompt optimization**: Uses Ollama (default `svjack/gpt-oss-20b-heretic`). Pull the model with `ollama pull svjack/gpt-oss-20b-heretic`.
+- **Prompt optimization**: Uses Ollama (default `huihui_ai/qwen3.5-abliterated:4b`). Pull the model with `ollama pull huihui_ai/qwen3.5-abliterated:4b`.
 
 Check [OpenRouter's model list](https://openrouter.ai/models) for more cloud image models.
 
@@ -352,7 +352,7 @@ genimg/
 
 If you see this error and want to use prompt optimization:
 1. Install Ollama from https://ollama.ai
-2. Pull a model: `ollama pull svjack/gpt-oss-20b-heretic`
+2. Pull a model: `ollama pull huihui_ai/qwen3.5-abliterated:4b`
 3. Verify it works: `ollama list`
 
 You can generate images without Ollama by skipping optimization.

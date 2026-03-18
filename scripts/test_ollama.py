@@ -53,11 +53,11 @@ def main() -> None:
             print(result.stdout)
             
             # Check for recommended model
-            if "svjack/gpt-oss-20b-heretic" in result.stdout:
-                print("✓ Recommended model (svjack/gpt-oss-20b-heretic) is installed")
+            if "huihui_ai/qwen3.5-abliterated:4b" in result.stdout:
+                print("✓ Recommended model (huihui_ai/qwen3.5-abliterated:4b) is installed")
             else:
-                print("⚠️  Recommended model (svjack/gpt-oss-20b-heretic) not found")
-                print("   Install with: ollama pull svjack/gpt-oss-20b-heretic")
+                print("⚠️  Recommended model (huihui_ai/qwen3.5-abliterated:4b) not found")
+                print("   Install with: ollama pull huihui_ai/qwen3.5-abliterated:4b")
         else:
             print("❌ Failed to list models")
             sys.exit(1)

@@ -43,7 +43,7 @@ cp .env.example .env
 
 **Optional (Image Generation):**
 - `GENIMG_DEFAULT_MODEL` — Default image generation model (default: `bytedance-seed/seedream-4.5`)
-- `GENIMG_OPTIMIZATION_MODEL` — Default Ollama model for prompt optimization (default: `svjack/gpt-oss-20b-heretic`)
+- `GENIMG_OPTIMIZATION_MODEL` — Default Ollama model for prompt optimization (default: `huihui_ai/qwen3.5-abliterated:4b`)
 
 **Optional (Web UI):**
 - `GENIMG_UI_PORT` — Gradio server port (default: 7860)

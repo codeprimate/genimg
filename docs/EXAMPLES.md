@@ -106,7 +106,7 @@ from genimg import Config, generate_image
 config = Config(
     openrouter_api_key="sk-or-v1-...",
     default_image_model="bytedance-seed/seedream-4.5",
-    default_optimization_model="svjack/gpt-oss-20b-heretic",
+    default_optimization_model="huihui_ai/qwen3.5-abliterated:4b",
     optimization_enabled=True,
     max_image_pixels=1_500_000,  # 1.5MP instead of 2MP
     generation_timeout=180  # 3 minutes instead of 5
@@ -146,7 +146,7 @@ genimg generate "a sunset" --api-key sk-or-v1-your-key-here
 genimg generate "a mountain scene" --optimize
 
 # With specific optimization model
-genimg generate "a forest" --optimize --optimization-model svjack/gpt-oss-20b-heretic
+genimg generate "a forest" --optimize --optimization-model huihui_ai/qwen3.5-abliterated:4b
 ```
 
 ### With Reference Image
@@ -302,7 +302,7 @@ Content-Length: 245632
 
 **Command:**
 ```bash
-echo "You are a prompt engineer..." | ollama run svjack/gpt-oss-20b-heretic
+echo "You are a prompt engineer..." | ollama run huihui_ai/qwen3.5-abliterated:4b
 ```
 
 **Output:**
