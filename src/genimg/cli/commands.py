@@ -64,6 +64,11 @@ def cli(ctx: click.Context) -> None:
     help="Path to reference image.",
 )
 @click.option("--no-optimize", is_flag=True, help="Skip prompt optimization.")
+@click.option(
+    "--optimize-thinking",
+    is_flag=True,
+    help="Enable LLM thinking during prompt optimization (slower; default: off).",
+)
 @click.option("--out", "-o", type=click.Path(path_type=Path), help="Output file path.")
 @click.option(
     "--optimization-model",
@@ -125,6 +130,7 @@ def generate(
     model: str | None,
     reference: Path | None,
     no_optimize: bool,
+    optimize_thinking: bool,
     out: Path | None,
     optimization_model: str | None,
     save_prompt: Path | None,
@@ -154,6 +160,7 @@ def generate(
             config.set_api_key(api_key)
         if debug_api:
             config.debug_api = True
+        config.optimize_thinking = optimize_thinking
 
         config.validate()
 

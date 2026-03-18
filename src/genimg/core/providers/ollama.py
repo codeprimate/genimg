@@ -162,7 +162,7 @@ class OllamaProvider:
             config.ollama_base_url or DEFAULT_OLLAMA_BASE_URL
         ).strip() or DEFAULT_OLLAMA_BASE_URL
         url = f"{base_url.rstrip('/')}/api/generate"
-        payload = {"model": model, "prompt": prompt, "stream": False}
+        payload = {"model": model, "prompt": prompt, "stream": False, "think": False}
 
         logger.info("Generating image via Ollama model=%s", model)
 

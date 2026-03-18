@@ -211,10 +211,17 @@ def optimize_prompt_with_ollama(
         timeout = config.optimization_timeout
 
     cache = get_cache()
+    use_thinking = config.optimize_thinking
     # REQ-014: description-based path uses description_key (reference_hash or description id)
     description_key = reference_hash if reference_description else None
     if not force_refresh:
-        cached = cache.get(prompt, model, reference_hash, description_key=description_key)
+        cached = cache.get(
+            prompt,
+            model,
+            reference_hash,
+            description_key=description_key,
+            use_thinking=use_thinking,
+        )
         if cached:
             logger.debug("Cache hit for model=%s", model)
             logger.info("Optimized (from cache) model=%s", model)
@@ -255,6 +262,7 @@ def optimize_prompt_with_ollama(
             optimization_prompt,
             cache,
             description_key=description_key,
+            use_thinking=use_thinking,
         )
         elapsed = time.time() - start_time
         logger.info("Optimized in %.1fs model=%s", elapsed, model)
@@ -270,10 +278,13 @@ def optimize_prompt_with_ollama(
     exc_holder: list[BaseException | None] = [None]
     process_holder: list[subprocess.Popen[str] | None] = [None]
 
+    think_flag = "--think=true" if use_thinking else "--think=false"
+    cmd = ["ollama", "run", think_flag, model]
+
     def worker_with_process() -> None:
         try:
             process = subprocess.Popen(
-                ["ollama", "run", model],
+                cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -343,7 +354,14 @@ def optimize_prompt_with_ollama(
     optimized = _strip_ollama_thinking((stdout or "").strip())
     if not optimized:
         raise APIError("Ollama returned an empty response")
-    cache.set(prompt, model, optimized, reference_hash, description_key=description_key)
+    cache.set(
+        prompt,
+        model,
+        optimized,
+        reference_hash,
+        description_key=description_key,
+        use_thinking=use_thinking,
+    )
     elapsed = time.time() - start_time
     logger.info("Optimized in %.1fs model=%s", elapsed, model)
     if log_prompts():
@@ -354,10 +372,17 @@ def optimize_prompt_with_ollama(
     return optimized
 
 
-def _run_ollama_communicate(model: str, optimization_prompt: str, timeout: int) -> tuple[str, str]:
+def _run_ollama_communicate(
+    model: str,
+    optimization_prompt: str,
+    timeout: int,
+    *,
+    use_thinking: bool = False,
+) -> tuple[str, str]:
     """Run ollama in a subprocess and return (stdout, stderr). Used by sync and worker."""
+    think_flag = "--think=true" if use_thinking else "--think=false"
     process = subprocess.Popen(
-        ["ollama", "run", model],
+        ["ollama", "run", think_flag, model],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -389,10 +414,13 @@ def _run_ollama_sync(
     optimization_prompt: str,
     cache: PromptCache,
     description_key: str | None = None,
+    use_thinking: bool = False,
 ) -> str:
     """Run Ollama without cancellation; used when cancel_check is None."""
     try:
-        stdout, stderr = _run_ollama_communicate(model, optimization_prompt, timeout)
+        stdout, stderr = _run_ollama_communicate(
+            model, optimization_prompt, timeout, use_thinking=use_thinking
+        )
     except FileNotFoundError as e:
         raise APIError(
             "Ollama command not found. Please ensure Ollama is installed and in your PATH."
@@ -400,7 +428,14 @@ def _run_ollama_sync(
     optimized = _strip_ollama_thinking(stdout.strip())
     if not optimized:
         raise APIError("Ollama returned an empty response")
-    cache.set(prompt, model, optimized, reference_hash, description_key=description_key)
+    cache.set(
+        prompt,
+        model,
+        optimized,
+        reference_hash,
+        description_key=description_key,
+        use_thinking=use_thinking,
+    )
     return optimized
 
 

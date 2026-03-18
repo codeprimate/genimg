@@ -56,3 +56,11 @@ class TestGetCachedPrompt:
         cache.set("prompt", "model", "optimized")
         assert get_cached_prompt("prompt", "model") == "optimized"
         clear_cache()
+
+    def test_use_thinking_separate_keys(self):
+        """Cache entries for use_thinking=True and use_thinking=False are distinct."""
+        cache = PromptCache()
+        cache.set("p", "m", "opt_no_think", use_thinking=False)
+        cache.set("p", "m", "opt_with_think", use_thinking=True)
+        assert cache.get("p", "m", use_thinking=False) == "opt_no_think"
+        assert cache.get("p", "m", use_thinking=True) == "opt_with_think"

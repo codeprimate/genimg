@@ -57,6 +57,9 @@ class Config:
     generation_timeout: int = 180  # 3 minutes
     optimization_timeout: int = 120  # 2 minutes
 
+    # Ollama thinking: when True, optimization uses LLM thinking (slower); when False (default), pass think=false for speed
+    optimize_thinking: bool = False
+
     # Debug: log raw API payload/response with image data truncated
     debug_api: bool = False
 
@@ -73,6 +76,7 @@ class Config:
             OPENROUTER_API_KEY: Required for image generation
             GENIMG_DEFAULT_MODEL: Optional default image generation model
             GENIMG_OPTIMIZATION_MODEL: Optional default optimization model
+            GENIMG_OPTIMIZE_THINKING: Optional enable LLM thinking during optimization (1/true/yes; default off)
             GENIMG_MIN_IMAGE_PIXELS: Optional minimum total pixels for reference images (default 2500)
 
         Returns:
@@ -90,7 +94,17 @@ class Config:
             # val is str here; mypy narrows after the None/empty check
             return int(val)
 
-        debug_api = os.getenv("GENIMG_DEBUG_API", "").strip().lower() in ("1", "true", "yes")
+        def _bool_env(name: str, default: bool) -> bool:
+            val = os.getenv(name)
+            if val is None or val == "":
+                return default
+            return val.strip().lower() in ("1", "true", "yes")
+
+        debug_api = _bool_env("GENIMG_DEBUG_API", False)
+        optimize_thinking = _bool_env(
+            "GENIMG_OPTIMIZE_THINKING",
+            _bool_env("OLLAMA_OPTIMIZE_THINKING", False),
+        )
         default_image_provider = os.getenv("GENIMG_DEFAULT_IMAGE_PROVIDER", DEFAULT_IMAGE_PROVIDER)
         ollama_base_url = (
             os.getenv("OLLAMA_BASE_URL")
@@ -107,6 +121,7 @@ class Config:
             ),
             ollama_base_url=ollama_base_url,
             min_image_pixels=_int_env("GENIMG_MIN_IMAGE_PIXELS", 2500),
+            optimize_thinking=optimize_thinking,
             debug_api=debug_api,
         )
 

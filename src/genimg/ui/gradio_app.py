@@ -248,7 +248,7 @@ def _notification_body(prefix: str, message: str) -> str:
     """Build a short notification body; truncate to _NOTIFY_BODY_MAX_LEN."""
     s = f"{prefix}{message}"
     if len(s) > _NOTIFY_BODY_MAX_LEN:
-        return s[:_NOTIFY_BODY_MAX_LEN - 1] + "…"
+        return s[: _NOTIFY_BODY_MAX_LEN - 1] + "…"
     return s
 
 
@@ -450,6 +450,7 @@ def _run_generate_stream(
     use_description: bool = False,
     description_method: str = "prose",
     description_verbosity: str = "detailed",
+    optimize_thinking: bool = False,
 ) -> Generator[tuple[str, str | None, bool, bool, str, dict[str, Any], str, str], None, None]:
     """
     Generate flow: use Optimized prompt box only when it was produced for the current
@@ -480,6 +481,7 @@ def _run_generate_stream(
         )
         logger.info("Prompt: %s", truncated)
     config = Config.from_env()
+    config.optimize_thinking = optimize_thinking
     try:
         config.validate()
     except ConfigurationError as e:
@@ -707,6 +709,7 @@ def _generate_click_handler(
     use_description: bool = False,
     desc_method_ui: str = "Prose (Florence)",
     desc_verbosity: str = "detailed",
+    optimize_thinking: bool = False,
 ) -> Generator[tuple[Any, ...], None, None]:
     """Generate button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     logger.debug("Generate clicked")
@@ -738,6 +741,7 @@ def _generate_click_handler(
             use_description=use_description,
             description_method=description_method,
             description_verbosity=desc_verbosity or "detailed",
+            optimize_thinking=optimize_thinking,
         ):
             state = new_state
             yield (
@@ -783,6 +787,7 @@ def _optimize_click_handler(
     desc_method_ui: str = "Prose (Florence)",
     desc_verbosity: str = "detailed",
     provider: str | None = None,
+    optimize_thinking: bool = False,
 ) -> Generator[tuple[Any, ...], None, None]:
     """Optimize button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     logger.debug("Optimize clicked")
@@ -809,6 +814,7 @@ def _optimize_click_handler(
             description_method=description_method,
             description_verbosity=desc_verbosity or "detailed",
             provider=provider,
+            optimize_thinking=optimize_thinking,
         ):
             if state_update is not None:
                 state = state_update
@@ -878,6 +884,7 @@ def _run_optimize_only_stream(
     description_method: str = "prose",
     description_verbosity: str = "detailed",
     provider: str | None = None,
+    optimize_thinking: bool = False,
 ) -> Generator[tuple[str, str, bool, bool, bool, dict[str, Any] | None, str, str], None, None]:
     """
     Run optimization only; yields (status_msg, optimized_text, optimize_btn_on, stop_btn_on, generate_btn_on, state_update, page_title, notify_msg).
@@ -903,6 +910,7 @@ def _run_optimize_only_stream(
         )
         logger.info("Prompt: %s", truncated)
     config = Config.from_env()
+    config.optimize_thinking = optimize_thinking
     try:
         config.validate()
     except ConfigurationError as e:
@@ -1097,6 +1105,11 @@ def _build_blocks() -> gr.Blocks:
                             visible=True,
                             info="Ollama model for prompt optimization.",
                         )
+                        think_cb = gr.Checkbox(
+                            label="Think",
+                            value=False,
+                            info="Enable LLM thinking during optimization (slower).",
+                        )
                         optimize_btn = gr.Button(
                             "Enhance Prompt", variant="secondary", interactive=False
                         )
@@ -1202,7 +1215,9 @@ def _build_blocks() -> gr.Blocks:
             src = _reference_source_for_process(ref_value)
             enabled = src is not None
             cb_update = (
-                gr.update(interactive=False, value=False) if not enabled else gr.update(interactive=True)
+                gr.update(interactive=False, value=False)
+                if not enabled
+                else gr.update(interactive=True)
             )
             return (
                 gr.update(interactive=enabled),
@@ -1252,12 +1267,8 @@ def _build_blocks() -> gr.Blocks:
         # Shared queue so generate/optimize/stop/prompt_tb updates run serially (avoids button re-enable race).
         _UI_CONCURRENCY_ID = "genimg_ui"
         _JS_SET_PAGE_TITLE = "function(...args) { if (args.length) document.title = args[args.length - 1] || ''; return args; }"
-        _JS_REQUEST_NOTIFICATION_PERMISSION = (
-            "function() { if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission(); }"
-        )
-        _JS_NOTIFY_IF_MSG = (
-            "function(...args) { var n = args.length; if (n > 0 && args[n-1] && typeof Notification !== 'undefined' && Notification.permission === 'granted') { new Notification('genimg', { body: args[n-1] }); var out = args.slice(); out[n-1] = ''; return out; } return args; }"
-        )
+        _JS_REQUEST_NOTIFICATION_PERMISSION = "function() { if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission(); }"
+        _JS_NOTIFY_IF_MSG = "function(...args) { var n = args.length; if (n > 0 && args[n-1] && typeof Notification !== 'undefined' && Notification.permission === 'granted') { new Notification('genimg', { body: args[n-1] }); var out = args.slice(); out[n-1] = ''; return out; } return args; }"
         _gen_outputs = [
             status_html,
             out_image,
@@ -1293,6 +1304,7 @@ def _build_blocks() -> gr.Blocks:
                 use_description_cb,
                 desc_method_dd,
                 desc_verbosity_dd,
+                think_cb,
             ],
             outputs=_gen_outputs,
             concurrency_id=_UI_CONCURRENCY_ID,
@@ -1310,6 +1322,7 @@ def _build_blocks() -> gr.Blocks:
                 desc_method_dd,
                 desc_verbosity_dd,
                 provider_dd,
+                think_cb,
             ],
             outputs=_opt_outputs,
             concurrency_id=_UI_CONCURRENCY_ID,

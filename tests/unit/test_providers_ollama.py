@@ -52,7 +52,7 @@ class TestOllamaProvider:
         mock_response.json.return_value = {"image": b64}
         mock_response.text = ""
         provider = OllamaProvider()
-        with patch("genimg.core.providers.ollama.requests.post", return_value=mock_response):
+        with patch("genimg.core.providers.ollama.requests.post", return_value=mock_response) as m:
             result = provider.generate(
                 "a cat",
                 model="x/z-image-turbo",
@@ -66,6 +66,8 @@ class TestOllamaProvider:
         assert result.prompt_used == "a cat"
         assert result.had_reference is False
         assert len(result.image_data) > 0
+        # Ollama image gen always sends think: false for speed
+        assert m.call_args.kwargs["json"]["think"] is False
 
     def test_generate_success_json_with_response_key(self):
         """Some Ollama image models return base64 in 'response'."""

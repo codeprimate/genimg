@@ -272,6 +272,53 @@ class TestOptimizePrompt:
         assert "not found" in str(exc_info.value).lower() or "PATH" in str(exc_info.value)
         cache.clear()
 
+    def test_optimize_prompt_with_ollama_think_flag_false_by_default(self):
+        """When config.optimize_thinking is False (default), subprocess gets --think=false."""
+        cache = get_cache()
+        cache.clear()
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+        assert config.optimize_thinking is False
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
+                proc = MagicMock()
+                proc.returncode = 0
+                proc.communicate.return_value = ("optimized", "")
+                Popen.return_value = proc
+                optimize_prompt_with_ollama("a red car", config=config)
+        call_args = Popen.call_args[0][0]
+        assert call_args == [
+            "ollama",
+            "run",
+            "--think=false",
+            config.default_optimization_model,
+        ]
+        cache.clear()
+
+    def test_optimize_prompt_with_ollama_think_flag_true_when_optimize_thinking(self):
+        """When config.optimize_thinking is True, subprocess gets --think=true."""
+        cache = get_cache()
+        cache.clear()
+        config = Config(
+            openrouter_api_key="sk-x",
+            optimization_enabled=True,
+            optimize_thinking=True,
+        )
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
+                proc = MagicMock()
+                proc.returncode = 0
+                proc.communicate.return_value = ("optimized", "")
+                Popen.return_value = proc
+                optimize_prompt_with_ollama("a red car", config=config)
+        call_args = Popen.call_args[0][0]
+        assert call_args == [
+            "ollama",
+            "run",
+            "--think=true",
+            config.default_optimization_model,
+        ]
+        cache.clear()
+
     def test_optimize_prompt_with_reference_description_uses_description_template(self):
         """When reference_description is set, description-based template is used and cached with description_key."""
         cache = get_cache()

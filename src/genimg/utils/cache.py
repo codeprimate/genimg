@@ -25,12 +25,14 @@ class PromptCache:
         model: str,
         reference_hash: str | None = None,
         description_key: str | None = None,
+        use_thinking: bool = False,
     ) -> str:
         """
-        Generate a cache key from prompt, model, and optional reference/description.
+        Generate a cache key from prompt, model, and optional reference/description/thinking.
 
         When description_key is set (description-based optimization), the key is distinct
         from the non-description path. REQ-014: exact key strategy may be refined later.
+        use_thinking separates cache entries for thinking vs non-thinking optimization.
         """
         key_parts = [prompt, model]
         if reference_hash:
@@ -38,6 +40,8 @@ class PromptCache:
         if description_key is not None:
             key_parts.append("desc")
             key_parts.append(description_key)
+        key_parts.append("think")
+        key_parts.append(str(use_thinking))
 
         key_string = "|".join(key_parts)
         return hashlib.sha256(key_string.encode()).hexdigest()
@@ -48,6 +52,7 @@ class PromptCache:
         model: str,
         reference_hash: str | None = None,
         description_key: str | None = None,
+        use_thinking: bool = False,
     ) -> str | None:
         """
         Retrieve an optimized prompt from cache.
@@ -57,11 +62,12 @@ class PromptCache:
             model: The optimization model name
             reference_hash: Hash of reference image (if any)
             description_key: When set, use description-based cache key (REQ-014).
+            use_thinking: When True, cache key includes thinking-on (separate from thinking-off).
 
         Returns:
             The cached optimized prompt, or None if not found
         """
-        key = self._generate_key(prompt, model, reference_hash, description_key)
+        key = self._generate_key(prompt, model, reference_hash, description_key, use_thinking)
         hit = key in self._cache
         logger.debug("Cache get model=%s hit=%s", model, hit)
         return self._cache.get(key)
@@ -73,6 +79,7 @@ class PromptCache:
         optimized_prompt: str,
         reference_hash: str | None = None,
         description_key: str | None = None,
+        use_thinking: bool = False,
     ) -> None:
         """
         Store an optimized prompt in cache.
@@ -83,8 +90,9 @@ class PromptCache:
             optimized_prompt: The optimized prompt to cache
             reference_hash: Hash of reference image (if any)
             description_key: When set, use description-based cache key (REQ-014).
+            use_thinking: When True, cache key includes thinking-on (separate from thinking-off).
         """
-        key = self._generate_key(prompt, model, reference_hash, description_key)
+        key = self._generate_key(prompt, model, reference_hash, description_key, use_thinking)
         self._cache[key] = optimized_prompt
         logger.debug("Cache set model=%s", model)
 
@@ -125,7 +133,12 @@ def clear_cache() -> None:
     cache.clear()
 
 
-def get_cached_prompt(prompt: str, model: str, reference_hash: str | None = None) -> str | None:
+def get_cached_prompt(
+    prompt: str,
+    model: str,
+    reference_hash: str | None = None,
+    use_thinking: bool = False,
+) -> str | None:
     """
     Return the cached optimized prompt for the given inputs, or None if not cached.
 
@@ -133,8 +146,9 @@ def get_cached_prompt(prompt: str, model: str, reference_hash: str | None = None
         prompt: The original prompt text
         model: The optimization model name
         reference_hash: Hash of reference image (if any)
+        use_thinking: When True, look up cache entry for thinking-on optimization.
 
     Returns:
         The cached optimized prompt, or None if not in cache
     """
-    return get_cache().get(prompt, model, reference_hash)
+    return get_cache().get(prompt, model, reference_hash=reference_hash, use_thinking=use_thinking)
