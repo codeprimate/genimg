@@ -68,6 +68,17 @@ class TestStripOllamaThinking:
         raw = "Thinking... blah ...done thinking.\n```\nfinal prompt\n```"
         assert _strip_ollama_thinking(raw) == "final prompt"
 
+    def test_strips_ollama_tty_line_edit_sequences(self):
+        """Ollama pipes CSI erase/cursor sequences into stdout; strip so UI stays clean."""
+        esc = "\x1b"
+        raw = (
+            f"A warm morning in a bathroom, the walls painted a soft{esc}[4D{esc}[K"
+            "soft pale blue."
+        )
+        assert _strip_ollama_thinking(raw) == (
+            "A warm morning in a bathroom, the walls painted a softsoft pale blue."
+        )
+
     def test_empty_or_whitespace_unchanged(self):
         assert _strip_ollama_thinking("") == ""
         assert _strip_ollama_thinking("   ") == "   "

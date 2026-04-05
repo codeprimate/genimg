@@ -4,6 +4,7 @@ Prompt management and optimization for genimg.
 This module handles prompt validation, optimization via Ollama, and caching.
 """
 
+import re
 import subprocess
 import threading
 import time
@@ -36,6 +37,14 @@ OPTIMIZATION_TEMPLATE = get_optimization_template()
 _THINKING_START = "Thinking..."
 _THINKING_END = "...done thinking."
 
+# Ollama CLI can emit CSI sequences (cursor move, erase in line) when stdout is not a TTY;
+# they are captured literally and show up as garbage (e.g. "[4D[K") in the UI.
+_ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def _strip_ansi_terminal_sequences(text: str) -> str:
+    return _ANSI_ESCAPE_RE.sub("", text)
+
 # Injected into the optimization template when a reference image is present (reference_hash is set).
 REFERENCE_IMAGE_INSTRUCTION = """
 CRITICAL: Reference images are being provided with this prompt. When optimizing:
@@ -58,7 +67,9 @@ def _strip_ollama_thinking(text: str) -> str:
     """
     if not text or not text.strip():
         return text
-    optimized = text.strip()
+    optimized = _strip_ansi_terminal_sequences(text).strip()
+    if not optimized:
+        return ""
     if _THINKING_START in optimized:
         start_idx = optimized.find(_THINKING_START)
         end_idx = optimized.find(_THINKING_END, start_idx)
