@@ -132,7 +132,7 @@ class TestRunGenerate:
         mock_optimize.assert_not_called()
         mock_generate.assert_called_once()
         call_kw = mock_generate.call_args[1]
-        assert call_kw.get("reference_image_b64") is None
+        assert call_kw.get("reference_images_b64") is None
         assert "Done" in msg
         assert img_path is not None
         assert img_path.endswith(".jpg")
@@ -208,7 +208,7 @@ class TestRunGenerate:
         mock_ref.assert_called_once()
         mock_optimize.assert_called_once()
         assert mock_optimize.call_args[1].get("reference_hash") == "hash123"
-        assert mock_generate.call_args[1].get("reference_image_b64") == "base64data"
+        assert mock_generate.call_args[1].get("reference_images_b64") == ["base64data"]
 
     @patch("genimg.ui.gradio_app.generate_image")
     @patch("genimg.ui.gradio_app.optimize_prompt")
@@ -466,7 +466,7 @@ class TestRunGenerate:
         mock_optimize.assert_called_once()
         assert mock_optimize.call_args[1].get("reference_description") == "a fluffy cat"
         mock_generate.assert_called_once()
-        assert mock_generate.call_args[1].get("reference_image_b64") is None
+        assert mock_generate.call_args[1].get("reference_images_b64") is None
         assert any("Done" in (item[0] or "") for item in items)
 
 

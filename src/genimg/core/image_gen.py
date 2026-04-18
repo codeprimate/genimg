@@ -52,6 +52,7 @@ def generate_image(
     prompt: str,
     model: str | None = None,
     reference_image_b64: str | None = None,
+    reference_images_b64: list[str] | None = None,
     provider: str | None = None,
     api_key: str | None = None,
     timeout: int | None = None,
@@ -64,7 +65,9 @@ def generate_image(
     Args:
         prompt: Text prompt describing the desired image
         model: Model ID to use (defaults to config value for the chosen provider)
-        reference_image_b64: Optional base64-encoded reference image (OpenRouter only)
+        reference_image_b64: Optional single base64-encoded reference (legacy; OpenRouter).
+        reference_images_b64: Optional list of base64-encoded references (OpenRouter).
+            Do not pass both ``reference_image_b64`` and ``reference_images_b64`` non-``None``.
         provider: Optional provider id (openrouter, ollama); defaults to config.default_image_provider
         api_key: Optional API key (defaults to config value; OpenRouter only)
         timeout: Optional timeout in seconds (defaults to config value)
@@ -85,6 +88,18 @@ def generate_image(
     if not prompt or not prompt.strip():
         raise ValidationError("Prompt cannot be empty", field="prompt")
 
+    if reference_image_b64 is not None and reference_images_b64 is not None:
+        raise ValidationError(
+            "Use either reference_image_b64 or reference_images_b64, not both.",
+            field="reference_image",
+        )
+
+    refs: list[str] = []
+    if reference_images_b64:
+        refs = list(reference_images_b64)
+    elif reference_image_b64 is not None:
+        refs = [reference_image_b64]
+
     config = config or get_config()
     provider_id = provider if provider is not None else config.default_image_provider
     model = model if model is not None else config.default_image_model
@@ -94,7 +109,7 @@ def generate_image(
     if impl is None:
         raise ValidationError(f"Unknown image provider: {provider_id!r}", field="provider")
 
-    if reference_image_b64 is not None and not getattr(impl, "supports_reference_image", True):
+    if refs and not getattr(impl, "supports_reference_image", True):
         raise ValidationError(
             f"Reference images are not supported for provider {provider_id!r}. "
             "Use OpenRouter for reference image support.",
@@ -102,12 +117,14 @@ def generate_image(
         )
 
     effective_api_key = api_key if api_key is not None else config.openrouter_api_key
-    return impl.generate(
+    result = impl.generate(
         prompt=prompt,
         model=model,
-        reference_image_b64=reference_image_b64,
+        reference_images_b64=refs or None,
         timeout=timeout,
         config=config,
         cancel_check=cancel_check,
         api_key_override=effective_api_key,
     )
+    result.had_reference = bool(refs)
+    return result

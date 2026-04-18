@@ -414,7 +414,7 @@ def _run_generate(
         result = generate_image(
             effective_prompt,
             model=model or None,
-            reference_image_b64=ref_b64,
+            reference_images_b64=[ref_b64] if ref_b64 else None,
             provider=provider,
             config=config,
             cancel_check=cancel_check,
@@ -657,7 +657,7 @@ def _run_generate_stream(
         result = generate_image(
             effective_prompt,
             model=model or None,
-            reference_image_b64=ref_b64_to_send,
+            reference_images_b64=[ref_b64_to_send] if ref_b64_to_send else None,
             provider=provider,
             config=config,
             cancel_check=cancel_check,

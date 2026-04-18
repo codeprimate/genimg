@@ -149,14 +149,24 @@ class OllamaProvider:
         self,
         prompt: str,
         model: str,
-        reference_image_b64: str | None,
+        reference_images_b64: list[str] | None,
         timeout: int,
         config: Config,
         cancel_check: Callable[[], bool] | None,
         *,
         api_key_override: str | None = None,
     ) -> GenerationResult:
-        """Generate an image via Ollama. reference_image_b64 is ignored (not supported)."""
+        """Generate an image via Ollama.
+
+        Reference images are not supported; ``reference_images_b64`` must be
+        unset or empty when using this provider (``generate_image`` enforces this).
+        """
+        if reference_images_b64:
+            raise ValidationError(
+                "Reference images are not supported for provider 'ollama'. "
+                "Use OpenRouter for reference image support.",
+                field="reference_image",
+            )
         self._validate_config(config)
         base_url = (
             config.ollama_base_url or DEFAULT_OLLAMA_BASE_URL

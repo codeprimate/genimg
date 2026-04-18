@@ -56,7 +56,7 @@ class TestOllamaProvider:
             result = provider.generate(
                 "a cat",
                 model="x/z-image-turbo",
-                reference_image_b64=None,
+                reference_images_b64=None,
                 timeout=60,
                 config=config,
                 cancel_check=None,
@@ -86,7 +86,7 @@ class TestOllamaProvider:
             result = provider.generate(
                 "a dog",
                 model="flux",
-                reference_image_b64=None,
+                reference_images_b64=None,
                 timeout=60,
                 config=config,
                 cancel_check=None,
@@ -109,7 +109,7 @@ class TestOllamaProvider:
             result = provider.generate(
                 "bird",
                 model="x/flux2-klein",
-                reference_image_b64=None,
+                reference_images_b64=None,
                 timeout=60,
                 config=config,
                 cancel_check=None,
@@ -131,7 +131,7 @@ class TestOllamaProvider:
                 provider.generate(
                     "x",
                     model="flux",
-                    reference_image_b64=None,
+                    reference_images_b64=None,
                     timeout=60,
                     config=config,
                     cancel_check=None,
@@ -154,9 +154,27 @@ class TestOllamaProvider:
                 provider.generate(
                     "x",
                     model="flux",
-                    reference_image_b64=None,
+                    reference_images_b64=None,
                     timeout=60,
                     config=config,
                     cancel_check=None,
                 )
         assert "No image" in str(exc_info.value)
+
+    def test_generate_nonempty_reference_list_raises(self):
+        """Protocol conformance: non-empty refs are invalid for Ollama."""
+        config = Config(
+            ollama_base_url="http://127.0.0.1:11434",
+            default_image_provider="ollama",
+        )
+        provider = OllamaProvider()
+        with pytest.raises(ValidationError) as exc_info:
+            provider.generate(
+                "x",
+                model="flux",
+                reference_images_b64=["abc"],
+                timeout=60,
+                config=config,
+                cancel_check=None,
+            )
+        assert exc_info.value.field == "reference_image"

@@ -75,13 +75,14 @@ class OpenRouterProvider:
         self,
         prompt: str,
         model: str,
-        reference_image_b64: str | None,
+        reference_images_b64: list[str] | None,
     ) -> dict[str, Any]:
         """Build OpenRouter chat/completions payload."""
         content_parts: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-        if reference_image_b64:
-            image_url = create_image_data_url(reference_image_b64)
-            content_parts.append({"type": "image_url", "image_url": {"url": image_url}})
+        for ref_b64 in reference_images_b64 or []:
+            if ref_b64:
+                image_url = create_image_data_url(ref_b64)
+                content_parts.append({"type": "image_url", "image_url": {"url": image_url}})
         return {
             "model": model,
             "modalities": ["image"],
@@ -155,7 +156,7 @@ class OpenRouterProvider:
         timeout: int,
         model: str,
         prompt: str,
-        reference_image_b64: str | None,
+        reference_images_b64: list[str] | None,
         debug: bool,
     ) -> GenerationResult:
         """Perform HTTP POST and parse response. Maps status codes to exceptions."""
@@ -227,7 +228,8 @@ class OpenRouterProvider:
                 response=response.text,
             )
 
-        result = self._parse_response(response, model, prompt, reference_image_b64 is not None)
+        had_ref = bool(reference_images_b64)
+        result = self._parse_response(response, model, prompt, had_ref)
         # Replace generation_time with actual measured time
         return GenerationResult(
             image=result.image,
@@ -242,7 +244,7 @@ class OpenRouterProvider:
         self,
         prompt: str,
         model: str,
-        reference_image_b64: str | None,
+        reference_images_b64: list[str] | None,
         timeout: int,
         config: Config,
         cancel_check: Callable[[], bool] | None,
@@ -259,9 +261,9 @@ class OpenRouterProvider:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        payload = self._build_payload(prompt, model, reference_image_b64)
+        payload = self._build_payload(prompt, model, reference_images_b64)
 
-        has_ref = reference_image_b64 is not None
+        has_ref = bool(reference_images_b64)
         logger.info("Generating image model=%s has_reference=%s", model, has_ref)
         if log_prompts():
             truncated = (
@@ -272,7 +274,7 @@ class OpenRouterProvider:
         if cancel_check is None:
             try:
                 result = self._do_request(
-                    url, headers, payload, timeout, model, prompt, reference_image_b64, debug_api
+                    url, headers, payload, timeout, model, prompt, reference_images_b64, debug_api
                 )
                 logger.info(
                     "Generated in %.1fs model=%s", result.generation_time, result.model_used
@@ -299,7 +301,7 @@ class OpenRouterProvider:
         def worker() -> None:
             try:
                 result_holder[0] = self._do_request(
-                    url, headers, payload, timeout, model, prompt, reference_image_b64, debug_api
+                    url, headers, payload, timeout, model, prompt, reference_images_b64, debug_api
                 )
             except requests.exceptions.Timeout as e:
                 err = RequestTimeoutError(

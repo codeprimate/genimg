@@ -166,6 +166,49 @@ class TestGenerateImageValidation:
         assert exc_info.value.field == "reference_image"
         assert "ollama" in str(exc_info.value).lower()
 
+    def test_both_reference_kwargs_raises(self):
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
+        with pytest.raises(ValidationError) as exc_info:
+            generate_image(
+                "a cat",
+                config=config,
+                reference_image_b64="YQ==",
+                reference_images_b64=["Yg=="],
+            )
+        assert exc_info.value.field == "reference_image"
+
+    def test_reference_images_b64_empty_list_no_refs(self):
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers.get.return_value = "image/png"
+        mock_response.content = MINIMAL_PNG
+        with patch(
+            "genimg.core.providers.openrouter.requests.post", return_value=mock_response
+        ) as m:
+            result = generate_image(
+                "a cat",
+                config=config,
+                reference_images_b64=[],
+            )
+        payload = m.call_args[1]["json"]
+        assert len(payload["messages"][0]["content"]) == 1
+        assert result.had_reference is False
+
+    def test_reference_images_b64_list_ollama_raises(self):
+        config = Config(
+            ollama_base_url="http://127.0.0.1:11434",
+            default_image_provider="ollama",
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            generate_image(
+                "a cat",
+                config=config,
+                provider="ollama",
+                reference_images_b64=["YQ=="],
+            )
+        assert exc_info.value.field == "reference_image"
+
 
 @pytest.mark.unit
 class TestGenerateImageMocked:
@@ -255,6 +298,40 @@ class TestGenerateImageMocked:
         assert len(content) == 2
         assert content[0]["type"] == "text"
         assert any("image_url" in str(p) for p in content)
+
+    def test_multiple_reference_images_in_payload_order(self):
+        config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers.get.return_value = "image/png"
+        mock_response.content = MINIMAL_PNG
+        refs = ["YQ==", "Yg==", "Yw=="]
+        with patch(
+            "genimg.core.providers.openrouter.requests.post", return_value=mock_response
+        ) as m:
+            result = generate_image(
+                "prompt text",
+                reference_images_b64=refs,
+                config=config,
+            )
+        payload = m.call_args[1]["json"]
+        content = payload["messages"][0]["content"]
+        assert len(content) == 1 + len(refs)
+        assert content[0] == {"type": "text", "text": "prompt text"}
+        for i, ref in enumerate(refs, start=1):
+            assert content[i]["type"] == "image_url"
+            assert ref in content[i]["image_url"]["url"]
+        assert result.had_reference is True
+
+    def test_truncate_image_data_for_log_multiple_data_urls(self):
+        parts = [
+            {"type": "text", "text": "ok"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + ("a" * 400)}},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + ("b" * 400)}},
+        ]
+        out = _truncate_image_data_for_log({"messages": [{"content": parts}]})
+        urls = [p["image_url"]["url"] for p in out["messages"][0]["content"][1:]]
+        assert all(u.startswith("<data URL,") for u in urls)
 
     def test_http_401_raises_api_error(self):
         config = Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")

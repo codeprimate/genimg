@@ -31,14 +31,17 @@ class ImageGenerationProvider(Protocol):
         self,
         prompt: str,
         model: str,
-        reference_image_b64: str | None,
+        reference_images_b64: list[str] | None,
         timeout: int,
         config: Config,
         cancel_check: Callable[[], bool] | None,
         *,
         api_key_override: str | None = None,
     ) -> GenerationResult:
-        """Generate an image from prompt and optional reference.
+        """Generate an image from prompt and optional reference images.
+
+        ``reference_images_b64`` may be ``None`` or an empty list when no
+        reference images are supplied.
 
         May raise ValidationError, APIError, NetworkError,
         RequestTimeoutError, or CancellationError.

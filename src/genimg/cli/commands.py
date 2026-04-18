@@ -11,6 +11,7 @@ from pathlib import Path
 import click
 
 from genimg import (
+    DEFAULT_IMAGE_MODEL,
     Config,
     GenerationResult,
     ValidationError,
@@ -21,6 +22,7 @@ from genimg import (
     validate_prompt,
 )
 from genimg.cli import progress
+from genimg.cli.character_prompt import CHARACTER_TURNAROUND_PROMPT
 from genimg.cli.handlers import (
     cancel_check,
     install_sigint_handler,
@@ -28,7 +30,11 @@ from genimg.cli.handlers import (
     restore_sigint_handler,
     run_with_error_handling,
 )
-from genimg.cli.utils import default_output_path
+from genimg.cli.utils import (
+    character_default_output_path,
+    character_stem_from_title,
+    default_output_path,
+)
 from genimg.core.image_analysis import get_description, unload_describe_models
 from genimg.core.providers import get_registry
 from genimg.logging_config import configure_logging, get_verbosity_from_env
@@ -251,7 +257,7 @@ def generate(
         )
         gen_kw: dict = {
             "model": model,
-            "reference_image_b64": ref_b64_to_send,
+            "reference_images_b64": [ref_b64_to_send] if ref_b64_to_send else None,
             "config": config,
             "cancel_check": cancel_check,
         }
@@ -299,6 +305,190 @@ def generate(
     old_sigint = install_sigint_handler()
     try:
         run_with_error_handling(do_generate, quiet=quiet)
+    finally:
+        restore_sigint_handler(old_sigint)
+
+
+@cli.command(
+    help="""Character turnaround sheet from one or more reference images (OpenRouter by default).
+
+\b
+Positionals: TITLE (output basename hint) then one or more REF_IMAGE paths.
+Optional text for the model: use --prompt / -p only (not a second positional).
+
+\b
+Output: on success, stdout is exactly one line (the saved image path). Human-readable
+run context (banner, refs, timing) is printed to stderr unless --quiet.
+
+\b
+Defaults: when --provider or --model is omitted, this command pins provider=openrouter
+and model to DEFAULT_IMAGE_MODEL so GENIMG_DEFAULT_IMAGE_PROVIDER / GENIMG_DEFAULT_MODEL
+do not apply (unlike ``genimg generate``).
+
+\b
+With -v / -vv: stderr shows full reference paths on the refs line and a longer --prompt preview.
+"""
+)
+@click.argument("title")
+@click.argument(
+    "paths",
+    nargs=-1,
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+)
+@click.option("--prompt", "-p", default=None, help="Optional extra instructions for the model.")
+@click.option(
+    "--model", "-m", default=None, help="OpenRouter image model (default: pinned Seedream)."
+)
+@click.option(
+    "--provider",
+    type=click.Choice(["openrouter", "ollama"], case_sensitive=False),
+    default=None,
+    help="Image provider (default: openrouter for this command).",
+)
+@click.option(
+    "--out", "-o", type=click.Path(path_type=Path), default=None, help="Output file path."
+)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Alias for --out.",
+)
+@click.option(
+    "--api-key",
+    envvar="OPENROUTER_API_KEY",
+    help="OpenRouter API key (overrides OPENROUTER_API_KEY environment variable).",
+)
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="No stderr banner/spinner; stdout is still only the path on success.",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    "verbose_count",
+    count=True,
+    help="More detail on stderr (full ref paths, longer prompt preview).",
+)
+@click.option(
+    "--debug-api",
+    is_flag=True,
+    help="Log raw API request/response (image data truncated) for debugging.",
+)
+def character(
+    title: str,
+    paths: tuple[Path, ...],
+    prompt: str | None,
+    model: str | None,
+    provider: str | None,
+    out: Path | None,
+    output: Path | None,
+    api_key: str | None,
+    quiet: bool,
+    verbose_count: int,
+    debug_api: bool,
+) -> None:
+    """Generate a character turnaround sheet using reference images (Variation C output)."""
+    reset_cancellation()
+
+    verbose_level = min(verbose_count, 2) if verbose_count > 0 else get_verbosity_from_env()
+    configure_logging(verbose_level=verbose_level, quiet=quiet)
+
+    def do_character() -> None:
+        if not paths:
+            raise click.UsageError("At least one reference image path is required after TITLE.")
+
+        config = Config.from_env()
+        if api_key is not None:
+            config.set_api_key(api_key)
+        if debug_api:
+            config.debug_api = True
+        config.validate()
+
+        provider_eff = provider if provider is not None else "openrouter"
+        if provider_eff == "ollama":
+            impl = get_registry().get("ollama")
+            if impl is not None and not getattr(impl, "supports_reference_image", True):
+                raise ValidationError(
+                    f"Reference images are not supported for provider {provider_eff!r}. "
+                    "Use --provider openrouter for reference image support.",
+                    field="reference_image",
+                )
+
+        user_prompt = (prompt or "").strip()
+        effective_prompt = CHARACTER_TURNAROUND_PROMPT + (
+            f"\n\n{user_prompt}" if user_prompt else ""
+        )
+        validate_prompt(effective_prompt)
+
+        if not quiet:
+            _, used_fallback = character_stem_from_title(title)
+            if used_fallback:
+                progress.print_warning(
+                    "TITLE sanitizes to an empty filename stem; using 'character' as the basename."
+                )
+
+        model_eff = model if model is not None else DEFAULT_IMAGE_MODEL
+
+        path_list = list(paths)
+        ref_b64_list: list[str] = []
+        for p in path_list:
+            b64, _h = process_reference_image(p, config=config)
+            ref_b64_list.append(b64)
+
+        if not quiet:
+            progress.print_character_banner(
+                title=title,
+                ref_count=len(path_list),
+                provider_id=provider_eff,
+                model_id=model_eff,
+            )
+
+        gen_kw: dict = {
+            "model": model_eff,
+            "reference_images_b64": ref_b64_list,
+            "config": config,
+            "cancel_check": cancel_check,
+            "provider": provider_eff,
+        }
+
+        result: GenerationResult
+        if not quiet:
+            with progress.generation_progress(
+                model=model_eff,
+                optimized=False,
+                reference_used=True,
+                primary_task_label="Generating character sheet",
+            ):
+                result = generate_image(effective_prompt, **gen_kw)
+        else:
+            result = generate_image(effective_prompt, **gen_kw)
+
+        out_path = out if out is not None else output
+        if out_path is None:
+            out_path = Path(character_default_output_path(title, result.format))
+        else:
+            out_path = Path(out_path)
+
+        out_path.write_bytes(result.image_data)
+
+        if not quiet:
+            progress.print_character_post_summary(
+                ref_paths=path_list,
+                user_prompt=prompt,
+                generation_time=result.generation_time,
+                out_path=out_path.resolve(),
+                verbose_level=verbose_level,
+            )
+
+        click.echo(str(out_path.resolve()))
+
+    old_sigint = install_sigint_handler()
+    try:
+        run_with_error_handling(do_character, quiet=quiet)
     finally:
         restore_sigint_handler(old_sigint)
 
@@ -369,4 +559,4 @@ def main() -> None:
     cli()
 
 
-__all__ = ["cli", "main", "generate", "ui"]
+__all__ = ["cli", "main", "character", "generate", "ui"]
