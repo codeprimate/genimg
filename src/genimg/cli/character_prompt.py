@@ -2,9 +2,10 @@
 
 # Must satisfy validate_prompt() when used alone (non-empty, >= 3 stripped chars).
 CHARACTER_TURNAROUND_PROMPT = """
-Studio photo turnaround reference sheet of the person shown in the reference image. Exact facial and hair likeness.
+Turnaround reference sheet of the person shown in the reference image. Exact facial and hair likeness.
+High resolution.
 
-Three panels arranged horizontally on a plain white background.
+Three seamless panels arranged horizontally on a plain white background.
 All panels at identical scale, height alignment, and lighting.
 
 Maintain exact likeness across all panels.

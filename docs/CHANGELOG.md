@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - (none)
 
+### Changed
+- Default logging verbosity (`GENIMG_VERBOSITY=0` / unset): `genimg` logger level is now **WARNING**, so routine **INFO** lines are not printed by default. Use `-v`, `GENIMG_VERBOSITY=1`, or `set_verbosity(1)` for previous default-style INFO logs (including prompts).
+
 ## [0.10.1] - 2026-02-24
 
 ### Added

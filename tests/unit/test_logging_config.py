@@ -19,10 +19,10 @@ from genimg.logging_config import (
 class TestSetVerbosity:
     """Test set_verbosity level and log_prompts flag."""
 
-    def test_level_0_sets_info_no_prompts(self):
+    def test_level_0_sets_warning_no_prompts(self):
         set_verbosity(0)
         root = logging.getLogger("genimg")
-        assert root.level == logging.INFO
+        assert root.level == logging.WARNING
         assert log_prompts() is False
 
     def test_level_1_sets_info_with_prompts(self):
@@ -40,7 +40,7 @@ class TestSetVerbosity:
     def test_negative_treated_as_default(self):
         set_verbosity(-1)
         root = logging.getLogger("genimg")
-        assert root.level == logging.INFO
+        assert root.level == logging.WARNING
         assert log_prompts() is False
 
 

@@ -9,14 +9,15 @@ A Python package for generating AI images with intelligent prompt optimization. 
 - 🎨 **Multiple AI Models & Providers**: Generate images via **OpenRouter** (cloud) or **Ollama** (local). Choose provider and model in the UI or config.
 - ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama models; optional in both CLI and web UI
 - 🖼️ **Reference Images**: Use reference images to guide style/generation (OpenRouter); process refs for optimization context (both providers). CLI and web UI.
+- 📑 **Character turnaround (CLI)**: `genimg character` builds a turnaround-style sheet from one or more reference images (built-in prompt plus optional `--prompt` / `-p`).
 - 📷 **Reference Image Description**: In the web UI, describe a reference image (prose or tags via Florence/JoyTag) and optionally feed that into prompt optimization
 - 💻 **Dual Interface**: Both CLI and web UI (Gradio) interfaces
 - 🔔 **Browser Notifications**: Web UI can notify when generation or optimization completes (optional; permission on first load)
 - 🎭 **Rich CLI**: Beautiful progress displays with spinners, progress bars, and formatted results; cancellation via Ctrl+C
 - 📦 **Library Usage**: Use as a Python library with `generate_image`, `optimize_prompt`, `Config`, and configurable logging
 - 🔧 **Type-Safe**: Full type hints for better IDE support
-- 📝 **Structured Logging**: Default activity/performance logs; `-v` for prompts, `-vv` for API/cache detail; `GENIMG_VERBOSITY` and `set_verbosity()` for library/UI
-- 🔑 **API Key Override**: Pass `--api-key` to CLI (generate or ui) to override environment without editing `.env`
+- 📝 **Structured Logging**: Default stderr is quiet for routine logs (WARNING+); `-v` for activity and prompts, `-vv` for API/cache detail; `GENIMG_VERBOSITY` and `set_verbosity()` for library/UI
+- 🔑 **API Key Override**: Pass `--api-key` to CLI (`generate`, `character`, or `ui`) to override environment without editing `.env`
 - 💾 **Save Optimized Prompt**: Use `--save-prompt <path>` to write the optimized prompt to a file for reproducibility
 
 ## Installation
@@ -74,7 +75,7 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here
 GENIMG_DEFAULT_MODEL=bytedance-seed/seedream-4.5
 GENIMG_DEFAULT_IMAGE_PROVIDER=openrouter   # or "ollama" for local image generation
 GENIMG_OPTIMIZATION_MODEL=huihui_ai/qwen3.5-abliterated:4b
-GENIMG_VERBOSITY=0                        # 0=default, 1=+prompts, 2=+API/cache (CLI/UI/library)
+GENIMG_VERBOSITY=0                        # 0=quiet (WARNING+), 1=INFO+prompts, 2=DEBUG (CLI/UI/library)
 ```
 
 Or set environment variables directly:
@@ -96,7 +97,8 @@ genimg generate "a sunset" --api-key sk-or-v1-your-key-here
 # Override environment variable for a single run
 genimg generate "a sunset" --api-key sk-or-v1-different-key
 
-# Works with the UI command too
+# Works with character and ui too
+genimg character "My Hero" ref.jpg --api-key sk-or-v1-your-key-here
 genimg ui --api-key sk-or-v1-your-key-here
 ```
 
@@ -206,16 +208,30 @@ genimg generate "a landscape" --output out.png --quiet
 
 **Verbosity and logging:**
 
-- Default: activity and performance are logged (e.g. "Generating image", "Generated in X.Xs").
-- `-v` (info): also log prompt text (original and optimized).
-- `-vv` (verbose): also log API calls, cache hits/misses, and other debug detail.
-- Set `GENIMG_VERBOSITY=0` (default), `1`, or `2` in the environment to control logging when no `-v` flag is passed; CLI flags override the env var.
+- Default (`GENIMG_VERBOSITY=0` or unset): the `genimg` logger is at **WARNING** — routine INFO lines (e.g. "Generating image") are not shown; warnings and errors still appear.
+- `-v` / `GENIMG_VERBOSITY=1`: **INFO** — activity and performance, plus prompt text where applicable.
+- `-vv` / `GENIMG_VERBOSITY=2`: **DEBUG** — API calls, cache hits/misses, and other debug detail.
+- CLI `-v` / `-vv` override `GENIMG_VERBOSITY` when passed.
 
 ```bash
 genimg generate "a cat" --no-optimize -o out.png -v    # show prompts in logs
 genimg generate "a cat" --no-optimize -o out.png -vv   # full debug logs
 GENIMG_VERBOSITY=1 genimg generate "a cat" -o out.png # same as -v
 ```
+
+**Character turnaround** (`genimg character`):
+
+Uses a fixed turnaround-oriented prompt plus your reference image(s). There is no separate prompt-optimization step on this command.
+
+- **Arguments:** a **TITLE** (default output filename is derived from it), then **one or more** image paths. Optional extra instructions for the model: `--prompt` / `-p` only (not a second positional).
+
+```bash
+genimg character "Rogue Pilot" refs/front.jpg refs/side.jpg -o sheet.png
+genimg character "Rogue Pilot" ref.jpg   # timestamped file in the current directory
+```
+
+- **Defaults (unlike `generate`):** omitting `--provider` and `--model` pins **OpenRouter** and `bytedance-seed/seedream-4.5`. `GENIMG_DEFAULT_IMAGE_PROVIDER` and `GENIMG_DEFAULT_MODEL` are **not** used. Pass `--provider` / `--model` to override.
+- **Scripting:** on success, stdout is a single line (saved path). `--quiet` suppresses stderr progress/banner. `--api-key`, `-v` / `-vv`, `GENIMG_VERBOSITY`, and `--debug-api` are supported. Prefer **OpenRouter** unless your image provider accepts the references you pass (see [Reference images with Ollama](#reference-images-with-ollama)). Full detail: `genimg character --help`.
 
 ### As a Python Library
 
@@ -250,7 +266,7 @@ result = generate_image(prompt=optimized)
 # Describe image: describe_image() from genimg.core.image_analysis
 # List Ollama models: list_ollama_models()
 from genimg import set_verbosity
-set_verbosity(1)  # 0=default, 1=+prompts, 2=+API/cache; or GENIMG_VERBOSITY
+set_verbosity(1)  # 0=WARNING, 1=INFO+prompts, 2=DEBUG; or GENIMG_VERBOSITY
 ```
 
 ## Prompt Optimization

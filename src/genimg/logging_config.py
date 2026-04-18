@@ -6,8 +6,8 @@ so library users who never call set_verbosity or configure_logging get no
 logs unless they configure logging themselves.
 
 Verbosity levels:
-- 0 (default): INFO — activity and performance only
-- 1 (info): INFO + prompt text (original/optimized)
+- 0 (default): WARNING — routine genimg logs suppressed; errors and warnings still show
+- 1 (info): INFO + prompt text (original/optimized) — activity and performance
 - 2 (verbose): DEBUG + prompt text — API calls, cache, etc.
 
 Use set_verbosity(level) or configure_logging(verbose_level, quiet).
@@ -42,8 +42,8 @@ def set_verbosity(level: int) -> None:
     """
     Set logging verbosity (0=default, 1=info, 2=verbose).
 
-    - 0: INFO level; activity and performance only (no prompt text).
-    - 1: INFO level; same + log prompt text (original/optimized).
+    - 0: WARNING level; suppress routine INFO logs (no prompt text).
+    - 1: INFO level; activity and performance + log prompt text (original/optimized).
     - 2: DEBUG level; same + API calls, cache, request/response (no secrets).
 
     Logging is controlled by set_verbosity or GENIMG_VERBOSITY env (0/1/2).
@@ -52,7 +52,7 @@ def set_verbosity(level: int) -> None:
     _ensure_handler()
     root = logging.getLogger(ROOT_LOGGER_NAME)
     if level <= 0:
-        root.setLevel(logging.INFO)
+        root.setLevel(logging.WARNING)
         _log_prompts = False
     elif level == 1:
         root.setLevel(logging.INFO)
