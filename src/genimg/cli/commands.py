@@ -36,6 +36,11 @@ from genimg.cli.utils import (
     default_output_path,
 )
 from genimg.core.image_analysis import get_description, unload_describe_models
+from genimg.core.image_gen import (
+    build_png_info_for_generation,
+    is_png_output_format,
+    write_generation_png,
+)
 from genimg.core.providers import get_registry
 from genimg.logging_config import configure_logging, get_verbosity_from_env
 
@@ -280,8 +285,19 @@ def generate(
         if out_path is None:
             out_path = Path(default_output_path(result.format))
 
-        # 8. Save
-        out_path.write_bytes(result.image_data)
+        # 8. Save (PNG: embed CLI metadata chunks; other formats: raw bytes)
+        if is_png_output_format(result.format):
+            pnginfo = build_png_info_for_generation(
+                result,
+                genimg_version=__version__,
+                provider=provider_eff,
+                optimized=not no_optimize,
+                cli="generate",
+                original_prompt=prompt if not no_optimize else None,
+            )
+            write_generation_png(out_path, result, pnginfo)
+        else:
+            out_path.write_bytes(result.image_data)
 
         # 9. Print result
         if quiet:
@@ -473,7 +489,18 @@ def character(
         else:
             out_path = Path(out_path)
 
-        out_path.write_bytes(result.image_data)
+        if is_png_output_format(result.format):
+            pnginfo = build_png_info_for_generation(
+                result,
+                genimg_version=__version__,
+                provider=provider_eff,
+                optimized=False,
+                cli="character",
+                user_prompt=prompt,
+            )
+            write_generation_png(out_path, result, pnginfo)
+        else:
+            out_path.write_bytes(result.image_data)
 
         if not quiet:
             progress.print_character_post_summary(

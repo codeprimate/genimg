@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - (none)
 
+## [0.11.2] - 2026-04-18
+
+### Added
+- CLI (`genimg generate`, `genimg character`): PNG outputs embed standard text metadata (`Software` = `genimg <version>`, `Description` = final prompt) and an `iTXt` chunk `genimg` with JSON (`provider`, `model`, `generation_time_s`, `had_reference`, `optimized`, `cli`, `creation_time`, plus `original_prompt` when optimization ran, `user_prompt` for character when provided). JPEG outputs unchanged (raw bytes). `GenerationResult.image_data` remains metadata-free for API and scripts.
+
 ## [0.11.1] - 2026-04-18
 
 ### Changed

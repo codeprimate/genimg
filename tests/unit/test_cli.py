@@ -1,14 +1,18 @@
 """Unit tests for the genimg CLI."""
 
+import io
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner, Result
+from PIL import Image
 
 from genimg import DEFAULT_IMAGE_MODEL
 from genimg.cli import cli
 from genimg.cli.character_prompt import CHARACTER_TURNAROUND_PROMPT
+from genimg.core.image_gen import GENIMG_PNG_JSON_KEYWORD, GenerationResult
 from genimg.utils.exceptions import (
     APIError,
     CancellationError,
@@ -27,6 +31,75 @@ def _run_character(*args: str) -> Result:
     """Invoke genimg character with given args (Click merges streams into ``output``)."""
     runner = CliRunner()
     return runner.invoke(cli, ["character", *args])
+
+
+_CLI_MINIMAL_PNG_BUF = io.BytesIO()
+Image.new("RGB", (1, 1), color=(0, 0, 0)).save(_CLI_MINIMAL_PNG_BUF, format="PNG")
+_CLI_MINIMAL_PNG = _CLI_MINIMAL_PNG_BUF.getvalue()
+
+_CLI_MINIMAL_JPEG_BUF = io.BytesIO()
+Image.new("RGB", (1, 1), color=(0, 0, 0)).save(_CLI_MINIMAL_JPEG_BUF, format="JPEG", quality=90)
+_CLI_MINIMAL_JPEG = _CLI_MINIMAL_JPEG_BUF.getvalue()
+
+
+def _png_generation_result(**kwargs: object) -> GenerationResult:
+    pil = Image.open(io.BytesIO(_CLI_MINIMAL_PNG)).copy()
+    defaults: dict = {
+        "image": pil,
+        "_format": "png",
+        "generation_time": 1.0,
+        "model_used": "test/model",
+        "prompt_used": "a cat",
+        "had_reference": False,
+    }
+    defaults.update(kwargs)
+    return GenerationResult(**defaults)
+
+
+def _jpeg_generation_result(**kwargs: object) -> GenerationResult:
+    pil = Image.open(io.BytesIO(_CLI_MINIMAL_JPEG)).copy()
+    defaults: dict = {
+        "image": pil,
+        "_format": "jpeg",
+        "generation_time": 0.5,
+        "model_used": "test/model",
+        "prompt_used": "x",
+        "had_reference": False,
+    }
+    defaults.update(kwargs)
+    return GenerationResult(**defaults)
+
+
+def _assert_saved_png_cli_metadata(
+    path: Path,
+    *,
+    description: str,
+    provider: str,
+    optimized: bool,
+    cli: str,
+    had_reference: bool | None = None,
+    original_prompt: str | None = None,
+    user_prompt: str | None = None,
+) -> None:
+    im = Image.open(path)
+    im.load()
+    text = dict(im.text)
+    assert text["Description"] == description
+    assert text["Software"].startswith("genimg ")
+    meta = json.loads(text[GENIMG_PNG_JSON_KEYWORD])
+    assert meta["provider"] == provider
+    assert meta["optimized"] is optimized
+    assert meta["cli"] == cli
+    if had_reference is not None:
+        assert meta["had_reference"] is had_reference
+    if original_prompt is not None:
+        assert meta.get("original_prompt") == original_prompt
+    else:
+        assert "original_prompt" not in meta
+    if user_prompt is not None:
+        assert meta.get("user_prompt") == user_prompt
+    else:
+        assert "user_prompt" not in meta
 
 
 @pytest.mark.unit
@@ -72,13 +145,12 @@ class TestGenerateCommand:
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
-        result_obj = MagicMock()
-        result_obj.image_data = b"\x89PNG\r\n\x1a\n"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "a cat"
-        result_obj.had_reference = False
+        result_obj = _png_generation_result(
+            prompt_used="a cat",
+            generation_time=1.0,
+            model_used="test/model",
+            had_reference=False,
+        )
         mock_generate.return_value = result_obj
 
         out_file = tmp_path / "out.png"
@@ -91,7 +163,14 @@ class TestGenerateCommand:
         call_args, call_kw = mock_generate.call_args[0], mock_generate.call_args[1]
         assert call_args[0] == "a cat"
         assert call_kw.get("reference_images_b64") is None
-        assert out_file.read_bytes() == result_obj.image_data
+        _assert_saved_png_cli_metadata(
+            out_file,
+            description="a cat",
+            provider="openrouter",
+            optimized=False,
+            cli="generate",
+        )
+        assert b"genimg_meta_version" not in result_obj.image_data
 
     @patch("genimg.cli.commands.generate_image")
     @patch("genimg.cli.commands.optimize_prompt")
@@ -118,13 +197,12 @@ class TestGenerateCommand:
         mock_ref.return_value = ("base64data", "hash123")
         mock_optimize.return_value = "optimized prompt"
 
-        result_obj = MagicMock()
-        result_obj.image_data = b"\x89PNG\r\n\x1a\n"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "optimized prompt"
-        result_obj.had_reference = True
+        result_obj = _png_generation_result(
+            prompt_used="optimized prompt",
+            generation_time=1.0,
+            model_used="test/model",
+            had_reference=True,
+        )
         mock_generate.return_value = result_obj
 
         ref_file = tmp_path / "ref.png"
@@ -146,6 +224,15 @@ class TestGenerateCommand:
         call_args, call_kw = mock_generate.call_args[0], mock_generate.call_args[1]
         assert call_args[0] == "optimized prompt"
         assert call_kw["reference_images_b64"] == ["base64data"]
+        _assert_saved_png_cli_metadata(
+            out_file,
+            description="optimized prompt",
+            provider="openrouter",
+            optimized=True,
+            cli="generate",
+            had_reference=True,
+            original_prompt="a cat",
+        )
 
     @patch("genimg.cli.commands.generate_image")
     @patch("genimg.cli.commands.optimize_prompt")
@@ -168,13 +255,7 @@ class TestGenerateCommand:
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
-        result_obj = MagicMock()
-        result_obj.image_data = b"\x89PNG\r\n\x1a\n"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "a cat"
-        result_obj.had_reference = False
+        result_obj = _png_generation_result(prompt_used="a cat")
         mock_generate.return_value = result_obj
 
         out_file = tmp_path / "out.png"
@@ -186,6 +267,13 @@ class TestGenerateCommand:
         mock_generate.assert_called_once()
         call_kw = mock_generate.call_args[1]
         assert call_kw.get("provider") == "ollama"
+        _assert_saved_png_cli_metadata(
+            out_file,
+            description="a cat",
+            provider="ollama",
+            optimized=False,
+            cli="generate",
+        )
 
     @patch("genimg.cli.commands.optimize_prompt")
     @patch("genimg.cli.commands.validate_prompt")
@@ -247,13 +335,10 @@ class TestGenerateCommand:
         mock_process_ref.return_value = ("b64data", "hash123")
         mock_get_description.return_value = "a fluffy cat"
         mock_optimize.return_value = "optimized prompt"
-        result_obj = MagicMock()
-        result_obj.image_data = b"\x89PNG"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "optimized prompt"
-        result_obj.had_reference = False
+        result_obj = _png_generation_result(
+            prompt_used="optimized prompt",
+            had_reference=False,
+        )
         mock_generate.return_value = result_obj
 
         result = _run_cli(
@@ -279,6 +364,14 @@ class TestGenerateCommand:
         assert opt_kw.get("reference_description") == "a fluffy cat"
         mock_generate.assert_called_once()
         assert mock_generate.call_args[1].get("reference_images_b64") is None
+        _assert_saved_png_cli_metadata(
+            out_file,
+            description="optimized prompt",
+            provider="ollama",
+            optimized=True,
+            cli="generate",
+            original_prompt="a cat",
+        )
 
     @patch("genimg.cli.commands.generate_image")
     @patch("genimg.cli.commands.optimize_prompt")
@@ -297,23 +390,27 @@ class TestGenerateCommand:
         """--out path is used to write image bytes."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
         out_file = tmp_path / "custom.png"
-        result_obj = MagicMock()
-        result_obj.image_data = b"imagedata"
-        result_obj.format = "png"
-        result_obj.generation_time = 0.5
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "x"
-        result_obj.had_reference = False
+        result_obj = _png_generation_result(
+            prompt_used="x",
+            generation_time=0.5,
+        )
         mock_generate.return_value = result_obj
 
         result = _run_cli("--prompt", "x", "--no-optimize", "--out", str(out_file))
 
         assert result.exit_code == 0
-        assert out_file.read_bytes() == b"imagedata"
+        _assert_saved_png_cli_metadata(
+            out_file,
+            description="x",
+            provider="openrouter",
+            optimized=False,
+            cli="generate",
+        )
         assert str(out_file) in result.output
 
     @patch("genimg.cli.commands.generate_image")
@@ -336,13 +433,7 @@ class TestGenerateCommand:
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
-        result_obj = MagicMock()
-        result_obj.image_data = b"imagedata"
-        result_obj.format = "jpeg"
-        result_obj.generation_time = 0.5
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "x"
-        result_obj.had_reference = False
+        result_obj = _jpeg_generation_result()
         mock_generate.return_value = result_obj
 
         default_path = tmp_path / "genimg_20260207_120000.jpeg"
@@ -351,7 +442,7 @@ class TestGenerateCommand:
 
         assert result.exit_code == 0
         assert default_path.exists()
-        assert default_path.read_bytes() == b"imagedata"
+        assert default_path.read_bytes() == result_obj.image_data
         assert "genimg_" in result.output and ".jpeg" in result.output
 
     @patch("genimg.cli.commands.Config")
@@ -457,18 +548,16 @@ class TestGenerateCommand:
         """With --quiet, only the output path is printed (no progress or time)."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         config.optimization_enabled = True
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
         mock_optimize.return_value = "optimized"
 
-        result_obj = MagicMock()
-        result_obj.image_data = b"data"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.5
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "optimized"
-        result_obj.had_reference = False
+        result_obj = _png_generation_result(
+            prompt_used="optimized",
+            generation_time=1.5,
+        )
         mock_generate.return_value = result_obj
 
         out_file = tmp_path / "q.png"
@@ -497,19 +586,15 @@ class TestGenerateCommand:
         """With --save-prompt, the optimized prompt is saved to the specified file."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         config.optimization_enabled = True
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
         mock_optimize.return_value = "This is the optimized prompt with lots of detail."
 
-        result_obj = MagicMock()
-        result_obj.image_data = b"imagedata"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "This is the optimized prompt with lots of detail."
-        result_obj.had_reference = False
+        long_prompt = "This is the optimized prompt with lots of detail."
+        result_obj = _png_generation_result(prompt_used=long_prompt)
         mock_generate.return_value = result_obj
 
         out_file = tmp_path / "out.png"
@@ -551,16 +636,11 @@ class TestGenerateCommand:
         """With --no-optimize and --save-prompt, no prompt file is created."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
-        result_obj = MagicMock()
-        result_obj.image_data = b"imagedata"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "a cat"
-        result_obj.had_reference = False
+        result_obj = _png_generation_result(prompt_used="a cat")
         mock_generate.return_value = result_obj
 
         out_file = tmp_path / "out.png"
@@ -598,19 +678,14 @@ class TestGenerateCommand:
         """If saving the prompt fails, a warning is shown but generation proceeds."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         config.optimization_enabled = True
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
         mock_optimize.return_value = "optimized prompt"
 
-        result_obj = MagicMock()
-        result_obj.image_data = b"imagedata"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "optimized prompt"
-        result_obj.had_reference = False
+        result_obj = _png_generation_result(prompt_used="optimized prompt")
         mock_generate.return_value = result_obj
 
         out_file = tmp_path / "out.png"
@@ -649,17 +724,12 @@ class TestGenerateCommand:
         """--api-key option overrides the API key from environment."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
         config.set_api_key = MagicMock()
 
-        result_obj = MagicMock()
-        result_obj.image_data = b"imagedata"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "a cat"
-        result_obj.had_reference = False
+        result_obj = _png_generation_result(prompt_used="a cat")
         mock_generate.return_value = result_obj
 
         out_file = tmp_path / "out.png"
@@ -690,19 +760,14 @@ class TestGenerateCommand:
         """--api-key allows generation even when OPENROUTER_API_KEY env var is not set."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         config.openrouter_api_key = ""  # Simulate no env var
         mock_config_cls.from_env.return_value = config
         config.set_api_key = MagicMock()
         config.validate.return_value = None
 
         with patch("genimg.cli.commands.generate_image") as mock_generate:
-            result_obj = MagicMock()
-            result_obj.image_data = b"imagedata"
-            result_obj.format = "png"
-            result_obj.generation_time = 1.0
-            result_obj.model_used = "test/model"
-            result_obj.prompt_used = "test"
-            result_obj.had_reference = False
+            result_obj = _png_generation_result(prompt_used="test")
             mock_generate.return_value = result_obj
 
             out_file = tmp_path / "out.png"
@@ -744,15 +809,10 @@ class TestGenerateCommand:
         """-v and -vv call configure_logging with verbose_level 1 and 2."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
-        result_obj = MagicMock()
-        result_obj.image_data = b"data"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "x"
-        result_obj.had_reference = False
+        result_obj = _png_generation_result(prompt_used="x")
         _mock_generate.return_value = result_obj
         out_file = tmp_path / "out.png"
 
@@ -791,15 +851,10 @@ class TestGenerateCommand:
         """--quiet calls configure_logging(..., quiet=True)."""
         config = MagicMock()
         config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
-        result_obj = MagicMock()
-        result_obj.image_data = b"data"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = "test/model"
-        result_obj.prompt_used = "x"
-        result_obj.had_reference = False
+        result_obj = _png_generation_result(prompt_used="x")
         _mock_generate.return_value = result_obj
         out_file = tmp_path / "out.png"
 
@@ -833,13 +888,12 @@ class TestCharacterCommand:
         config.validate.return_value = None
 
         mock_process_ref.return_value = ("b64x", "h1")
-        result_obj = MagicMock()
-        result_obj.image_data = b"\x89PNG\r\n\x1a\n"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.2
-        result_obj.model_used = DEFAULT_IMAGE_MODEL
-        result_obj.prompt_used = "x"
-        result_obj.had_reference = True
+        result_obj = _png_generation_result(
+            prompt_used="x",
+            generation_time=1.2,
+            model_used=DEFAULT_IMAGE_MODEL,
+            had_reference=True,
+        )
         mock_generate.return_value = result_obj
 
         ref = tmp_path / "a.png"
@@ -853,6 +907,14 @@ class TestCharacterCommand:
         assert kw["provider"] == "openrouter"
         assert kw["model"] == DEFAULT_IMAGE_MODEL
         assert kw["reference_images_b64"] == ["b64x"]
+        _assert_saved_png_cli_metadata(
+            out,
+            description="x",
+            provider="openrouter",
+            optimized=False,
+            cli="character",
+            had_reference=True,
+        )
 
     @patch("genimg.cli.commands.progress.print_success_result")
     @patch("genimg.cli.commands.generate_image")
@@ -874,13 +936,13 @@ class TestCharacterCommand:
         config.validate.return_value = None
 
         mock_process_ref.side_effect = [("b1", "h1"), ("b2", "h2")]
-        result_obj = MagicMock()
-        result_obj.image_data = b"x"
-        result_obj.format = "png"
-        result_obj.generation_time = 0.5
-        result_obj.model_used = DEFAULT_IMAGE_MODEL
-        result_obj.prompt_used = "p"
-        result_obj.had_reference = True
+        composed = CHARACTER_TURNAROUND_PROMPT + "\n\nadd a hat"
+        result_obj = _png_generation_result(
+            prompt_used=composed,
+            generation_time=0.5,
+            model_used=DEFAULT_IMAGE_MODEL,
+            had_reference=True,
+        )
         mock_generate.return_value = result_obj
 
         r1 = tmp_path / "r1.png"
@@ -906,6 +968,15 @@ class TestCharacterCommand:
         assert "add a hat" in sent_prompt
         mock_validate.assert_called_once_with(sent_prompt)
         assert mock_generate.call_args[1]["reference_images_b64"] == ["b1", "b2"]
+        _assert_saved_png_cli_metadata(
+            out,
+            description=composed,
+            provider="openrouter",
+            optimized=False,
+            cli="character",
+            had_reference=True,
+            user_prompt="add a hat",
+        )
 
     @patch("genimg.cli.commands.Config")
     def test_provider_ollama_fails_before_generate(
@@ -945,13 +1016,12 @@ class TestCharacterCommand:
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
         mock_process_ref.return_value = ("b64", "h")
-        result_obj = MagicMock()
-        result_obj.image_data = b"x"
-        result_obj.format = "png"
-        result_obj.generation_time = 2.0
-        result_obj.model_used = DEFAULT_IMAGE_MODEL
-        result_obj.prompt_used = "p"
-        result_obj.had_reference = True
+        result_obj = _png_generation_result(
+            prompt_used="p",
+            generation_time=2.0,
+            model_used=DEFAULT_IMAGE_MODEL,
+            had_reference=True,
+        )
         mock_generate.return_value = result_obj
 
         ref = tmp_path / "front.png"
@@ -969,6 +1039,14 @@ class TestCharacterCommand:
         assert "gen:" in combined
         lines = [ln for ln in combined.strip().splitlines() if ln.strip()]
         assert lines[-1] == str(out.resolve())
+        _assert_saved_png_cli_metadata(
+            out,
+            description="p",
+            provider="openrouter",
+            optimized=False,
+            cli="character",
+            had_reference=True,
+        )
 
     @patch("genimg.cli.commands.progress.print_success_result")
     @patch("genimg.cli.commands.generate_image")
@@ -989,13 +1067,12 @@ class TestCharacterCommand:
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
         mock_process_ref.return_value = ("b64", "h")
-        result_obj = MagicMock()
-        result_obj.image_data = b"x"
-        result_obj.format = "png"
-        result_obj.generation_time = 1.0
-        result_obj.model_used = DEFAULT_IMAGE_MODEL
-        result_obj.prompt_used = "p"
-        result_obj.had_reference = True
+        result_obj = _png_generation_result(
+            prompt_used="p",
+            generation_time=1.0,
+            model_used=DEFAULT_IMAGE_MODEL,
+            had_reference=True,
+        )
         mock_generate.return_value = result_obj
 
         ref = tmp_path / "r.png"
@@ -1031,13 +1108,12 @@ class TestCharacterCommand:
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
         mock_process_ref.return_value = ("b64", "h")
-        result_obj = MagicMock()
-        result_obj.image_data = b"z"
-        result_obj.format = "png"
-        result_obj.generation_time = 0.1
-        result_obj.model_used = DEFAULT_IMAGE_MODEL
-        result_obj.prompt_used = "p"
-        result_obj.had_reference = True
+        result_obj = _png_generation_result(
+            prompt_used="p",
+            generation_time=0.1,
+            model_used=DEFAULT_IMAGE_MODEL,
+            had_reference=True,
+        )
         mock_generate.return_value = result_obj
 
         ref = tmp_path / "r.png"
@@ -1047,7 +1123,14 @@ class TestCharacterCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["character", "T", str(ref), "--quiet", "--output", str(dest)])
         assert result.exit_code == 0
-        assert dest.read_bytes() == b"z"
+        _assert_saved_png_cli_metadata(
+            dest,
+            description="p",
+            provider="openrouter",
+            optimized=False,
+            cli="character",
+            had_reference=True,
+        )
 
     @patch("genimg.cli.commands.character_default_output_path")
     @patch("genimg.cli.commands.progress.print_success_result")
@@ -1071,13 +1154,12 @@ class TestCharacterCommand:
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
         mock_process_ref.return_value = ("b64", "h")
-        result_obj = MagicMock()
-        result_obj.image_data = b"img"
-        result_obj.format = "jpeg"
-        result_obj.generation_time = 0.2
-        result_obj.model_used = DEFAULT_IMAGE_MODEL
-        result_obj.prompt_used = "p"
-        result_obj.had_reference = True
+        result_obj = _jpeg_generation_result(
+            prompt_used="p",
+            generation_time=0.2,
+            model_used=DEFAULT_IMAGE_MODEL,
+            had_reference=True,
+        )
         mock_generate.return_value = result_obj
         mock_char_path.return_value = "Stem-20260101_000000.jpeg"
 
@@ -1088,4 +1170,5 @@ class TestCharacterCommand:
         result = runner.invoke(cli, ["character", "MyTitle", str(ref), "--quiet"])
         assert result.exit_code == 0
         mock_char_path.assert_called_once_with("MyTitle", "jpeg")
-        assert (tmp_path / "Stem-20260101_000000.jpeg").read_bytes() == b"img"
+        jpeg_path = tmp_path / "Stem-20260101_000000.jpeg"
+        assert jpeg_path.read_bytes() == result_obj.image_data

@@ -2,13 +2,22 @@
 
 import base64
 import io
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
 
 from genimg.core.config import Config
-from genimg.core.image_gen import GenerationResult, generate_image
+from genimg.core.image_gen import (
+    GENIMG_PNG_JSON_KEYWORD,
+    GenerationResult,
+    build_png_info_for_generation,
+    generate_image,
+    is_png_output_format,
+    pillow_save_kwargs_for_format,
+    write_generation_png,
+)
 from genimg.core.providers.openrouter import (
     _format_from_content_type,
     _truncate_image_data_for_log,
@@ -29,6 +38,102 @@ MINIMAL_PNG = _MINIMAL_PNG_BUF.getvalue()
 _MINIMAL_JPEG_BUF = io.BytesIO()
 Image.new("RGB", (1, 1), color=(0, 0, 0)).save(_MINIMAL_JPEG_BUF, format="JPEG")
 MINIMAL_JPEG = _MINIMAL_JPEG_BUF.getvalue()
+
+
+@pytest.mark.unit
+class TestPngCliMetadata:
+    def test_is_png_output_format(self):
+        assert is_png_output_format("png") is True
+        assert is_png_output_format("PNG") is True
+        assert is_png_output_format(" jpeg ") is False
+
+    def test_build_write_roundtrip(self, tmp_path):
+        pil = Image.open(io.BytesIO(MINIMAL_PNG)).copy()
+        result = GenerationResult(
+            image=pil,
+            _format="png",
+            generation_time=2.5,
+            model_used="m1",
+            prompt_used="line1\nline2 日本語",
+            had_reference=True,
+        )
+        pnginfo = build_png_info_for_generation(
+            result,
+            genimg_version="0.1.0",
+            provider="openrouter",
+            optimized=True,
+            cli="generate",
+            original_prompt="short",
+        )
+        out = tmp_path / "out.png"
+        write_generation_png(out, result, pnginfo)
+        loaded = Image.open(out)
+        loaded.load()
+        text = dict(loaded.text)
+        assert text["Software"] == "genimg 0.1.0"
+        assert text["Description"] == "line1\nline2 日本語"
+        meta = json.loads(text[GENIMG_PNG_JSON_KEYWORD])
+        assert meta["genimg_meta_version"] == 1
+        assert meta["provider"] == "openrouter"
+        assert meta["model"] == "m1"
+        assert meta["generation_time_s"] == 2.5
+        assert meta["had_reference"] is True
+        assert meta["optimized"] is True
+        assert meta["cli"] == "generate"
+        assert meta["original_prompt"] == "short"
+        assert "creation_time" in meta
+
+    def test_character_user_prompt_in_json(self, tmp_path):
+        pil = Image.open(io.BytesIO(MINIMAL_PNG)).copy()
+        result = GenerationResult(
+            image=pil,
+            _format="png",
+            generation_time=0.1,
+            model_used="m",
+            prompt_used="full template",
+            had_reference=True,
+        )
+        pnginfo = build_png_info_for_generation(
+            result,
+            genimg_version="1.0.0",
+            provider="openrouter",
+            optimized=False,
+            cli="character",
+            user_prompt="  extra  ",
+        )
+        write_generation_png(tmp_path / "c.png", result, pnginfo)
+        text = dict(Image.open(tmp_path / "c.png").text)
+        meta = json.loads(text[GENIMG_PNG_JSON_KEYWORD])
+        assert meta["cli"] == "character"
+        assert meta["user_prompt"] == "extra"
+        assert "original_prompt" not in meta
+
+    def test_image_data_raw_has_no_genimg_json_marker(self):
+        pil = Image.open(io.BytesIO(MINIMAL_PNG)).copy()
+        result = GenerationResult(
+            image=pil,
+            _format="png",
+            generation_time=1.0,
+            model_used="x",
+            prompt_used="hello",
+            had_reference=False,
+        )
+        pnginfo = build_png_info_for_generation(
+            result,
+            genimg_version="9.0.0",
+            provider="ollama",
+            optimized=False,
+            cli="generate",
+        )
+        out = io.BytesIO()
+        result.image.save(
+            out, format="PNG", pnginfo=pnginfo, **pillow_save_kwargs_for_format("PNG")
+        )
+        with_metadata = out.getvalue()
+        assert b"genimg_meta_version" in with_metadata
+
+        raw = result.image_data
+        assert b"genimg_meta_version" not in raw
 
 
 @pytest.mark.unit

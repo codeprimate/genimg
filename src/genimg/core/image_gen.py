@@ -5,11 +5,18 @@ This module exposes the single public API generate_image() which delegates
 to the configured provider via the provider registry.
 """
 
+from __future__ import annotations
+
 import io
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Literal
 
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
 from genimg.core.config import Config, get_config
 from genimg.core.providers import get_registry
@@ -17,6 +24,9 @@ from genimg.logging_config import get_logger
 from genimg.utils.exceptions import ValidationError
 
 logger = get_logger(__name__)
+
+GENIMG_PNG_JSON_KEYWORD = "genimg"
+GENIMG_META_SCHEMA_VERSION = 1
 
 
 def pillow_save_kwargs_for_format(fmt: str) -> dict:
@@ -29,6 +39,68 @@ def pillow_save_kwargs_for_format(fmt: str) -> dict:
     if key == "PNG":
         return {"optimize": True, "compress_level": 9}
     return {}
+
+
+def is_png_output_format(fmt: str) -> bool:
+    """Return True if ``fmt`` is PNG (case-insensitive), for output routing."""
+    return (fmt or "").strip().upper() == "PNG"
+
+
+def build_png_info_for_generation(
+    result: GenerationResult,
+    *,
+    genimg_version: str,
+    provider: str,
+    optimized: bool,
+    cli: Literal["generate", "character"],
+    original_prompt: str | None = None,
+    user_prompt: str | None = None,
+) -> PngInfo:
+    """Build PNG text metadata (iTXt) for a CLI-saved generation result.
+
+    Embeds registered keywords ``Software`` and ``Description`` (final prompt),
+    plus a UTF-8 JSON object under keyword ``genimg`` (see ``GENIMG_META_SCHEMA_VERSION``).
+
+    ``original_prompt`` is included in JSON only when ``optimized`` is True (user
+    prompt before optimization). ``user_prompt`` is included for ``character`` when
+    non-empty after strip (optional user text appended to the template).
+    """
+    meta: dict[str, object] = {
+        "genimg_meta_version": GENIMG_META_SCHEMA_VERSION,
+        "provider": provider,
+        "model": result.model_used,
+        "generation_time_s": result.generation_time,
+        "had_reference": result.had_reference,
+        "optimized": optimized,
+        "cli": cli,
+        "creation_time": datetime.now(timezone.utc).isoformat(),
+    }
+    if optimized and original_prompt is not None:
+        meta["original_prompt"] = original_prompt
+    up = (user_prompt or "").strip()
+    if up:
+        meta["user_prompt"] = up
+
+    pnginfo = PngInfo()
+    pnginfo.add_itxt("Software", f"genimg {genimg_version}")
+    pnginfo.add_itxt("Description", result.prompt_used)
+    pnginfo.add_itxt(
+        GENIMG_PNG_JSON_KEYWORD,
+        json.dumps(meta, ensure_ascii=False),
+    )
+    return pnginfo
+
+
+def write_generation_png(path: Path | str, result: GenerationResult, pnginfo: PngInfo) -> None:
+    """Save ``result.image`` as PNG with the given ``pnginfo`` (embedded text chunks)."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    result.image.save(
+        p,
+        format="PNG",
+        pnginfo=pnginfo,
+        **pillow_save_kwargs_for_format("PNG"),
+    )
 
 
 @dataclass
