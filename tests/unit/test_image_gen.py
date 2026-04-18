@@ -70,7 +70,7 @@ class TestPngCliMetadata:
         loaded = Image.open(out)
         loaded.load()
         text = dict(loaded.text)
-        assert text["Software"] == "genimg 0.1.0"
+        assert text["Software"] == "genimg 0.1.0 (openrouter/m1)"
         assert text["Description"] == "line1\nline2 日本語"
         meta = json.loads(text[GENIMG_PNG_JSON_KEYWORD])
         assert meta["genimg_meta_version"] == 1

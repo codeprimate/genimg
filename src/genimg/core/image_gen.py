@@ -58,8 +58,9 @@ def build_png_info_for_generation(
 ) -> PngInfo:
     """Build PNG text metadata (iTXt) for a CLI-saved generation result.
 
-    Embeds registered keywords ``Software`` and ``Description`` (final prompt),
-    plus a UTF-8 JSON object under keyword ``genimg`` (see ``GENIMG_META_SCHEMA_VERSION``).
+    Embeds registered keywords ``Software`` (``genimg <version> (<provider>/<model>)``)
+    and ``Description`` (final prompt), plus a UTF-8 JSON object under keyword ``genimg``
+    (see ``GENIMG_META_SCHEMA_VERSION``).
 
     ``original_prompt`` is included in JSON only when ``optimized`` is True (user
     prompt before optimization). ``user_prompt`` is included for ``character`` when
@@ -82,7 +83,10 @@ def build_png_info_for_generation(
         meta["user_prompt"] = up
 
     pnginfo = PngInfo()
-    pnginfo.add_itxt("Software", f"genimg {genimg_version}")
+    pnginfo.add_itxt(
+        "Software",
+        f"genimg {genimg_version} ({provider}/{result.model_used})",
+    )
     pnginfo.add_itxt("Description", result.prompt_used)
     pnginfo.add_itxt(
         GENIMG_PNG_JSON_KEYWORD,
