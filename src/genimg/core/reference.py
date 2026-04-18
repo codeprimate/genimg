@@ -15,6 +15,7 @@ from typing import Any, cast
 from PIL import Image
 
 from genimg.core.config import Config, get_config
+from genimg.core.image_gen import pillow_save_kwargs_for_format
 from genimg.logging_config import get_logger
 from genimg.utils.exceptions import ImageProcessingError, ValidationError
 
@@ -371,7 +372,7 @@ def encode_image_base64(image: Image.Image, format: str = "PNG") -> str:
     """
     try:
         buffer = io.BytesIO()
-        image.save(buffer, format=format)
+        image.save(buffer, format=format, **pillow_save_kwargs_for_format(format))
         buffer.seek(0)
         encoded = base64.b64encode(buffer.read()).decode("utf-8")
         return encoded

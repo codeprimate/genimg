@@ -11,7 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (none)
 
 ### Changed
+- (none)
+
+## [0.11.1] - 2026-04-18
+
+### Changed
 - Default logging verbosity (`GENIMG_VERBOSITY=0` / unset): `genimg` logger level is now **WARNING**, so routine **INFO** lines are not printed by default. Use `-v`, `GENIMG_VERBOSITY=1`, or `set_verbosity(1)` for previous default-style INFO logs (including prompts).
+- PNG output: `GenerationResult.image_data` and reference image base64 encoding use Pillow **`optimize=True`** and **`compress_level=9`** for smaller lossless PNG files (slightly more CPU on encode).
 
 ## [0.10.6] - 2026-04-18
 

@@ -19,6 +19,18 @@ from genimg.utils.exceptions import ValidationError
 logger = get_logger(__name__)
 
 
+def pillow_save_kwargs_for_format(fmt: str) -> dict:
+    """Return extra kwargs for PIL ``Image.save`` to shrink PNG output (lossless).
+
+    PNG: maximum zlib compression and optimizer pass (slower encode, smaller files).
+    Other formats: no extra kwargs (caller controls format-specific options).
+    """
+    key = (fmt or "").strip().upper()
+    if key == "PNG":
+        return {"optimize": True, "compress_level": 9}
+    return {}
+
+
 @dataclass
 class GenerationResult:
     """Result of an image generation operation.
@@ -44,7 +56,7 @@ class GenerationResult:
     def image_data(self) -> bytes:
         """Raw image bytes in the API's format (for backward compatibility)."""
         buf = io.BytesIO()
-        self.image.save(buf, format=self._format)
+        self.image.save(buf, format=self._format, **pillow_save_kwargs_for_format(self._format))
         return buf.getvalue()
 
 
