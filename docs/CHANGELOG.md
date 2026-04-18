@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - (none)
 
+## [0.11.3] - 2026-04-18
+
+### Changed
+- PNG `Software` text metadata (CLI-saved outputs): value is now `genimg <version> (<provider>/<model>)` so viewers that only show standard fields still identify the backend; `Description` (final prompt) and the `genimg` JSON `iTXt` chunk are unchanged.
+
 ## [0.11.2] - 2026-04-18
 
 ### Added
