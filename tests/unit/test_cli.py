@@ -24,13 +24,13 @@ from genimg.utils.exceptions import (
 def _run_cli(*args: str) -> Result:
     """Invoke genimg generate with given args; returns Click's Result."""
     runner = CliRunner()
-    return runner.invoke(cli, ["generate", *args])
+    return runner.invoke(cli, ["generate", "--format", "png", *args])
 
 
 def _run_character(*args: str) -> Result:
     """Invoke genimg character with given args (Click merges streams into ``output``)."""
     runner = CliRunner()
-    return runner.invoke(cli, ["character", *args])
+    return runner.invoke(cli, ["character", "--format", "png", *args])
 
 
 _CLI_MINIMAL_PNG_BUF = io.BytesIO()
@@ -426,8 +426,9 @@ class TestGenerateCommand:
         _mock_optimize: MagicMock,
         mock_generate: MagicMock,
         tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """When --out is omitted, default path genimg_<timestamp>.<ext> is used."""
+        """When --out is omitted, default path uses ``--format`` (default webp)."""
         config = MagicMock()
         config.default_image_model = "test/model"
         mock_config_cls.from_env.return_value = config
@@ -436,14 +437,17 @@ class TestGenerateCommand:
         result_obj = _jpeg_generation_result()
         mock_generate.return_value = result_obj
 
-        default_path = tmp_path / "genimg_20260207_120000.jpeg"
-        with patch("genimg.cli.commands.default_output_path", return_value=str(default_path)):
-            result = _run_cli("--prompt", "x", "--no-optimize")
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(cli, ["generate", "--prompt", "x", "--no-optimize"])
 
         assert result.exit_code == 0
-        assert default_path.exists()
-        assert default_path.read_bytes() == result_obj.image_data
-        assert "genimg_" in result.output and ".jpeg" in result.output
+        webp_paths = list(tmp_path.glob("genimg_*.webp"))
+        assert len(webp_paths) == 1
+        saved = webp_paths[0].read_bytes()
+        assert saved[:4] == b"RIFF" and saved[8:12] == b"WEBP"
+        mock_generate.assert_called_once()
+        assert "genimg_" in result.output and ".webp" in result.output
 
     @patch("genimg.cli.commands.Config")
     def test_validation_error_exit_code(
@@ -864,6 +868,100 @@ class TestGenerateCommand:
         call_kw = mock_configure_logging.call_args[1]
         assert call_kw["quiet"] is True
 
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_format_webp_replaces_out_extension(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
+        config.optimization_enabled = True
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+        mock_optimize.return_value = "optimized"
+        result_obj = _png_generation_result(prompt_used="optimized")
+        mock_generate.return_value = result_obj
+
+        dest = tmp_path / "sub" / "bar.png"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "generate",
+                "--prompt",
+                "x",
+                "--format",
+                "webp",
+                "--out",
+                str(dest),
+            ],
+        )
+        assert result.exit_code == 0
+        coerced = tmp_path / "sub" / "bar.webp"
+        assert coerced.exists()
+        assert not dest.exists()
+        assert str(coerced) in result.output
+
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.optimize_prompt")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_format_jpg_writes_jpeg_with_exif(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        from PIL.ExifTags import Base
+
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+        mock_optimize.return_value = "opt"
+        result_obj = _png_generation_result(prompt_used="opt")
+        mock_generate.return_value = result_obj
+
+        out = tmp_path / "x.webp"
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "generate",
+                "--prompt",
+                "a",
+                "--no-optimize",
+                "--format",
+                "jpg",
+                "--out",
+                str(out),
+            ],
+        )
+        assert result.exit_code == 0
+        jpg = tmp_path / "x.jpg"
+        assert jpg.exists()
+        ex = Image.open(jpg).getexif()
+        assert ex.get(Base.Software, "").startswith("genimg ")
+        uc = ex.get(Base.UserComment)
+        assert isinstance(uc, bytes) and b"genimg_meta_version" in uc
+        assert str(jpg) in result.output
+
 
 @pytest.mark.unit
 class TestCharacterCommand:
@@ -1121,7 +1219,9 @@ class TestCharacterCommand:
         dest = tmp_path / "via-alias.png"
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(cli, ["character", "T", str(ref), "--quiet", "--output", str(dest)])
+        result = runner.invoke(
+            cli, ["character", "--format", "png", "T", str(ref), "--quiet", "--output", str(dest)]
+        )
         assert result.exit_code == 0
         _assert_saved_png_cli_metadata(
             dest,
@@ -1161,7 +1261,7 @@ class TestCharacterCommand:
             had_reference=True,
         )
         mock_generate.return_value = result_obj
-        mock_char_path.return_value = "Stem-20260101_000000.jpeg"
+        mock_char_path.return_value = "Stem-20260101_000000.webp"
 
         ref = tmp_path / "r.png"
         ref.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -1169,6 +1269,7 @@ class TestCharacterCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["character", "MyTitle", str(ref), "--quiet"])
         assert result.exit_code == 0
-        mock_char_path.assert_called_once_with("MyTitle", "jpeg")
-        jpeg_path = tmp_path / "Stem-20260101_000000.jpeg"
-        assert jpeg_path.read_bytes() == result_obj.image_data
+        mock_char_path.assert_called_once_with("MyTitle", "webp")
+        webp_path = tmp_path / "Stem-20260101_000000.webp"
+        data = webp_path.read_bytes()
+        assert data[:4] == b"RIFF" and data[8:12] == b"WEBP"

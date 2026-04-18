@@ -3,19 +3,24 @@
 import base64
 import io
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
+from PIL.ExifTags import Base
 
 from genimg.core.config import Config
 from genimg.core.image_gen import (
     GENIMG_PNG_JSON_KEYWORD,
     GenerationResult,
+    apply_format_wins_extension,
     build_png_info_for_generation,
     generate_image,
     is_png_output_format,
+    pillow_save_kwargs_for_cli_output,
     pillow_save_kwargs_for_format,
+    save_generation_cli,
     write_generation_png,
 )
 from genimg.core.providers.openrouter import (
@@ -134,6 +139,148 @@ class TestPngCliMetadata:
 
         raw = result.image_data
         assert b"genimg_meta_version" not in raw
+
+
+@pytest.mark.unit
+class TestCliOutputPathCoercion:
+    def test_apply_format_wins_extension_table(self, tmp_path: Path) -> None:
+        assert (
+            apply_format_wins_extension(tmp_path / "report.png", "webp") == tmp_path / "report.webp"
+        )
+        assert apply_format_wins_extension(tmp_path / "out", "webp") == tmp_path / "out.webp"
+        assert apply_format_wins_extension(tmp_path / "out.", "webp") == tmp_path / "out.webp"
+        assert (
+            apply_format_wins_extension(tmp_path / "archive.tar.gz", "jpg")
+            == tmp_path / "archive.tar.jpg"
+        )
+        sub = tmp_path / "foo" / "bar.png"
+        sub.parent.mkdir(parents=True, exist_ok=True)
+        assert apply_format_wins_extension(sub, "jpg") == tmp_path / "foo" / "bar.jpg"
+
+
+@pytest.mark.unit
+class TestPillowSaveKwargsCliOutput:
+    def test_cli_output_kwargs_match_spec(self) -> None:
+        assert pillow_save_kwargs_for_cli_output("png") == pillow_save_kwargs_for_format("PNG")
+        assert pillow_save_kwargs_for_cli_output("jpg") == {"quality": 95}
+        w = pillow_save_kwargs_for_cli_output("webp")
+        assert w == {"quality": 95, "method": 6, "lossless": False}
+
+
+@pytest.mark.unit
+class TestSaveGenerationCli:
+    def test_jpeg_exif_roundtrip(self, tmp_path: Path) -> None:
+        pil = Image.open(io.BytesIO(MINIMAL_PNG)).copy()
+        result = GenerationResult(
+            image=pil,
+            _format="png",
+            generation_time=1.2,
+            model_used="m/x",
+            prompt_used="hello",
+            had_reference=False,
+        )
+        out = tmp_path / "x.jpg"
+        save_generation_cli(
+            result,
+            out,
+            "jpg",
+            pnginfo=None,
+            genimg_version="0.9.0",
+            provider="openrouter",
+            optimized=False,
+            cli="generate",
+        )
+        loaded = Image.open(out)
+        loaded.load()
+        ex = loaded.getexif()
+        sw = "genimg 0.9.0 (openrouter/m/x)"
+        assert ex.get(Base.Software) == sw
+        assert ex.get(Base.ProcessingSoftware) == sw
+        uc = ex.get(Base.UserComment)
+        assert isinstance(uc, bytes)
+        assert b"genimg_meta_version" in uc
+        meta = json.loads(uc.decode("utf-8").split("\0", 1)[-1])
+        assert meta["cli"] == "generate"
+
+    def test_webp_exif_and_encoding(self, tmp_path: Path) -> None:
+        pil = Image.open(io.BytesIO(MINIMAL_PNG)).copy()
+        result = GenerationResult(
+            image=pil,
+            _format="jpeg",
+            generation_time=0.1,
+            model_used="m",
+            prompt_used="p",
+            had_reference=True,
+        )
+        out = tmp_path / "z.webp"
+        save_generation_cli(
+            result,
+            out,
+            "webp",
+            pnginfo=None,
+            genimg_version="1.0.0",
+            provider="ollama",
+            optimized=True,
+            cli="generate",
+            original_prompt="orig",
+        )
+        data = out.read_bytes()
+        assert data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+        w = Image.open(out)
+        w.load()
+        ex = w.getexif()
+        sw = "genimg 1.0.0 (ollama/m)"
+        assert ex.get(Base.Software) == sw
+        assert ex.get(Base.ProcessingSoftware) == sw
+        xmp = w.info.get("xmp", b"").decode("utf-8")
+        assert "xmp:CreatorTool" in xmp and sw in xmp
+        assert "tiff:Software" in xmp
+
+    def test_rgba_jpeg_flattens_on_white(self, tmp_path: Path) -> None:
+        rgba = Image.new("RGBA", (2, 2), (255, 0, 0, 0))
+        result = GenerationResult(
+            image=rgba,
+            _format="png",
+            generation_time=0.0,
+            model_used="m",
+            prompt_used="p",
+            had_reference=False,
+        )
+        out = tmp_path / "f.jpg"
+        save_generation_cli(
+            result,
+            out,
+            "jpg",
+            pnginfo=None,
+            genimg_version="1.0.0",
+            provider="openrouter",
+            optimized=False,
+            cli="generate",
+        )
+        rgb = Image.open(out).convert("RGB")
+        assert rgb.getpixel((0, 0)) == (255, 255, 255)
+
+    def test_png_requires_pnginfo(self, tmp_path: Path) -> None:
+        pil = Image.open(io.BytesIO(MINIMAL_PNG)).copy()
+        result = GenerationResult(
+            image=pil,
+            _format="png",
+            generation_time=0.0,
+            model_used="m",
+            prompt_used="p",
+            had_reference=False,
+        )
+        with pytest.raises(ValueError, match="pnginfo"):
+            save_generation_cli(
+                result,
+                tmp_path / "n.png",
+                "png",
+                pnginfo=None,
+                genimg_version="1.0.0",
+                provider="openrouter",
+                optimized=False,
+                cli="generate",
+            )
 
 
 @pytest.mark.unit

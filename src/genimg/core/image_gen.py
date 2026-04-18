@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Literal
 
 from PIL import Image
+from PIL.ExifTags import Base
 from PIL.PngImagePlugin import PngInfo
 
 from genimg.core.config import Config, get_config
@@ -27,6 +28,83 @@ logger = get_logger(__name__)
 
 GENIMG_PNG_JSON_KEYWORD = "genimg"
 GENIMG_META_SCHEMA_VERSION = 1
+
+CliImageFormat = Literal["png", "jpg", "webp"]
+CLI_IMAGE_FORMAT_CHOICES: tuple[str, ...] = ("png", "jpg", "webp")
+
+_EXIF_JSON_MAX_BYTES = 56_000
+
+
+def _cli_embedded_software_string(
+    *, genimg_version: str, provider: str, result: GenerationResult
+) -> str:
+    """Same ``Software`` string as PNG iTXt / EXIF tag 305 (CLI outputs)."""
+    return f"genimg {genimg_version} ({provider}/{result.model_used})"
+
+
+def _escape_xml_attr(value: str) -> str:
+    """Escape ``value`` for use in double-quoted XML attributes."""
+    return (
+        value.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace("\r", "&#13;")
+        .replace("\n", "&#10;")
+    )
+
+
+def _build_cli_xmp_bytes(*, software: str) -> bytes:
+    """Minimal XMP for CLI WebP (Finder / Spotlight often map ``xmp:CreatorTool`` / ``tiff:Software``)."""
+    safe = _escape_xml_attr(software)
+    # UTF-8 XMP packet; libwebp muxes as ``XMP `` chunk (Pillow passes through).
+    xml = (
+        '<?xpacket begin="\ufeff" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/">'
+        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+        '<rdf:Description rdf:about="" '
+        'xmlns:xmp="http://ns.adobe.com/xap/1.0/" '
+        'xmlns:tiff="http://ns.adobe.com/tiff/1.0/" '
+        f'xmp:CreatorTool="{safe}" '
+        f'tiff:Software="{safe}"/>'
+        "</rdf:RDF></x:xmpmeta>"
+        '<?xpacket end="w"?>'
+    )
+    return xml.encode("utf-8")
+
+
+def cli_format_to_extension(fmt: CliImageFormat) -> str:
+    """Return canonical disk suffix (with leading dot) for ``fmt`` (``jpg`` -> ``.jpg``)."""
+    return {"png": ".png", "jpg": ".jpg", "webp": ".webp"}[fmt]
+
+
+def apply_format_wins_extension(path: Path, fmt: CliImageFormat) -> Path:
+    """Apply ``--format``-wins path coercion (naive :mod:`pathlib` final-suffix swap).
+
+    ``Path.stem`` drops only the last suffix, so ``archive.tar.gz`` with ``webp``
+    becomes ``archive.tar.webp``. A basename with no ``pathlib`` suffix but a
+    lone trailing dot (e.g. ``out.``) is treated as stem ``out`` plus the
+    canonical extension (``out.webp``), not ``out..webp``.
+    """
+    ext = cli_format_to_extension(fmt)
+    name = path.name
+    suffix = path.suffix
+    if suffix:
+        stem_for = path.stem
+    elif name.endswith(".") and name not in (".", ".."):
+        stem_for = name[:-1]
+    else:
+        stem_for = path.stem
+    return path.parent / f"{stem_for}{ext}"
+
+
+def pillow_save_kwargs_for_cli_output(fmt: CliImageFormat) -> dict[str, object]:
+    """Pillow ``save`` kwargs for CLI-selected disk formats (CLI save path only)."""
+    if fmt == "png":
+        return dict(pillow_save_kwargs_for_format("PNG"))
+    if fmt == "jpg":
+        # Chroma subsampling: Pillow default (typically 4:2:0 for photographic RGB).
+        return {"quality": 95}
+    return {"quality": 95, "method": 6, "lossless": False}
 
 
 def pillow_save_kwargs_for_format(fmt: str) -> dict:
@@ -44,6 +122,34 @@ def pillow_save_kwargs_for_format(fmt: str) -> dict:
 def is_png_output_format(fmt: str) -> bool:
     """Return True if ``fmt`` is PNG (case-insensitive), for output routing."""
     return (fmt or "").strip().upper() == "PNG"
+
+
+def build_generation_cli_meta_dict(
+    result: GenerationResult,
+    *,
+    provider: str,
+    optimized: bool,
+    cli: Literal["generate", "character"],
+    original_prompt: str | None = None,
+    user_prompt: str | None = None,
+) -> dict[str, object]:
+    """JSON-serializable metadata object shared by PNG iTXt and JPEG/WebP EXIF."""
+    meta: dict[str, object] = {
+        "genimg_meta_version": GENIMG_META_SCHEMA_VERSION,
+        "provider": provider,
+        "model": result.model_used,
+        "generation_time_s": result.generation_time,
+        "had_reference": result.had_reference,
+        "optimized": optimized,
+        "cli": cli,
+        "creation_time": datetime.now(timezone.utc).isoformat(),
+    }
+    if optimized and original_prompt is not None:
+        meta["original_prompt"] = original_prompt
+    up = (user_prompt or "").strip()
+    if up:
+        meta["user_prompt"] = up
+    return meta
 
 
 def build_png_info_for_generation(
@@ -66,21 +172,14 @@ def build_png_info_for_generation(
     prompt before optimization). ``user_prompt`` is included for ``character`` when
     non-empty after strip (optional user text appended to the template).
     """
-    meta: dict[str, object] = {
-        "genimg_meta_version": GENIMG_META_SCHEMA_VERSION,
-        "provider": provider,
-        "model": result.model_used,
-        "generation_time_s": result.generation_time,
-        "had_reference": result.had_reference,
-        "optimized": optimized,
-        "cli": cli,
-        "creation_time": datetime.now(timezone.utc).isoformat(),
-    }
-    if optimized and original_prompt is not None:
-        meta["original_prompt"] = original_prompt
-    up = (user_prompt or "").strip()
-    if up:
-        meta["user_prompt"] = up
+    meta = build_generation_cli_meta_dict(
+        result,
+        provider=provider,
+        optimized=optimized,
+        cli=cli,
+        original_prompt=original_prompt,
+        user_prompt=user_prompt,
+    )
 
     pnginfo = PngInfo()
     pnginfo.add_itxt(
@@ -105,6 +204,125 @@ def write_generation_png(path: Path | str, result: GenerationResult, pnginfo: Pn
         pnginfo=pnginfo,
         **pillow_save_kwargs_for_format("PNG"),
     )
+
+
+def _flatten_image_to_rgb_white(image: Image.Image) -> Image.Image:
+    """Return ``RGB``, compositing transparency on white (CLI ``--format jpg``)."""
+    if image.mode == "RGB":
+        return image.copy()
+    im = image.copy()
+    if im.mode == "P":
+        if "transparency" in im.info:
+            im = im.convert("RGBA")
+        else:
+            return im.convert("RGB")
+    if im.mode == "RGBA":
+        bg = Image.new("RGB", im.size, (255, 255, 255))
+        bg.paste(im, mask=im.split()[3])
+        return bg
+    if im.mode == "LA":
+        bg = Image.new("RGB", im.size, (255, 255, 255))
+        l_, a = im.split()
+        rgba = Image.merge("RGBA", (l_, l_, l_, a))
+        bg.paste(rgba, mask=a)
+        return bg
+    return im.convert("RGB")
+
+
+def _build_cli_exif_bytes(
+    result: GenerationResult,
+    *,
+    genimg_version: str,
+    provider: str,
+    optimized: bool,
+    cli: Literal["generate", "character"],
+    original_prompt: str | None,
+    user_prompt: str | None,
+) -> bytes | None:
+    """EXIF blob for JPEG/WebP CLI saves (best-effort; returns ``None`` on failure)."""
+    try:
+        meta = build_generation_cli_meta_dict(
+            result,
+            provider=provider,
+            optimized=optimized,
+            cli=cli,
+            original_prompt=original_prompt,
+            user_prompt=user_prompt,
+        )
+        json_str = json.dumps(meta, ensure_ascii=False)
+        enc = json_str.encode("utf-8")
+        if len(enc) > _EXIF_JSON_MAX_BYTES:
+            head = enc[: _EXIF_JSON_MAX_BYTES - 10].decode("utf-8", errors="ignore")
+            json_str = head + "\u2026"
+        software = _cli_embedded_software_string(
+            genimg_version=genimg_version, provider=provider, result=result
+        )
+        exif = Image.Exif()
+        exif[Base.Software] = software
+        # Tag 11: name/version of post-processing software (often surfaced as “app” metadata).
+        exif[Base.ProcessingSoftware] = software
+        exif[Base.ImageDescription] = result.prompt_used
+        exif[Base.UserComment] = ("UNICODE\0" + json_str).encode("utf-8")
+        return exif.tobytes()
+    except Exception as e:
+        logger.debug("CLI EXIF metadata build failed (best-effort): %s", e)
+        return None
+
+
+def save_generation_cli(
+    result: GenerationResult,
+    path: Path | str,
+    fmt: CliImageFormat,
+    *,
+    pnginfo: PngInfo | None = None,
+    genimg_version: str,
+    provider: str,
+    optimized: bool,
+    cli: Literal["generate", "character"],
+    original_prompt: str | None = None,
+    user_prompt: str | None = None,
+) -> None:
+    """Persist ``result.image`` in CLI-selected disk format (not raw ``image_data``)."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if fmt == "png":
+        if pnginfo is None:
+            raise ValueError("pnginfo is required when fmt is 'png'")
+        write_generation_png(p, result, pnginfo)
+        return
+
+    exif_bytes = _build_cli_exif_bytes(
+        result,
+        genimg_version=genimg_version,
+        provider=provider,
+        optimized=optimized,
+        cli=cli,
+        original_prompt=original_prompt,
+        user_prompt=user_prompt,
+    )
+    kw = dict(pillow_save_kwargs_for_cli_output(fmt))
+    if fmt == "jpg":
+        im = _flatten_image_to_rgb_white(result.image)
+        save_kw: dict[str, object] = {"format": "JPEG", **kw}
+        if exif_bytes is not None:
+            save_kw["exif"] = exif_bytes
+        im.save(p, **save_kw)
+        return
+
+    im = result.image.copy()
+    if im.mode == "P":
+        im = im.convert("RGBA")
+    software = _cli_embedded_software_string(
+        genimg_version=genimg_version, provider=provider, result=result
+    )
+    save_kw: dict[str, object] = {
+        "format": "WEBP",
+        **kw,
+        "xmp": _build_cli_xmp_bytes(software=software),
+    }
+    if exif_bytes is not None:
+        save_kw["exif"] = exif_bytes
+    im.save(p, **save_kw)
 
 
 @dataclass

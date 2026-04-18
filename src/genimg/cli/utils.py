@@ -8,6 +8,8 @@ such as path generation and exit code constants.
 import re
 from datetime import datetime
 
+from genimg.core.image_gen import CliImageFormat, cli_format_to_extension
+
 # Exit codes (130 = common for SIGINT)
 EXIT_SUCCESS = 0
 EXIT_API_OR_NETWORK = 1
@@ -18,10 +20,10 @@ _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 _MAX_CHARACTER_STEM_LEN = 80
 
 
-def default_output_path(fmt: str) -> str:
-    """Return default output path: genimg_<YYYYMMDD>_<HHMMSS>.<ext> in current directory."""
+def default_output_path(cli_format: CliImageFormat) -> str:
+    """Return default path ``genimg_<YYYYMMDD>_<HHMMSS>.<ext>`` using CLI disk format."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    ext = fmt if fmt else "png"
+    ext = cli_format_to_extension(cli_format).lstrip(".")
     return f"genimg_{timestamp}.{ext}"
 
 
@@ -46,11 +48,13 @@ def character_stem_from_title(title: str) -> tuple[str, bool]:
     return stem, False
 
 
-def character_default_output_path(title: str, fmt: str, *, now: datetime | None = None) -> str:
+def character_default_output_path(
+    title: str, cli_format: CliImageFormat, *, now: datetime | None = None
+) -> str:
     """Default path for ``genimg character``: ``{safe_stem}-{YYYYMMDD_HHMMSS}.{ext}`` in CWD."""
     stem, _used_fallback = character_stem_from_title(title)
     timestamp = (now or datetime.now()).strftime("%Y%m%d_%H%M%S")
-    ext = (fmt or "png").lower()
+    ext = cli_format_to_extension(cli_format).lstrip(".")
     return f"{stem}-{timestamp}.{ext}"
 
 

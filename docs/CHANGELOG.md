@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - (none)
 
+## [0.12.0] - 2026-04-18
+
+### Added
+- CLI `--format` for `genimg generate` and `genimg character`: `png`, `jpg`, or `webp` (default `webp`). The final path extension always matches `--format` (including when `--out` / `--output` used a different suffix). JPEG and WebP embed best-effort EXIF (`Software`, `ImageDescription`, `UserComment` JSON mirroring the PNG `genimg` metadata schema).
+
+### Changed
+- **Breaking (CLI):** default on-disk output is **WebP** (lossy quality 95, `method=6`) instead of following the API wire format; scripts that assumed a `.png` default or raw API bytes should pass `--format png` or read the path printed on stdout.
+- CLI saves always encode from `GenerationResult.image` for the chosen `--format`, not `image_data` verbatim (so non-PNG API responses still get CLI metadata when using JPEG/WebP, and `--format png` always uses the full PNG metadata pipeline).
+- CLI WebP output now muxes an **XMP** chunk (`xmp:CreatorTool`, `tiff:Software`) and sets EXIF **ProcessingSoftware** (tag 11) alongside **Software** (305), so hosts that do not surface tag 305 as application metadata still see the genimg version string.
+
 ## [0.11.3] - 2026-04-18
 
 ### Changed

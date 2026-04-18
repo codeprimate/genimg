@@ -7,6 +7,7 @@ This module contains the Click command group and all CLI commands
 
 import os
 from pathlib import Path
+from typing import cast
 
 import click
 
@@ -37,9 +38,11 @@ from genimg.cli.utils import (
 )
 from genimg.core.image_analysis import get_description, unload_describe_models
 from genimg.core.image_gen import (
+    CLI_IMAGE_FORMAT_CHOICES,
+    CliImageFormat,
+    apply_format_wins_extension,
     build_png_info_for_generation,
-    is_png_output_format,
-    write_generation_png,
+    save_generation_cli,
 )
 from genimg.core.providers import get_registry
 from genimg.logging_config import configure_logging, get_verbosity_from_env
@@ -81,6 +84,17 @@ def cli(ctx: click.Context) -> None:
     help="Enable LLM thinking during prompt optimization (slower; default: off).",
 )
 @click.option("--out", "-o", type=click.Path(path_type=Path), help="Output file path.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(CLI_IMAGE_FORMAT_CHOICES, case_sensitive=False),
+    default="webp",
+    help=(
+        "Output image format on disk (default: webp). The final filename extension "
+        "always matches this choice. JPEG flattens transparent areas on white. "
+        "png uses the full PNG metadata pipeline (same as earlier genimg for API-PNG)."
+    ),
+)
 @click.option(
     "--optimization-model",
     help="Ollama model for optimization (default from config).",
@@ -143,6 +157,7 @@ def generate(
     no_optimize: bool,
     optimize_thinking: bool,
     out: Path | None,
+    output_format: str,
     optimization_model: str | None,
     save_prompt: Path | None,
     api_key: str | None,
@@ -280,13 +295,13 @@ def generate(
         else:
             result = generate_image(effective_prompt, **gen_kw)
 
-        # 7. Output path
-        out_path = out
-        if out_path is None:
-            out_path = Path(default_output_path(result.format))
+        fmt: CliImageFormat = cast(CliImageFormat, output_format.strip().lower())
 
-        # 8. Save (PNG: embed CLI metadata chunks; other formats: raw bytes)
-        if is_png_output_format(result.format):
+        out_path = Path(default_output_path(fmt)) if out is None else Path(out)
+        out_path = apply_format_wins_extension(out_path, fmt)
+
+        pnginfo = None
+        if fmt == "png":
             pnginfo = build_png_info_for_generation(
                 result,
                 genimg_version=__version__,
@@ -295,9 +310,17 @@ def generate(
                 cli="generate",
                 original_prompt=prompt if not no_optimize else None,
             )
-            write_generation_png(out_path, result, pnginfo)
-        else:
-            out_path.write_bytes(result.image_data)
+        save_generation_cli(
+            result,
+            out_path,
+            fmt,
+            pnginfo=pnginfo,
+            genimg_version=__version__,
+            provider=provider_eff,
+            optimized=not no_optimize,
+            cli="generate",
+            original_prompt=prompt if not no_optimize else None,
+        )
 
         # 9. Print result
         if quiet:
@@ -372,6 +395,17 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
     help="Alias for --out.",
 )
 @click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(CLI_IMAGE_FORMAT_CHOICES, case_sensitive=False),
+    default="webp",
+    help=(
+        "Output image format on disk (default: webp). The final filename extension "
+        "always matches this choice. JPEG flattens transparent areas on white. "
+        "png uses the full PNG metadata pipeline."
+    ),
+)
+@click.option(
     "--api-key",
     envvar="OPENROUTER_API_KEY",
     help="OpenRouter API key (overrides OPENROUTER_API_KEY environment variable).",
@@ -402,6 +436,7 @@ def character(
     provider: str | None,
     out: Path | None,
     output: Path | None,
+    output_format: str,
     api_key: str | None,
     quiet: bool,
     verbose_count: int,
@@ -483,13 +518,16 @@ def character(
         else:
             result = generate_image(effective_prompt, **gen_kw)
 
-        out_path = out if out is not None else output
-        if out_path is None:
-            out_path = Path(character_default_output_path(title, result.format))
-        else:
-            out_path = Path(out_path)
+        fmt: CliImageFormat = cast(CliImageFormat, output_format.strip().lower())
 
-        if is_png_output_format(result.format):
+        raw_out = out if out is not None else output
+        out_path = (
+            Path(character_default_output_path(title, fmt)) if raw_out is None else Path(raw_out)
+        )
+        out_path = apply_format_wins_extension(out_path, fmt)
+
+        pnginfo = None
+        if fmt == "png":
             pnginfo = build_png_info_for_generation(
                 result,
                 genimg_version=__version__,
@@ -498,9 +536,17 @@ def character(
                 cli="character",
                 user_prompt=prompt,
             )
-            write_generation_png(out_path, result, pnginfo)
-        else:
-            out_path.write_bytes(result.image_data)
+        save_generation_cli(
+            result,
+            out_path,
+            fmt,
+            pnginfo=pnginfo,
+            genimg_version=__version__,
+            provider=provider_eff,
+            optimized=False,
+            cli="character",
+            user_prompt=prompt,
+        )
 
         if not quiet:
             progress.print_character_post_summary(
