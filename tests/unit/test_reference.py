@@ -16,11 +16,12 @@ from genimg.core.reference import (
     encode_image_base64,
     get_image_hash,
     load_image,
+    merge_jpeg_base64_references_horizontally,
     process_reference_image,
     resize_image,
     validate_image_format,
 )
-from genimg.utils.exceptions import ValidationError
+from genimg.utils.exceptions import ImageProcessingError, ValidationError
 
 # PNG magic
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -311,3 +312,28 @@ class TestProcessReferenceImage:
         assert "too small" in str(exc_info.value)
         assert "2500" in str(exc_info.value)
         assert exc_info.value.field == "image"
+
+
+@pytest.mark.unit
+class TestMergeJpegBase64ReferencesHorizontally:
+    def test_two_images_wider_strip(self):
+        buf_a = io.BytesIO()
+        Image.new("RGB", (10, 4), color=(255, 0, 0)).save(buf_a, format="JPEG")
+        buf_b = io.BytesIO()
+        Image.new("RGB", (6, 8), color=(0, 0, 255)).save(buf_b, format="JPEG")
+        a = base64.b64encode(buf_a.getvalue()).decode("ascii")
+        b = base64.b64encode(buf_b.getvalue()).decode("ascii")
+        merged_b64 = merge_jpeg_base64_references_horizontally([a, b], gap_px=2)
+        merged = Image.open(io.BytesIO(base64.b64decode(merged_b64)))
+        assert merged.height == 8
+        assert merged.width == 20 + 2 + 6
+
+    def test_requires_two(self):
+        one = base64.b64encode(_minimal_jpeg_bytes()).decode("ascii")
+        with pytest.raises(ValidationError) as exc_info:
+            merge_jpeg_base64_references_horizontally([one])
+        assert "two" in str(exc_info.value).lower()
+
+    def test_invalid_base64(self):
+        with pytest.raises(ImageProcessingError):
+            merge_jpeg_base64_references_horizontally(["!!!", "@@@"])

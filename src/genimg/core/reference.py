@@ -480,6 +480,70 @@ def process_reference_image(
     return encoded, image_hash
 
 
+def merge_jpeg_base64_references_horizontally(
+    encoded_jpegs: list[str],
+    *,
+    gap_px: int = 8,
+) -> str:
+    """
+    Combine multiple JPEG base64 strings (as from ``process_reference_image``) into
+    one wider JPEG, left-to-right on white, matching the tallest image's height.
+
+    Some image-generation APIs accept only the first ``image_url`` part or ignore
+    multiple reference images in one chat message; the character CLI uses this so
+    several file paths still reach the model as a single reference strip.
+    """
+    if len(encoded_jpegs) < 2:
+        raise ValidationError(
+            "merge_jpeg_base64_references_horizontally requires at least two images.",
+            field="reference_image",
+        )
+    images: list[Image.Image] = []
+    for i, enc in enumerate(encoded_jpegs):
+        if not enc or not enc.strip():
+            raise ValidationError(
+                f"Reference image at index {i} is empty after processing.",
+                field="reference_image",
+            )
+        try:
+            raw = base64.b64decode(enc, validate=True)
+        except Exception as e:
+            raise ImageProcessingError(
+                f"Invalid base64 for merged reference at index {i}: {e}"
+            ) from e
+        try:
+            im = Image.open(io.BytesIO(raw))
+            im.load()
+        except Exception as e:
+            raise ImageProcessingError(
+                f"Failed to load JPEG for merged reference at index {i}: {e}"
+            ) from e
+        images.append(convert_to_rgb(im))
+
+    target_h = max(im.height for im in images)
+    if target_h < 1:
+        raise ValidationError("Merged references produced empty height.", field="reference_image")
+
+    scaled: list[Image.Image] = []
+    for im in images:
+        if im.height == target_h:
+            scaled.append(im)
+            continue
+        scale = target_h / im.height
+        new_w = max(1, int(round(im.width * scale)))
+        scaled.append(im.resize((new_w, target_h), Image.Resampling.LANCZOS))
+
+    gap = max(0, gap_px)
+    total_w = sum(im.width for im in scaled) + gap * (len(scaled) - 1)
+    canvas = Image.new("RGB", (total_w, target_h), (255, 255, 255))
+    x = 0
+    for im in scaled:
+        canvas.paste(im, (x, 0))
+        x += im.width + gap
+
+    return encode_image_base64(canvas, format="JPEG")
+
+
 def create_image_data_url(encoded_image: str, mime_type: str = "image/jpeg") -> str:
     """
     Create a data URL from a base64 encoded image.

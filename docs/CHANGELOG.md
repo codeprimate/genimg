@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - (none)
 
+## [0.12.1] - 2026-04-18
+
+### Added
+- `merge_jpeg_base64_references_horizontally()` in `genimg.core.reference`: combine multiple JPEG base64 strings (as produced by `process_reference_image`) into one wider JPEG on a white strip with configurable gap; unit tests cover merge geometry and error cases.
+
+### Changed
+- Default `genimg character` turnaround prompt (`character_prompt.py`): minor wording tweaks (resolution line and closing quality note).
+
+### Fixed
+- **`genimg character` with multiple reference paths:** several files are merged into a **single** horizontal reference image before the OpenRouter request, and a short prompt line explains the strip. Some image-generation models effectively ignored **multiple** `image_url` parts in one message, so multi-file invocations looked like no reference at all; one combined input matches the working single-reference case. CLI help notes this behavior.
+
 ## [0.12.0] - 2026-04-18
 
 ### Added

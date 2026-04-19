@@ -22,6 +22,7 @@ from genimg import (
     process_reference_image,
     validate_prompt,
 )
+from genimg.core.reference import merge_jpeg_base64_references_horizontally
 from genimg.cli import progress
 from genimg.cli.character_prompt import CHARACTER_TURNAROUND_PROMPT
 from genimg.cli.handlers import (
@@ -354,6 +355,8 @@ def generate(
 \b
 Positionals: TITLE (output basename hint) then one or more REF_IMAGE paths.
 Optional text for the model: use --prompt / -p only (not a second positional).
+Several references are merged into one horizontal strip for the API (models
+often ignore multiple separate reference images in a single request).
 
 \b
 Output: on success, stdout is exactly one line (the saved image path). Human-readable
@@ -473,7 +476,6 @@ def character(
         effective_prompt = CHARACTER_TURNAROUND_PROMPT + (
             f"\n\n{user_prompt}" if user_prompt else ""
         )
-        validate_prompt(effective_prompt)
 
         if not quiet:
             _, used_fallback = character_stem_from_title(title)
@@ -489,6 +491,15 @@ def character(
         for p in path_list:
             b64, _h = process_reference_image(p, config=config)
             ref_b64_list.append(b64)
+
+        if len(ref_b64_list) > 1:
+            effective_prompt += (
+                "\n\nThe attached reference is a horizontal strip of multiple photos of "
+                "the same person; use every segment for consistent likeness."
+            )
+            ref_b64_list = [merge_jpeg_base64_references_horizontally(ref_b64_list)]
+
+        validate_prompt(effective_prompt)
 
         if not quiet:
             progress.print_character_banner(

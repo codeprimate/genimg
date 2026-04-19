@@ -3,7 +3,7 @@
 # Must satisfy validate_prompt() when used alone (non-empty, >= 3 stripped chars).
 CHARACTER_TURNAROUND_PROMPT = """
 Turnaround reference sheet of the person shown in the reference image. Exact facial and hair likeness.
-High resolution.
+High resolution image. 
 
 Three seamless panels arranged horizontally on a plain white background.
 All panels at identical scale, height alignment, and lighting.
@@ -17,4 +17,4 @@ Relaxed standing pose, arms slightly away from body.
 View to thigh in all panels.
 
 Flat, even studio lighting, no cast shadows.
-No background, no text, no labels in any panel."""
+No background, no text, no labels in any panel. Clear, sharp, and clean image"""

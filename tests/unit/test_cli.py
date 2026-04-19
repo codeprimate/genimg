@@ -1,5 +1,6 @@
 """Unit tests for the genimg CLI."""
 
+import base64
 import io
 import json
 from pathlib import Path
@@ -13,6 +14,7 @@ from genimg import DEFAULT_IMAGE_MODEL
 from genimg.cli import cli
 from genimg.cli.character_prompt import CHARACTER_TURNAROUND_PROMPT
 from genimg.core.image_gen import GENIMG_PNG_JSON_KEYWORD, GenerationResult
+from genimg.core.reference import merge_jpeg_base64_references_horizontally
 from genimg.utils.exceptions import (
     APIError,
     CancellationError,
@@ -1033,8 +1035,12 @@ class TestCharacterCommand:
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
-        mock_process_ref.side_effect = [("b1", "h1"), ("b2", "h2")]
-        composed = CHARACTER_TURNAROUND_PROMPT + "\n\nadd a hat"
+        b64_j = base64.b64encode(_CLI_MINIMAL_JPEG).decode("ascii")
+        mock_process_ref.side_effect = [(b64_j, "h1"), (b64_j, "h2")]
+        composed = CHARACTER_TURNAROUND_PROMPT + (
+            "\n\nadd a hat\n\nThe attached reference is a horizontal strip of multiple photos of "
+            "the same person; use every segment for consistent likeness."
+        )
         result_obj = _png_generation_result(
             prompt_used=composed,
             generation_time=0.5,
@@ -1064,8 +1070,11 @@ class TestCharacterCommand:
         sent_prompt = mock_generate.call_args[0][0]
         assert sent_prompt.startswith(CHARACTER_TURNAROUND_PROMPT)
         assert "add a hat" in sent_prompt
+        assert "horizontal strip" in sent_prompt
         mock_validate.assert_called_once_with(sent_prompt)
-        assert mock_generate.call_args[1]["reference_images_b64"] == ["b1", "b2"]
+        refs_sent = mock_generate.call_args[1]["reference_images_b64"]
+        assert refs_sent is not None and len(refs_sent) == 1
+        assert refs_sent[0] == merge_jpeg_base64_references_horizontally([b64_j, b64_j])
         _assert_saved_png_cli_metadata(
             out,
             description=composed,
