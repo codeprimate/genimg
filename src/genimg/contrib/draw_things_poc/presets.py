@@ -66,8 +66,8 @@ DRAW_THINGS_PRESETS: tuple[DrawThingsPreset, ...] = (
     DrawThingsPreset(
         id="flux2-klein",
         title="FLUX.2 [klein] (distilled-style defaults)",
-        width_px=1024,
-        height_px=1024,
+        width_px=1280,
+        height_px=1280,
         steps=5,
         guidance_scale=1.0,
         strength=1.0,
