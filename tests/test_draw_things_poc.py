@@ -34,8 +34,8 @@ from genimg.contrib.draw_things_poc.constants import (
 from genimg.contrib.draw_things_poc.generated import imageService_pb2 as pb2
 from genimg.contrib.draw_things_poc.generated.GenerationConfiguration import GenerationConfiguration
 from genimg.contrib.draw_things_poc.generated.SamplerType import SamplerType
+from genimg.contrib.draw_things_poc.presets import resolve_draw_things_preset
 from genimg.contrib.draw_things_poc.samplers import (
-    Z_IMAGE_PRESET_SAMPLER,
     parse_sampler,
     sampler_enum_rows,
 )
@@ -79,7 +79,9 @@ def test_build_txt2img_configuration_roundtrip() -> None:
     )
     cfg = GenerationConfiguration.GetRootAs(raw, 0)
     model = cfg.Model()
-    assert (model.decode("utf-8") if isinstance(model, (bytes, bytearray)) else model) == "test.ckpt"
+    assert (
+        model.decode("utf-8") if isinstance(model, (bytes, bytearray)) else model
+    ) == "test.ckpt"
     assert cfg.Steps() == 10
     assert cfg.GuidanceScale() == pytest.approx(5.5)
     assert cfg.StartWidth() == 8  # 512 / 64
@@ -122,7 +124,16 @@ def test_sampler_enum_rows_sorted_by_value() -> None:
 
 
 def test_z_image_preset_sampler_is_uni_pc_trailing() -> None:
-    assert int(SamplerType.UniPCTrailing) == Z_IMAGE_PRESET_SAMPLER
+    z = resolve_draw_things_preset("z-image")
+    assert z is not None
+    assert z.sampler == int(SamplerType.UniPCTrailing)
+
+
+def test_resolve_draw_things_preset_case_insensitive() -> None:
+    assert resolve_draw_things_preset("Z-IMAGE") is not None
+    assert resolve_draw_things_preset(None) is None
+    assert resolve_draw_things_preset("") is None
+    assert resolve_draw_things_preset("   ") is None
 
 
 def test_build_txt2img_configuration_loras_hires_upscaler() -> None:

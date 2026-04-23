@@ -29,9 +29,6 @@ SAMPLER_UI_LABELS: dict[str, str] = {
 
 DEFAULT_SAMPLER_NAME: str = "DPMPP2MKarras"
 
-# Draw Things Z-Image / distilled recipe (``--preset z-image`` in CLI).
-Z_IMAGE_PRESET_SAMPLER: int = int(SamplerType.UniPCTrailing)
-
 
 def sampler_enum_rows() -> tuple[tuple[int, str, str], ...]:
     """``(wire_value, wire_name, ui_label)`` sorted by ``wire_value``."""

@@ -32,14 +32,6 @@ DEFAULT_CHUNKED: bool = False
 DEFAULT_STRENGTH: float = 1.0
 DEFAULT_NEGATIVE_PROMPT: str = ""
 
-# Z-Image family checkpoints (e.g. ``moodyMix_zit``): high CFG often yields no final tensor from Echo.
-Z_IMAGE_PRESET_WIDTH: int = 1280
-Z_IMAGE_PRESET_HEIGHT: int = 1280
-# Distilled / turbo Z-Image: use a small step count (about 6-8); default is the upper end of that band.
-Z_IMAGE_PRESET_STEPS: int = 8
-Z_IMAGE_PRESET_CFG: float = 1.0
-Z_IMAGE_PRESET_STRENGTH: float = 1.0
-
 # --- Draw Things response tensor header (imageHelpers.ts) ---
 TENSOR_HEADER_BYTE_LEN: int = 68
 TENSOR_HEADER_UINT32_COUNT: int = TENSOR_HEADER_BYTE_LEN // 4

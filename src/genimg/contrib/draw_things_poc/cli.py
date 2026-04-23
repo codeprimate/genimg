@@ -27,14 +27,13 @@ from genimg.contrib.draw_things_poc.constants import (
     CLI_LIST_SECTION_UPSCALERS,
     DEFAULT_DRAW_THINGS_HOST,
     DEFAULT_DRAW_THINGS_PORT,
-    Z_IMAGE_PRESET_CFG,
-    Z_IMAGE_PRESET_HEIGHT,
-    Z_IMAGE_PRESET_STEPS,
-    Z_IMAGE_PRESET_STRENGTH,
-    Z_IMAGE_PRESET_WIDTH,
+)
+from genimg.contrib.draw_things_poc.presets import (
+    draw_things_preset_ids,
+    draw_things_preset_option_help,
+    resolve_draw_things_preset,
 )
 from genimg.contrib.draw_things_poc.samplers import (
-    Z_IMAGE_PRESET_SAMPLER,
     parse_sampler,
     sampler_enum_rows,
 )
@@ -333,18 +332,13 @@ def list_samplers(as_json: bool) -> None:
     default=1.0,
     type=float,
     show_default=True,
-    help="Main denoise strength (txt2img / img2img); Z-Image presets use 1.0.",
+    help="Main denoise strength (txt2img / img2img); some --preset bundles fix this (e.g. z-image → 1.0).",
 )
 @click.option(
     "--preset",
-    type=click.Choice(["z-image"], case_sensitive=False),
+    type=click.Choice(draw_things_preset_ids(), case_sensitive=False),
     default=None,
-    help=(
-        "z-image: Z-Image / moodyMix-style (distilled/turbo: ~6-8 steps) — sets "
-        f"{Z_IMAGE_PRESET_WIDTH}×{Z_IMAGE_PRESET_HEIGHT}, {Z_IMAGE_PRESET_STEPS} steps, "
-        f"CFG {Z_IMAGE_PRESET_CFG}, denoise {Z_IMAGE_PRESET_STRENGTH}, sampler UniPCTrailing. "
-        "Overrides --width, --height, --steps, --cfg, and --strength; use --sampler to override sampler."
-    ),
+    help=draw_things_preset_option_help(),
 )
 @click.option("--seed", default=-1, type=int, help="Use negative value for random seed.")
 @click.option(
@@ -402,13 +396,14 @@ def generate_cmd(
 ) -> None:
     """Run txt2img and save decoded PNG."""
     sampler_effective: int | None = sampler
-    if preset and preset.lower() == "z-image":
-        width = Z_IMAGE_PRESET_WIDTH
-        height = Z_IMAGE_PRESET_HEIGHT
-        steps = Z_IMAGE_PRESET_STEPS
-        cfg = Z_IMAGE_PRESET_CFG
-        strength = Z_IMAGE_PRESET_STRENGTH
-        sampler_effective = Z_IMAGE_PRESET_SAMPLER
+    bundle = resolve_draw_things_preset(preset)
+    if bundle is not None:
+        width = bundle.width_px
+        height = bundle.height_px
+        steps = bundle.steps
+        cfg = bundle.guidance_scale
+        strength = bundle.strength
+        sampler_effective = bundle.sampler
         if sampler is not None:
             sampler_effective = sampler
     if upscaler_scale is not None and upscaler_scale > 1 and not (upscaler and upscaler.strip()):
