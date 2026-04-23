@@ -13,17 +13,30 @@ from genimg.contrib.draw_things_poc.client import DrawThingsClient
 from genimg.contrib.draw_things_poc.constants import (
     CLI_COMMAND_GENERATE,
     CLI_COMMAND_LIST_ASSETS,
+    CLI_COMMAND_LIST_SAMPLERS,
     CLI_LIST_BANNER,
     CLI_LIST_EMPTY,
     CLI_LIST_FOOTER,
     CLI_LIST_RULE,
+    CLI_LIST_SAMPLERS_FOOTER,
     CLI_LIST_SECTION_CONTROL_NETS,
     CLI_LIST_SECTION_LORAS,
     CLI_LIST_SECTION_MODELS,
+    CLI_LIST_SECTION_SAMPLERS,
     CLI_LIST_SECTION_TEXTUAL_INVERSIONS,
     CLI_LIST_SECTION_UPSCALERS,
     DEFAULT_DRAW_THINGS_HOST,
     DEFAULT_DRAW_THINGS_PORT,
+    Z_IMAGE_PRESET_CFG,
+    Z_IMAGE_PRESET_HEIGHT,
+    Z_IMAGE_PRESET_STEPS,
+    Z_IMAGE_PRESET_STRENGTH,
+    Z_IMAGE_PRESET_WIDTH,
+)
+from genimg.contrib.draw_things_poc.samplers import (
+    Z_IMAGE_PRESET_SAMPLER,
+    parse_sampler,
+    sampler_enum_rows,
 )
 from genimg.contrib.draw_things_poc.tensor_image import dt_tensor_bytes_to_pil
 from genimg.contrib.draw_things_poc.types import (
@@ -33,6 +46,45 @@ from genimg.contrib.draw_things_poc.types import (
     TextualInversionInfo,
     UpscalerInfo,
 )
+
+
+def _parse_lora_option(spec: str) -> tuple[str, float]:
+    """``file.ckpt`` or ``file.ckpt:0.75`` (weight defaults to 0.8)."""
+    s = spec.strip()
+    if not s:
+        raise click.BadParameter("empty --lora")
+    if ":" in s:
+        path, w = s.rsplit(":", 1)
+        path = path.strip()
+        if not path:
+            raise click.BadParameter(spec)
+        return path, float(w.strip())
+    return s, 0.8
+
+
+class _SamplerParam(click.ParamType):
+    """``SamplerType`` wire name (``EulerA``) or integer (``0`` … ``18``)."""
+
+    name = "sampler"
+
+    def convert(
+        self,
+        value: object,
+        param: click.Parameter | None,
+        ctx: click.Context | None,
+    ) -> int | None:
+        if value is None:
+            return None
+        s = str(value).strip()
+        if not s:
+            return None
+        try:
+            return parse_sampler(s)
+        except ValueError as e:
+            raise click.BadParameter(str(e), ctx=ctx, param=param) from e
+
+
+SAMPLER_PARAM = _SamplerParam()
 
 
 def _client_common_kwargs(
@@ -232,6 +284,38 @@ def list_assets(
         click.echo(CLI_LIST_FOOTER)
 
 
+@main.command(name=CLI_COMMAND_LIST_SAMPLERS)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    default=False,
+    help="Emit one JSON object (FlatBuffers ``SamplerType`` wire table).",
+)
+def list_samplers(as_json: bool) -> None:
+    """List ``SamplerType`` enum values for ``GenerationConfiguration.sampler`` (no gRPC call)."""
+    rows = sampler_enum_rows()
+    if as_json:
+        click.echo(
+            json.dumps(
+                {
+                    "kind": "samplers",
+                    "items": [{"value": v, "name": n, "label": lbl} for v, n, lbl in rows],
+                }
+            )
+        )
+        return
+
+    click.echo(CLI_LIST_SECTION_SAMPLERS)
+    click.echo("")
+    click.echo(CLI_LIST_RULE)
+    click.echo("")
+    for v, n, lbl in rows:
+        click.echo(f"  {v:>2}  {n}  —  {lbl}")
+    click.echo("")
+    click.echo(CLI_LIST_SAMPLERS_FOOTER)
+
+
 @main.command(name=CLI_COMMAND_GENERATE)
 @click.option("--host", default=DEFAULT_DRAW_THINGS_HOST, show_default=True)
 @click.option("--port", default=DEFAULT_DRAW_THINGS_PORT, type=int, show_default=True)
@@ -244,7 +328,55 @@ def list_assets(
 @click.option("--height", default=512, type=int, show_default=True)
 @click.option("--steps", default=20, type=int, show_default=True)
 @click.option("--cfg", default=7.0, type=float, show_default=True)
+@click.option(
+    "--strength",
+    default=1.0,
+    type=float,
+    show_default=True,
+    help="Main denoise strength (txt2img / img2img); Z-Image presets use 1.0.",
+)
+@click.option(
+    "--preset",
+    type=click.Choice(["z-image"], case_sensitive=False),
+    default=None,
+    help=(
+        "z-image: Z-Image / moodyMix-style (distilled/turbo: ~6-8 steps) — sets "
+        f"{Z_IMAGE_PRESET_WIDTH}×{Z_IMAGE_PRESET_HEIGHT}, {Z_IMAGE_PRESET_STEPS} steps, "
+        f"CFG {Z_IMAGE_PRESET_CFG}, denoise {Z_IMAGE_PRESET_STRENGTH}, sampler UniPCTrailing. "
+        "Overrides --width, --height, --steps, --cfg, and --strength; use --sampler to override sampler."
+    ),
+)
 @click.option("--seed", default=-1, type=int, help="Use negative value for random seed.")
+@click.option(
+    "--sampler",
+    default=None,
+    type=SAMPLER_PARAM,
+    help="FlatBuffers sampler (enum name or wire int); see list-samplers.",
+)
+@click.option(
+    "--lora",
+    multiple=True,
+    help='LoRA checkpoint file name (from list-assets), optional weight: "file.ckpt:0.75". Repeatable.',
+)
+@click.option(
+    "--upscaler",
+    default=None,
+    help="Upscaler checkpoint file name from list-assets (e.g. remacri_4x_f16.ckpt).",
+)
+@click.option(
+    "--upscaler-scale",
+    "upscaler_scale",
+    type=int,
+    default=None,
+    help="Integer scale for hires upscale (2 = 200%%). Requires --upscaler; first pass is final/size.",
+)
+@click.option(
+    "--hires-fix-strength",
+    default=0.7,
+    type=float,
+    show_default=True,
+    help="Denoise strength for the hires upscale stage.",
+)
 @click.option("--out", type=click.Path(path_type=Path), required=True)
 def generate_cmd(
     host: str,
@@ -258,12 +390,32 @@ def generate_cmd(
     height: int,
     steps: int,
     cfg: float,
+    strength: float,
+    preset: str | None,
     seed: int,
+    sampler: int | None,
+    lora: tuple[str, ...],
+    upscaler: str | None,
+    upscaler_scale: int | None,
+    hires_fix_strength: float,
     out: Path,
 ) -> None:
     """Run txt2img and save decoded PNG."""
+    sampler_effective: int | None = sampler
+    if preset and preset.lower() == "z-image":
+        width = Z_IMAGE_PRESET_WIDTH
+        height = Z_IMAGE_PRESET_HEIGHT
+        steps = Z_IMAGE_PRESET_STEPS
+        cfg = Z_IMAGE_PRESET_CFG
+        strength = Z_IMAGE_PRESET_STRENGTH
+        sampler_effective = Z_IMAGE_PRESET_SAMPLER
+        if sampler is not None:
+            sampler_effective = sampler
+    if upscaler_scale is not None and upscaler_scale > 1 and not (upscaler and upscaler.strip()):
+        raise click.UsageError("--upscaler-scale > 1 requires --upscaler.")
     kwargs = _client_common_kwargs(host, port, ca_pem, insecure, shared_secret)
     seed_val: int | None = seed if seed >= 0 else None
+    loras = tuple(_parse_lora_option(x) for x in lora) if lora else None
     with DrawThingsClient(**kwargs) as client:  # type: ignore[arg-type]
         raw = client.generate_image_last_tensor(
             prompt=prompt,
@@ -274,6 +426,12 @@ def generate_cmd(
             guidance_scale=cfg,
             seed=seed_val,
             timeout_seconds=600.0,
+            loras=loras,
+            upscaler=upscaler,
+            upscaler_scale_factor=upscaler_scale,
+            hires_fix_strength=hires_fix_strength,
+            strength=strength,
+            sampler=sampler_effective,
         )
     img = dt_tensor_bytes_to_pil(raw)
     img.save(out, format="PNG")

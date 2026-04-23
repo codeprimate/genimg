@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import socket
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
 import grpc  # type: ignore[import-untyped]
@@ -16,6 +16,7 @@ from genimg.contrib.draw_things_poc.constants import (
     DEFAULT_DRAW_THINGS_HOST,
     DEFAULT_DRAW_THINGS_PORT,
     DEFAULT_NEGATIVE_PROMPT,
+    DEFAULT_STRENGTH,
     GRPC_MAX_RECEIVE_MESSAGE_LENGTH,
     GRPC_MAX_SEND_MESSAGE_LENGTH,
     SCALE_FACTOR_DEFAULT,
@@ -28,6 +29,7 @@ from genimg.contrib.draw_things_poc.generated.imageService_pb2 import (
     ImageGenerationRequest,
     ImageGenerationResponse,
 )
+from genimg.contrib.draw_things_poc.generated.SamplerType import SamplerType
 from genimg.contrib.draw_things_poc.types import (
     ControlNetInfo,
     LoraInfo,
@@ -181,11 +183,18 @@ class DrawThingsClient:
         seed: int | None,
         timeout_seconds: float,
         cancel_check: Callable[[], bool] | None = None,
+        loras: Sequence[tuple[str, float]] | None = None,
+        upscaler: str | None = None,
+        upscaler_scale_factor: int | None = None,
+        hires_fix_strength: float = 0.7,
+        strength: float = DEFAULT_STRENGTH,
+        sampler: int | None = None,
     ) -> Iterator[ImageGenerationResponse]:
         self._ensure_channel()
         assert self._stub is not None
 
         neg = DEFAULT_NEGATIVE_PROMPT if negative_prompt is None else negative_prompt
+        use_sampler = SamplerType.DPMPP2MKarras if sampler is None else int(sampler)
         cfg_bytes = build_txt2img_configuration_bytes(
             model=model,
             width_px=width_px,
@@ -194,6 +203,12 @@ class DrawThingsClient:
             guidance_scale=guidance_scale,
             seed=seed,
             request_id=self._next_request_id(),
+            loras=loras,
+            upscaler=upscaler,
+            upscaler_scale_factor=upscaler_scale_factor,
+            hires_fix_strength=hires_fix_strength,
+            strength=strength,
+            sampler=use_sampler,
         )
 
         req = ImageGenerationRequest()
@@ -231,6 +246,12 @@ class DrawThingsClient:
         seed: int | None,
         timeout_seconds: float,
         cancel_check: Callable[[], bool] | None = None,
+        loras: Sequence[tuple[str, float]] | None = None,
+        upscaler: str | None = None,
+        upscaler_scale_factor: int | None = None,
+        hires_fix_strength: float = 0.7,
+        strength: float = DEFAULT_STRENGTH,
+        sampler: int | None = None,
     ) -> bytes:
         """Consume the stream and return the last non-empty ``generatedImages`` payload."""
         last: bytes | None = None
@@ -246,6 +267,12 @@ class DrawThingsClient:
                 seed=seed,
                 timeout_seconds=timeout_seconds,
                 cancel_check=cancel_check,
+                loras=loras,
+                upscaler=upscaler,
+                upscaler_scale_factor=upscaler_scale_factor,
+                hires_fix_strength=hires_fix_strength,
+                strength=strength,
+                sampler=sampler,
             ):
                 if msg.generatedImages:
                     last = bytes(msg.generatedImages[-1])

@@ -27,9 +27,18 @@ def default_root_ca_pem_path() -> Path:
 LAYOUT_BLOCK_PX: int = 64
 MIN_DIMENSION_PX: int = 64
 SCALE_FACTOR_DEFAULT: int = 1
-DEFAULT_CHUNKED: bool = True
+# dt-grpc-ts ``generateImage`` omits this field (false): chunked mode needs reassembly we do not implement.
+DEFAULT_CHUNKED: bool = False
 DEFAULT_STRENGTH: float = 1.0
 DEFAULT_NEGATIVE_PROMPT: str = ""
+
+# Z-Image family checkpoints (e.g. ``moodyMix_zit``): high CFG often yields no final tensor from Echo.
+Z_IMAGE_PRESET_WIDTH: int = 1280
+Z_IMAGE_PRESET_HEIGHT: int = 1280
+# Distilled / turbo Z-Image: use a small step count (about 6-8); default is the upper end of that band.
+Z_IMAGE_PRESET_STEPS: int = 8
+Z_IMAGE_PRESET_CFG: float = 1.0
+Z_IMAGE_PRESET_STRENGTH: float = 1.0
 
 # --- Draw Things response tensor header (imageHelpers.ts) ---
 TENSOR_HEADER_BYTE_LEN: int = 68
@@ -56,6 +65,7 @@ MSG_PROVIDER_DECODE_NOT_IMPLEMENTED: str = (
 
 # --- CLI ---
 CLI_COMMAND_LIST_ASSETS: str = "list-assets"
+CLI_COMMAND_LIST_SAMPLERS: str = "list-samplers"
 CLI_COMMAND_GENERATE: str = "generate"
 
 # Human-oriented ``list-assets`` section titles (what to pass where).
@@ -67,4 +77,8 @@ CLI_LIST_SECTION_LORAS: str = "LORAS  (GenerationConfiguration.loras[].file in D
 CLI_LIST_SECTION_CONTROL_NETS: str = "CONTROLNETS  (controls[].file)"
 CLI_LIST_SECTION_TEXTUAL_INVERSIONS: str = "TEXTUAL INVERSIONS  (file on disk; keyword in prompts)"
 CLI_LIST_SECTION_UPSCALERS: str = "UPSCALERS  (GenerationConfiguration.upscaler string)"
+CLI_LIST_SECTION_SAMPLERS: str = (
+    "SAMPLERS  (--sampler: FlatBuffers ``SamplerType`` name or integer wire value)"
+)
+CLI_LIST_SAMPLERS_FOOTER: str = 'Example:  genimg-draw-things generate ... --sampler EulerA'
 CLI_LIST_EMPTY: str = "(none)"
