@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import socket
 import time
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
 import grpc  # type: ignore[import-untyped]
+from PIL import Image
 
 from genimg.contrib.draw_things_poc.catalog import decode_metadata_override, empty_zoo_catalog
-from genimg.contrib.draw_things_poc.config_builder import build_txt2img_configuration_bytes
+from genimg.contrib.draw_things_poc.config_builder import (
+    build_txt2img_configuration_bytes,
+    round_dimension_to_multiple_of_64,
+)
 from genimg.contrib.draw_things_poc.constants import (
     DEFAULT_CHUNKED,
     DEFAULT_DRAW_THINGS_HOST,
@@ -30,6 +35,10 @@ from genimg.contrib.draw_things_poc.generated.imageService_pb2 import (
     ImageGenerationResponse,
 )
 from genimg.contrib.draw_things_poc.generated.SamplerType import SamplerType
+from genimg.contrib.draw_things_poc.tensor_image import (
+    full_img2img_denoise_mask_bytes,
+    pil_to_dt_tensor_bytes,
+)
 from genimg.contrib.draw_things_poc.types import (
     ControlNetInfo,
     LoraInfo,
@@ -59,7 +68,7 @@ def _grpc_channel_options() -> tuple[tuple[str, int], ...]:
 
 
 class DrawThingsClient:
-    """PoC client: TLS (or insecure) channel, Echo catalog, ``GenerateImage`` streaming."""
+    """PoC client: TLS channel by default, Echo catalog, ``GenerateImage`` streaming."""
 
     def __init__(
         self,
@@ -189,6 +198,7 @@ class DrawThingsClient:
         hires_fix_strength: float = 0.7,
         strength: float = DEFAULT_STRENGTH,
         sampler: int | None = None,
+        init_image: Image.Image | None = None,
     ) -> Iterator[ImageGenerationResponse]:
         self._ensure_channel()
         assert self._stub is not None
@@ -209,6 +219,7 @@ class DrawThingsClient:
             hires_fix_strength=hires_fix_strength,
             strength=strength,
             sampler=use_sampler,
+            for_img2img=init_image is not None,
         )
 
         req = ImageGenerationRequest()
@@ -221,6 +232,16 @@ class DrawThingsClient:
         req.chunked = DEFAULT_CHUNKED
         if self._shared_secret:
             req.sharedSecret = self._shared_secret
+
+        if init_image is not None:
+            tensor = pil_to_dt_tensor_bytes(init_image, width_px, height_px)
+            rh = round_dimension_to_multiple_of_64(height_px)
+            rw = round_dimension_to_multiple_of_64(width_px)
+            mask = full_img2img_denoise_mask_bytes(rh, rw)
+            req.image = hashlib.sha256(tensor).digest()
+            req.contents.append(tensor)
+            req.mask = hashlib.sha256(mask).digest()
+            req.contents.append(mask)
 
         deadline = time.monotonic() + timeout_seconds
         stream = self._stub.GenerateImage(req, timeout=timeout_seconds)
@@ -252,6 +273,7 @@ class DrawThingsClient:
         hires_fix_strength: float = 0.7,
         strength: float = DEFAULT_STRENGTH,
         sampler: int | None = None,
+        init_image: Image.Image | None = None,
     ) -> bytes:
         """Consume the stream and return the last non-empty ``generatedImages`` payload."""
         last: bytes | None = None
@@ -273,6 +295,7 @@ class DrawThingsClient:
                 hires_fix_strength=hires_fix_strength,
                 strength=strength,
                 sampler=sampler,
+                init_image=init_image,
             ):
                 if msg.generatedImages:
                     last = bytes(msg.generatedImages[-1])

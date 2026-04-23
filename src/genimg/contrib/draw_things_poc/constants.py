@@ -37,6 +37,15 @@ TENSOR_HEADER_BYTE_LEN: int = 68
 TENSOR_HEADER_UINT32_COUNT: int = TENSOR_HEADER_BYTE_LEN // 4
 # First uint32 marks fpzip-compressed payload when equal to this magic.
 DRAW_THINGS_TENSOR_COMPRESSED_MAGIC: int = 1012247
+# Uncompressed **request** tensors: dt-grpc-ts ``convertImageForRequest`` sets these six
+# ``uint32`` values before height/width/channels (``imageHelpers.ts``).
+TENSOR_REQUEST_HEADER_LE6: tuple[int, int, int, int, int, int] = (0, 1, 2, 131072, 0, 1)
+# First five ``uint32`` values of ``convertImageToMask`` before H/W (``imageHelpers.ts``).
+MASK_REQUEST_HEADER_U32_LE5: tuple[int, int, int, int, int] = (0, 1, 1, 4096, 0)
+# Per ``convertImageToMask`` comments in ``imageHelpers.ts`` (mask byte per pixel after header).
+DRAW_THINGS_MASK_RETAIN: int = 0
+DRAW_THINGS_MASK_FULL_DENOISE: int = 1  # 100% strength
+DRAW_THINGS_MASK_CFG_DENOISE: int = 2  # use ``GenerationConfiguration.strength``
 
 # --- Debug ---
 DEBUG_SAVE_RAW_TENSOR_BYTES: bool = False

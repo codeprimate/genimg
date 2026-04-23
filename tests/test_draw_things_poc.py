@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import struct
 import sys
 import types
+from io import BytesIO
 
 import numpy as np
 import pytest
 
 pytest.importorskip("grpc")
 pytest.importorskip("flatbuffers")
+
+from PIL import Image
 
 from genimg.contrib.draw_things_poc import (
     DrawThingsClient,
@@ -28,8 +33,11 @@ from genimg.contrib.draw_things_poc.config_builder import (
 from genimg.contrib.draw_things_poc.constants import (
     CLI_LIST_SECTION_MODELS,
     CLI_LIST_SECTION_SAMPLERS,
+    DRAW_THINGS_MASK_CFG_DENOISE,
     DRAW_THINGS_TENSOR_COMPRESSED_MAGIC,
+    MASK_REQUEST_HEADER_U32_LE5,
     MSG_FPZIP_DECOMPRESS_FAILED,
+    TENSOR_REQUEST_HEADER_LE6,
 )
 from genimg.contrib.draw_things_poc.generated import imageService_pb2 as pb2
 from genimg.contrib.draw_things_poc.generated.GenerationConfiguration import GenerationConfiguration
@@ -39,7 +47,11 @@ from genimg.contrib.draw_things_poc.samplers import (
     parse_sampler,
     sampler_enum_rows,
 )
-from genimg.contrib.draw_things_poc.tensor_image import dt_tensor_bytes_to_pil
+from genimg.contrib.draw_things_poc.tensor_image import (
+    dt_tensor_bytes_to_pil,
+    full_img2img_denoise_mask_bytes,
+    pil_to_dt_tensor_bytes,
+)
 from genimg.core.config import Config
 from genimg.utils.exceptions import APIError
 
@@ -86,6 +98,30 @@ def test_build_txt2img_configuration_roundtrip() -> None:
     assert cfg.GuidanceScale() == pytest.approx(5.5)
     assert cfg.StartWidth() == 8  # 512 / 64
     assert cfg.StartHeight() == 8
+
+
+def test_build_txt2img_preserve_original_after_inpaint_img2img_off() -> None:
+    plain = build_txt2img_configuration_bytes(
+        model="test.ckpt",
+        width_px=512,
+        height_px=512,
+        steps=10,
+        guidance_scale=5.5,
+        seed=42,
+        request_id=7,
+    )
+    i2i = build_txt2img_configuration_bytes(
+        model="test.ckpt",
+        width_px=512,
+        height_px=512,
+        steps=10,
+        guidance_scale=5.5,
+        seed=42,
+        request_id=7,
+        for_img2img=True,
+    )
+    assert GenerationConfiguration.GetRootAs(plain, 0).PreserveOriginalAfterInpaint() is True
+    assert GenerationConfiguration.GetRootAs(i2i, 0).PreserveOriginalAfterInpaint() is False
 
 
 def test_build_txt2img_configuration_sampler_euler_a() -> None:
@@ -207,6 +243,42 @@ def test_dt_tensor_compressed_fpzip_fails_on_garbage() -> None:
     assert MSG_FPZIP_DECOMPRESS_FAILED in str(excinfo.value)
 
 
+def test_full_img2img_denoise_mask_bytes_layout() -> None:
+    b = full_img2img_denoise_mask_bytes(2, 3)
+    assert len(b) == 68 + 6
+    u = struct.unpack("<9I", b[:36])
+    assert u[:5] == MASK_REQUEST_HEADER_U32_LE5
+    assert u[5] == 2 and u[6] == 3 and u[7] == 0 and u[8] == 0
+    assert b[68:] == bytes([DRAW_THINGS_MASK_CFG_DENOISE]) * 6
+
+
+def test_pil_to_dt_tensor_request_header_matches_image_helpers_ts() -> None:
+    """dt-grpc-ts ``convertImageForRequest`` writes these first six ``uint32`` values."""
+    im = Image.new("RGB", (64, 64), color=(1, 2, 3))
+    raw = pil_to_dt_tensor_bytes(im, 64, 64)
+    hdr = struct.unpack("<17I", raw[:68])
+    assert hdr[0:6] == TENSOR_REQUEST_HEADER_LE6
+    assert hdr[6] == 64 and hdr[7] == 64 and hdr[8] == 3
+    assert hdr[9:] == (0,) * 8
+
+
+def test_pil_dt_tensor_roundtrip_color_close() -> None:
+    im = Image.new("RGB", (64, 64), color=(200, 100, 50))
+    raw = pil_to_dt_tensor_bytes(im, 64, 64)
+    out = dt_tensor_bytes_to_pil(raw)
+    assert out.size == (64, 64)
+    a = np.asarray(im, dtype=np.int16)
+    b = np.asarray(out, dtype=np.int16)
+    assert np.abs(a - b).max() <= 8
+
+
+def test_pil_dt_tensor_encode_rounds_to_config_dimensions() -> None:
+    im = Image.new("RGB", (10, 10), color=(0, 128, 255))
+    raw = pil_to_dt_tensor_bytes(im, 100, 100)
+    out = dt_tensor_bytes_to_pil(raw)
+    assert out.size == (128, 128)
+
+
 def test_dt_tensor_compressed_with_mock_fpzip(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = types.SimpleNamespace(
         decompress=lambda _b: np.zeros((1, 2, 2, 3), dtype=np.float32),
@@ -219,6 +291,9 @@ def test_dt_tensor_compressed_with_mock_fpzip(monkeypatch: pytest.MonkeyPatch) -
 
 
 class _FakeStub:
+    def __init__(self) -> None:
+        self.last_generate_request: pb2.ImageGenerationRequest | None = None
+
     def Echo(self, request: pb2.EchoRequest, timeout: float | None = None) -> pb2.EchoReply:
         o = pb2.MetadataOverride()
         o.models = json.dumps([{"file": "m.ckpt", "name": "M"}]).encode("utf-8")
@@ -231,19 +306,21 @@ class _FakeStub:
         request: pb2.ImageGenerationRequest,
         timeout: float | None = None,
     ):
+        self.last_generate_request = request
         tensor = _synthetic_tensor_1x1_rgb()
         yield pb2.ImageGenerationResponse(generatedImages=[tensor])
 
 
 def test_client_catalog_with_injected_stub() -> None:
-    c = DrawThingsClient(host="127.0.0.1", port=7859, insecure=True, grpc_stub=_FakeStub())
+    c = DrawThingsClient(host="127.0.0.1", port=7859, grpc_stub=_FakeStub())
     c.clear_catalog_cache()
     models = c.list_models()
     assert len(models) == 1 and models[0].file == "m.ckpt"
 
 
 def test_client_generate_last_tensor() -> None:
-    c = DrawThingsClient(host="127.0.0.1", port=7859, insecure=True, grpc_stub=_FakeStub())
+    stub = _FakeStub()
+    c = DrawThingsClient(host="127.0.0.1", port=7859, grpc_stub=stub)
     raw = c.generate_image_last_tensor(
         prompt="hi",
         model="m.ckpt",
@@ -255,12 +332,41 @@ def test_client_generate_last_tensor() -> None:
         timeout_seconds=5.0,
     )
     assert len(raw) > 68
+    req = stub.last_generate_request
+    assert req is not None
+    assert not req.HasField("image")
+    assert len(req.contents) == 0
+
+
+def test_client_generate_last_tensor_with_init_image_sets_contents_and_hash() -> None:
+    stub = _FakeStub()
+    c = DrawThingsClient(host="127.0.0.1", port=7859, grpc_stub=stub)
+    init = Image.new("RGB", (64, 64), color=(40, 80, 120))
+    c.generate_image_last_tensor(
+        prompt="hi",
+        model="m.ckpt",
+        width_px=64,
+        height_px=64,
+        steps=1,
+        guidance_scale=1.0,
+        seed=1,
+        timeout_seconds=5.0,
+        init_image=init,
+    )
+    req = stub.last_generate_request
+    assert req is not None
+    assert req.HasField("image")
+    assert req.HasField("mask")
+    assert len(req.image) == 32
+    assert len(req.mask) == 32
+    assert len(req.contents) == 2
+    assert hashlib.sha256(req.contents[0]).digest() == bytes(req.image)
+    assert hashlib.sha256(req.contents[1]).digest() == bytes(req.mask)
 
 
 def test_provider_generate() -> None:
     cfg = Config()
     prov = DrawThingsPoCProvider(
-        insecure=True,
         width_px=64,
         height_px=64,
         steps=1,
@@ -269,6 +375,151 @@ def test_provider_generate() -> None:
     )
     res = prov.generate("p", "m.ckpt", None, 30, cfg, None)
     assert res.image.size == (1, 1)
+    assert res.had_reference is False
+
+
+def test_provider_generate_with_reference_image_first_only() -> None:
+    stub = _FakeStub()
+    im = Image.new("RGB", (16, 16), color=(255, 0, 128))
+    buf = BytesIO()
+    im.save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    cfg = Config()
+    prov = DrawThingsPoCProvider(
+        width_px=64,
+        height_px=64,
+        steps=1,
+        guidance_scale=1.0,
+        grpc_stub=stub,
+    )
+    res = prov.generate("p", "m.ckpt", [b64, b64], 30, cfg, None)
+    assert res.had_reference is True
+    assert stub.last_generate_request is not None
+    assert stub.last_generate_request.HasField("image")
+    assert stub.last_generate_request.HasField("mask")
+
+
+def test_cli_generate_two_inputs_emits_first_only_notice(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+
+    p1 = tmp_path / "a.png"
+    p2 = tmp_path / "b.png"
+    Image.new("RGB", (64, 64), (10, 20, 30)).save(p1)
+    Image.new("RGB", (64, 64), (40, 50, 60)).save(p2)
+    outp = tmp_path / "out.png"
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(
+        generate_cmd,
+        [
+            "--prompt",
+            "x",
+            "--model",
+            "m.ckpt",
+            "--out",
+            str(outp),
+            "-i",
+            str(p1),
+            "-i",
+            str(p2),
+        ],
+    )
+    assert result.exit_code == 0
+    assert outp.is_file()
+    err = (result.stderr or "").lower()
+    out = (result.output or "").lower()
+    assert "only the first" in err or "only the first" in out
+
+
+def test_cli_generate_preset_omitted_strength_uses_bundle_value(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+    from genimg.contrib.draw_things_poc.presets import resolve_draw_things_preset
+
+    cap: dict[str, float] = {}
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+        def generate_image_last_tensor(self, **kwargs: object) -> bytes:
+            cap["strength"] = float(kwargs["strength"])
+            return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    outp = tmp_path / "o.png"
+    bundle = resolve_draw_things_preset("z-image")
+    assert bundle is not None
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        ["--preset", "z-image", "--prompt", "x", "--model", "m.ckpt", "--out", str(outp)],
+    )
+    assert result.exit_code == 0, result.output
+    assert cap["strength"] == pytest.approx(bundle.strength)
+
+
+def test_cli_generate_preset_explicit_strength_overrides_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+
+    cap: dict[str, float] = {}
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+        def generate_image_last_tensor(self, **kwargs: object) -> bytes:
+            cap["strength"] = float(kwargs["strength"])
+            return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    outp = tmp_path / "o.png"
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        [
+            "--preset",
+            "z-image",
+            "--strength",
+            "0.55",
+            "--prompt",
+            "x",
+            "--model",
+            "m.ckpt",
+            "--out",
+            str(outp),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert cap["strength"] == pytest.approx(0.55)
 
 
 def test_cli_list_assets_human_text(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -286,7 +537,7 @@ def test_cli_list_assets_human_text(monkeypatch: pytest.MonkeyPatch) -> None:
     from genimg.contrib.draw_things_poc.cli import list_assets
 
     runner = CliRunner()
-    result = runner.invoke(list_assets, ["--insecure", "--kind", "models"])
+    result = runner.invoke(list_assets, ["--kind", "models"])
     assert result.exit_code == 0
     out = result.output
     assert CLI_LIST_SECTION_MODELS in out
@@ -335,7 +586,7 @@ def test_cli_list_assets_json_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     from genimg.contrib.draw_things_poc.cli import list_assets
 
     runner = CliRunner()
-    result = runner.invoke(list_assets, ["--insecure", "--kind", "models", "--json"])
+    result = runner.invoke(list_assets, ["--kind", "models", "--json"])
     assert result.exit_code == 0
     line = result.output.strip().splitlines()[0]
     data = json.loads(line)

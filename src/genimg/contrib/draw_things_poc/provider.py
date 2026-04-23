@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import time
 from collections.abc import Callable
 from pathlib import Path
+
+from PIL import Image
 
 from genimg.contrib.draw_things_poc.client import DrawThingsClient
 from genimg.contrib.draw_things_poc.constants import (
     DEFAULT_DRAW_THINGS_HOST,
     DEFAULT_DRAW_THINGS_PORT,
+    ERR_PREFIX_API,
     MSG_PROVIDER_DECODE_NOT_IMPLEMENTED,
 )
 from genimg.contrib.draw_things_poc.generated import imageService_pb2_grpc as pb2_grpc
@@ -25,7 +30,7 @@ logger = get_logger(__name__)
 class DrawThingsPoCProvider:
     """Image generation via local Draw Things gRPC (PoC; connection via constructor)."""
 
-    supports_reference_image: bool = False
+    supports_reference_image: bool = True
 
     def __init__(
         self,
@@ -68,8 +73,25 @@ class DrawThingsPoCProvider:
         api_key_override: str | None = None,
     ) -> GenerationResult:
         del config, api_key_override
-        if reference_images_b64:
-            raise APIError("Draw Things PoC does not support reference images yet.", response="")
+        refs = [r for r in (reference_images_b64 or []) if r and str(r).strip()]
+        init_image: Image.Image | None = None
+        if refs:
+            if len(refs) > 1:
+                logger.debug("Draw Things PoC: using first of %d reference images", len(refs))
+            try:
+                bin_img = base64.b64decode(refs[0].strip(), validate=False)
+            except Exception as e:
+                raise APIError(
+                    f"{ERR_PREFIX_API} Invalid base64 in reference_images_b64[0].",
+                    response=str(e),
+                ) from e
+            try:
+                init_image = Image.open(io.BytesIO(bin_img)).copy()
+            except Exception as e:
+                raise APIError(
+                    f"{ERR_PREFIX_API} reference_images_b64[0] is not a loadable image.",
+                    response=str(e),
+                ) from e
 
         start = time.time()
         with self._client:
@@ -83,6 +105,7 @@ class DrawThingsPoCProvider:
                 seed=None,
                 timeout_seconds=float(timeout),
                 cancel_check=cancel_check,
+                init_image=init_image,
             )
         try:
             pil = dt_tensor_bytes_to_pil(raw)
@@ -97,5 +120,5 @@ class DrawThingsPoCProvider:
             generation_time=elapsed,
             model_used=model,
             prompt_used=prompt,
-            had_reference=False,
+            had_reference=init_image is not None,
         )

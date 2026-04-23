@@ -61,11 +61,16 @@ def build_txt2img_configuration_bytes(
     upscaler_scale_factor: int | None = None,
     hires_fix_strength: float = 0.7,
     strength: float = DEFAULT_STRENGTH,
+    for_img2img: bool = False,
 ) -> bytes:
     """Pack a minimal ``GenerationConfiguration`` suitable for txt2img.
 
     When ``upscaler`` and ``upscaler_scale_factor`` > 1 are set, enables **hires fix** so the
     first pass runs at ``final / scale`` blocks (e.g. 2× Remacri: 1024² → 512² then upscale).
+
+    When ``for_img2img`` is true, sets ``preserve_original_after_inpaint`` to **false** so the
+    server does not snap the result back to the init image (Draw Things / dt-grpc-ts default for
+    that field is **true** in ``drawThingsDefault``).
     """
     rw_px = round_dimension_to_multiple_of_64(width_px)
     rh_px = round_dimension_to_multiple_of_64(height_px)
@@ -139,6 +144,8 @@ def build_txt2img_configuration_bytes(
     GenCfg.AddNegativeOriginalImageHeight(builder, int(rh_px))
     GenCfg.AddNegativeOriginalImageWidth(builder, int(rw_px))
     GenCfg.AddMaskBlur(builder, 1.5)
+    if for_img2img:
+        GenCfg.AddPreserveOriginalAfterInpaint(builder, False)
     if loras_vec:
         GenCfg.AddLoras(builder, loras_vec)
     root = GenCfg.End(builder)

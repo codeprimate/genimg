@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 
 import click
+from PIL import Image
 
 from genimg.contrib.draw_things_poc.client import DrawThingsClient
 from genimg.contrib.draw_things_poc.constants import (
@@ -27,6 +29,7 @@ from genimg.contrib.draw_things_poc.constants import (
     CLI_LIST_SECTION_UPSCALERS,
     DEFAULT_DRAW_THINGS_HOST,
     DEFAULT_DRAW_THINGS_PORT,
+    DEFAULT_STRENGTH,
 )
 from genimg.contrib.draw_things_poc.presets import (
     draw_things_preset_ids,
@@ -90,15 +93,13 @@ def _client_common_kwargs(
     host: str,
     port: int,
     ca_pem: Path | None,
-    insecure: bool,
     shared_secret: str | None,
 ) -> dict[str, object]:
+    """TLS only (Draw Things default). Optional ``ca_pem`` overrides the vendored Draw Things root CA."""
     return {
         "host": host,
         "port": port,
         "root_ca_pem_path": ca_pem,
-        "use_tls": not insecure,
-        "insecure": insecure,
         "shared_secret": shared_secret,
     }
 
@@ -186,14 +187,18 @@ def _emit_section(title: str, body_lines: list[str]) -> None:
 
 @click.group()
 def main() -> None:
-    """Draw Things gRPC PoC commands."""
+    """Draw Things gRPC PoC commands (TLS to the server; vendored CA unless ``--ca-pem``)."""
 
 
 @main.command(name=CLI_COMMAND_LIST_ASSETS)
 @click.option("--host", default=DEFAULT_DRAW_THINGS_HOST, show_default=True)
 @click.option("--port", default=DEFAULT_DRAW_THINGS_PORT, type=int, show_default=True)
-@click.option("--ca-pem", type=click.Path(path_type=Path), default=None)
-@click.option("--insecure", is_flag=True, default=False)
+@click.option(
+    "--ca-pem",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Trust store PEM for the server (default: vendored Draw Things root CA).",
+)
 @click.option("--shared-secret", default=None)
 @click.option(
     "--json",
@@ -214,13 +219,12 @@ def list_assets(
     host: str,
     port: int,
     ca_pem: Path | None,
-    insecure: bool,
     shared_secret: str | None,
     as_json: bool,
     kind: str,
 ) -> None:
     """List models, LoRAs, ControlNets, TIs, and upscalers from Echo (strings you pass to tools / config)."""
-    kwargs = _client_common_kwargs(host, port, ca_pem, insecure, shared_secret)
+    kwargs = _client_common_kwargs(host, port, ca_pem, shared_secret)
     with DrawThingsClient(**kwargs) as client:  # type: ignore[arg-type]
         client.clear_catalog_cache()
         if as_json:
@@ -318,8 +322,12 @@ def list_samplers(as_json: bool) -> None:
 @main.command(name=CLI_COMMAND_GENERATE)
 @click.option("--host", default=DEFAULT_DRAW_THINGS_HOST, show_default=True)
 @click.option("--port", default=DEFAULT_DRAW_THINGS_PORT, type=int, show_default=True)
-@click.option("--ca-pem", type=click.Path(path_type=Path), default=None)
-@click.option("--insecure", is_flag=True, default=False)
+@click.option(
+    "--ca-pem",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Trust store PEM for the server (default: vendored Draw Things root CA).",
+)
 @click.option("--shared-secret", default=None)
 @click.option("--prompt", required=True)
 @click.option("--model", required=True)
@@ -329,10 +337,13 @@ def list_samplers(as_json: bool) -> None:
 @click.option("--cfg", default=7.0, type=float, show_default=True)
 @click.option(
     "--strength",
-    default=1.0,
+    default=None,
     type=float,
-    show_default=True,
-    help="Main denoise strength (txt2img / img2img); some --preset bundles fix this (e.g. z-image → 1.0).",
+    help=(
+        "Denoise strength (FlatBuffers ``strength``): img2img usually uses values below 1.0. "
+        "Omit to use the default (1.0 without ``--preset``, or the preset’s strength with ``--preset``). "
+        "Pass explicitly to override a preset (e.g. ``--preset z-image --strength 0.55`` with ``-i``)."
+    ),
 )
 @click.option(
     "--preset",
@@ -371,12 +382,23 @@ def list_samplers(as_json: bool) -> None:
     show_default=True,
     help="Denoise strength for the hires upscale stage.",
 )
+@click.option(
+    "--input",
+    "-i",
+    "input_paths",
+    multiple=True,
+    type=click.Path(exists=True, path_type=Path),
+    help=(
+        "Input image for img2img; repeat flag per file (-i a.png -i b.png). "
+        "Only the first file is used in this revision. Size should match "
+        "--width/--height after rounding to multiples of 64; pass ``--strength`` (often < 1) to override preset defaults."
+    ),
+)
 @click.option("--out", type=click.Path(path_type=Path), required=True)
 def generate_cmd(
     host: str,
     port: int,
     ca_pem: Path | None,
-    insecure: bool,
     shared_secret: str | None,
     prompt: str,
     model: str,
@@ -384,7 +406,7 @@ def generate_cmd(
     height: int,
     steps: int,
     cfg: float,
-    strength: float,
+    strength: float | None,
     preset: str | None,
     seed: int,
     sampler: int | None,
@@ -392,9 +414,10 @@ def generate_cmd(
     upscaler: str | None,
     upscaler_scale: int | None,
     hires_fix_strength: float,
+    input_paths: tuple[Path, ...],
     out: Path,
 ) -> None:
-    """Run txt2img and save decoded PNG."""
+    """Run txt2img or img2img and save decoded PNG."""
     sampler_effective: int | None = sampler
     bundle = resolve_draw_things_preset(preset)
     if bundle is not None:
@@ -402,15 +425,28 @@ def generate_cmd(
         height = bundle.height_px
         steps = bundle.steps
         cfg = bundle.guidance_scale
-        strength = bundle.strength
+        if strength is None:
+            strength = bundle.strength
         sampler_effective = bundle.sampler
         if sampler is not None:
             sampler_effective = sampler
+    elif strength is None:
+        strength = DEFAULT_STRENGTH
     if upscaler_scale is not None and upscaler_scale > 1 and not (upscaler and upscaler.strip()):
         raise click.UsageError("--upscaler-scale > 1 requires --upscaler.")
-    kwargs = _client_common_kwargs(host, port, ca_pem, insecure, shared_secret)
+    kwargs = _client_common_kwargs(host, port, ca_pem, shared_secret)
     seed_val: int | None = seed if seed >= 0 else None
     loras = tuple(_parse_lora_option(x) for x in lora) if lora else None
+    init_image: Image.Image | None = None
+    if input_paths:
+        if len(input_paths) > 1:
+            click.echo(
+                "Draw Things: only the first --input/-i file is used in this revision; "
+                f"ignoring {len(input_paths) - 1} additional path(s).",
+                err=True,
+            )
+        init_image = Image.open(input_paths[0]).copy()
+    t0 = time.perf_counter()
     with DrawThingsClient(**kwargs) as client:  # type: ignore[arg-type]
         raw = client.generate_image_last_tensor(
             prompt=prompt,
@@ -427,10 +463,12 @@ def generate_cmd(
             hires_fix_strength=hires_fix_strength,
             strength=strength,
             sampler=sampler_effective,
+            init_image=init_image,
         )
     img = dt_tensor_bytes_to_pil(raw)
     img.save(out, format="PNG")
-    click.echo(f"Wrote {out}")
+    elapsed_s = time.perf_counter() - t0
+    click.echo(f"Wrote {out} ({elapsed_s:.1f}s)")
 
 
 if __name__ == "__main__":

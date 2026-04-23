@@ -1,20 +1,64 @@
-"""Decode Draw Things ``generatedImages`` tensor bytes to a PIL image."""
+"""Encode and decode Draw Things image tensor payloads (``generatedImages`` / img2img ``contents``)."""
 
 from __future__ import annotations
 
 import io
+import struct
 
 import numpy as np
 from PIL import Image
 
+from genimg.contrib.draw_things_poc.config_builder import round_dimension_to_multiple_of_64
 from genimg.contrib.draw_things_poc.constants import (
+    DRAW_THINGS_MASK_CFG_DENOISE,
     DRAW_THINGS_TENSOR_COMPRESSED_MAGIC,
+    MASK_REQUEST_HEADER_U32_LE5,
     MSG_DECODE_FAILED,
     MSG_FPZIP_DECOMPRESS_FAILED,
     MSG_FPZIP_IMPORT,
     TENSOR_HEADER_BYTE_LEN,
+    TENSOR_HEADER_UINT32_COUNT,
+    TENSOR_REQUEST_HEADER_LE6,
 )
 from genimg.utils.exceptions import APIError
+
+
+def pil_to_dt_tensor_bytes(image: Image.Image, width_px: int, height_px: int) -> bytes:
+    """Pack a PIL image as an uncompressed Draw Things float16 HWC tensor (header + body).
+
+    Resizes to the same rounded dimensions used for ``GenerationConfiguration`` (multiples
+    of 64). The first nine ``uint32`` header fields match dt-grpc-ts
+    ``convertImageForRequest`` in ``imageHelpers.ts`` (slots 0–5 fixed, then H/W/C); the
+    remaining slots are zero.
+    """
+    rw = round_dimension_to_multiple_of_64(width_px)
+    rh = round_dimension_to_multiple_of_64(height_px)
+    rgb = image.convert("RGB").resize((rw, rh), resample=Image.Resampling.LANCZOS)
+    u8 = np.asarray(rgb, dtype=np.uint8)
+    if u8.ndim != 3 or u8.shape[2] != 3:
+        raise APIError(MSG_DECODE_FAILED, response=f"expected HxWx3 uint8 after RGB resize, got {u8.shape}")
+    h, w, _c = u8.shape
+    f64 = u8.astype(np.float64) / 127.0 - 1.0
+    f16 = np.clip(f64, -1.0, 1.0).astype("<f2")
+    hdr = [0] * TENSOR_HEADER_UINT32_COUNT
+    hdr[0:6] = list(TENSOR_REQUEST_HEADER_LE6)
+    hdr[6] = int(h)
+    hdr[7] = int(w)
+    hdr[8] = 3
+    header = struct.pack("<" + "I" * TENSOR_HEADER_UINT32_COUNT, *hdr)
+    return header + f16.tobytes(order="C")
+
+
+def full_img2img_denoise_mask_bytes(height: int, width: int) -> bytes:
+    """Full-frame mask tensor: ``convertImageToMask`` header, then ``h×w`` bytes (see constants)."""
+    h, w = int(height), int(width)
+    if h <= 0 or w <= 0:
+        raise ValueError("mask height and width must be positive")
+    u32 = (*MASK_REQUEST_HEADER_U32_LE5, h, w, 0, 0)
+    first = struct.pack("<9I", *u32)
+    rest = bytes(TENSOR_HEADER_BYTE_LEN - len(first))
+    body = bytes([DRAW_THINGS_MASK_CFG_DENOISE]) * (h * w)
+    return first + rest + body
 
 
 def _float_tensor_to_u8_hwc(arr: np.ndarray) -> np.ndarray:
