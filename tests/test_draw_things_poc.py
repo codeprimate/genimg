@@ -26,6 +26,7 @@ from genimg.contrib.draw_things_poc.config_builder import (
     round_dimension_to_multiple_of_64,
 )
 from genimg.contrib.draw_things_poc.constants import (
+    CLI_LIST_SECTION_MODELS,
     DRAW_THINGS_TENSOR_COMPRESSED_MAGIC,
     MSG_FPZIP_DECOMPRESS_FAILED,
 )
@@ -172,7 +173,7 @@ def test_provider_generate() -> None:
     assert res.image.size == (1, 1)
 
 
-def test_cli_list_assets_json_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_list_assets_human_text(monkeypatch: pytest.MonkeyPatch) -> None:
     from click.testing import CliRunner
 
     import genimg.contrib.draw_things_poc.cli as cli_mod
@@ -188,6 +189,29 @@ def test_cli_list_assets_json_runs(monkeypatch: pytest.MonkeyPatch) -> None:
 
     runner = CliRunner()
     result = runner.invoke(list_assets, ["--insecure", "--kind", "models"])
+    assert result.exit_code == 0
+    out = result.output
+    assert CLI_LIST_SECTION_MODELS in out
+    assert "m.ckpt" in out
+    assert "M" in out
+
+
+def test_cli_list_assets_json_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import list_assets
+
+    runner = CliRunner()
+    result = runner.invoke(list_assets, ["--insecure", "--kind", "models", "--json"])
     assert result.exit_code == 0
     line = result.output.strip().splitlines()[0]
     data = json.loads(line)

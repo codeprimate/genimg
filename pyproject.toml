@@ -47,7 +47,9 @@ dependencies = [
 
 [project.optional-dependencies]
 draw-things = [
-    "grpcio>=1.60.0",
+    # Must match vendored gRPC/protobuf generated stubs (see generated/imageService_pb2*.py).
+    "grpcio>=1.80.0",
+    "protobuf>=6.31.0",
     "flatbuffers>=24.0.0",
     "fpzip>=1.0.0",
 ]
@@ -66,9 +68,10 @@ dev = [
     "types-requests>=2.31.0",
     "types-Pillow>=10.0.0",
     "types-PyYAML>=6.0.0",
-    # Draw Things PoC tests / codegen
-    "grpcio>=1.60.0",
-    "grpcio-tools>=1.60.0",
+    # Draw Things PoC tests / codegen (grpcio/protobuf aligned with checked-in *_pb2*.py)
+    "grpcio>=1.80.0",
+    "grpcio-tools>=1.80.0",
+    "protobuf>=6.31.0",
     "flatbuffers>=24.0.0",
     "fpzip>=1.0.0",
     # Pre-commit

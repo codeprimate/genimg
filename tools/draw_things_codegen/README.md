@@ -8,8 +8,10 @@ Regenerates Python gRPC stubs and FlatBuffers bindings from vendored sources:
 ## Prerequisites
 
 ```bash
-.venv/bin/pip install grpcio-tools flatbuffers
+.venv/bin/pip install 'grpcio-tools>=1.80' 'protobuf>=6.31' flatbuffers
 ```
+
+Checked-in `*_pb2*.py` targets **protobuf 6.31+** (`google.protobuf.runtime_version`) and **grpcio 1.80+**. If you `pip install genimg[draw-things]`, those pins are applied automatically.
 
 ## Regenerate
 

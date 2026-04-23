@@ -13,10 +13,26 @@ from genimg.contrib.draw_things_poc.client import DrawThingsClient
 from genimg.contrib.draw_things_poc.constants import (
     CLI_COMMAND_GENERATE,
     CLI_COMMAND_LIST_ASSETS,
+    CLI_LIST_BANNER,
+    CLI_LIST_EMPTY,
+    CLI_LIST_FOOTER,
+    CLI_LIST_RULE,
+    CLI_LIST_SECTION_CONTROL_NETS,
+    CLI_LIST_SECTION_LORAS,
+    CLI_LIST_SECTION_MODELS,
+    CLI_LIST_SECTION_TEXTUAL_INVERSIONS,
+    CLI_LIST_SECTION_UPSCALERS,
     DEFAULT_DRAW_THINGS_HOST,
     DEFAULT_DRAW_THINGS_PORT,
 )
 from genimg.contrib.draw_things_poc.tensor_image import dt_tensor_bytes_to_pil
+from genimg.contrib.draw_things_poc.types import (
+    ControlNetInfo,
+    LoraInfo,
+    ModelInfo,
+    TextualInversionInfo,
+    UpscalerInfo,
+)
 
 
 def _client_common_kwargs(
@@ -36,6 +52,87 @@ def _client_common_kwargs(
     }
 
 
+def _line_file_and_label(file: str, label: str) -> str | None:
+    f = file.strip()
+    if not f:
+        return None
+    n = label.strip()
+    if n and n != f:
+        return f"{f}  —  {n}"
+    return f
+
+
+def _format_models(models: tuple[ModelInfo, ...]) -> list[str]:
+    lines: list[str] = []
+    for m in models:
+        s = _line_file_and_label(m.file, m.name)
+        if s:
+            lines.append(s)
+    return sorted(lines, key=str.lower)
+
+
+def _format_loras(items: tuple[LoraInfo, ...]) -> list[str]:
+    lines: list[str] = []
+    for x in items:
+        s = _line_file_and_label(x.file, x.name)
+        if s:
+            lines.append(s)
+    return sorted(lines, key=str.lower)
+
+
+def _format_control_nets(items: tuple[ControlNetInfo, ...]) -> list[str]:
+    lines: list[str] = []
+    for x in items:
+        s = _line_file_and_label(x.file, x.name)
+        if s:
+            lines.append(s)
+    return sorted(lines, key=str.lower)
+
+
+def _format_textual_inversions(items: tuple[TextualInversionInfo, ...]) -> list[str]:
+    lines: list[str] = []
+    for x in items:
+        f = x.file.strip()
+        kw = x.keyword.strip()
+        nm = x.name.strip()
+        if f and kw:
+            tail = f"keyword: {kw}"
+            if nm and nm not in (f, kw):
+                tail = f"{nm}  |  keyword: {kw}"
+            lines.append(f"{f}  —  {tail}")
+        elif f:
+            s = _line_file_and_label(f, nm)
+            if s:
+                lines.append(s)
+        elif kw:
+            lines.append(f"(keyword only)  {kw}")
+    return sorted(lines, key=str.lower)
+
+
+def _format_upscalers(items: tuple[UpscalerInfo, ...]) -> list[str]:
+    lines: list[str] = []
+    for u in items:
+        s = _line_file_and_label(u.file, u.name)
+        if s:
+            lines.append(s)
+        else:
+            n = u.name.strip()
+            if n:
+                lines.append(n)
+    return sorted(lines, key=str.lower)
+
+
+def _emit_section(title: str, body_lines: list[str]) -> None:
+    click.echo(title)
+    click.echo("")
+    if not body_lines:
+        click.echo(f"  {CLI_LIST_EMPTY}")
+    else:
+        for line in body_lines:
+            click.echo(f"  {line}")
+    click.echo("")
+
+
 @click.group()
 def main() -> None:
     """Draw Things gRPC PoC commands."""
@@ -47,6 +144,13 @@ def main() -> None:
 @click.option("--ca-pem", type=click.Path(path_type=Path), default=None)
 @click.option("--insecure", is_flag=True, default=False)
 @click.option("--shared-secret", default=None)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    default=False,
+    help="Emit one JSON object per line (for scripts). Default is human-readable text.",
+)
 @click.option(
     "--kind",
     type=click.Choice(
@@ -61,28 +165,71 @@ def list_assets(
     ca_pem: Path | None,
     insecure: bool,
     shared_secret: str | None,
+    as_json: bool,
     kind: str,
 ) -> None:
-    """Print zoo catalog from Echo (JSON lines)."""
+    """List models, LoRAs, ControlNets, TIs, and upscalers from Echo (strings you pass to tools / config)."""
     kwargs = _client_common_kwargs(host, port, ca_pem, insecure, shared_secret)
     with DrawThingsClient(**kwargs) as client:  # type: ignore[arg-type]
         client.clear_catalog_cache()
+        if as_json:
+            if kind in ("all", "models"):
+                click.echo(
+                    json.dumps(
+                        {"kind": "models", "items": [asdict(m) for m in client.list_models()]}
+                    )
+                )
+            if kind in ("all", "loras"):
+                click.echo(
+                    json.dumps({"kind": "loras", "items": [asdict(m) for m in client.list_loras()]})
+                )
+            if kind in ("all", "control_nets"):
+                click.echo(
+                    json.dumps(
+                        {
+                            "kind": "control_nets",
+                            "items": [asdict(m) for m in client.list_control_nets()],
+                        }
+                    )
+                )
+            if kind in ("all", "textual_inversions"):
+                click.echo(
+                    json.dumps(
+                        {
+                            "kind": "textual_inversions",
+                            "items": [asdict(m) for m in client.list_textual_inversions()],
+                        }
+                    )
+                )
+            if kind in ("all", "upscalers"):
+                click.echo(
+                    json.dumps(
+                        {"kind": "upscalers", "items": [asdict(m) for m in client.list_upscalers()]}
+                    )
+                )
+            return
+
+        click.echo(CLI_LIST_BANNER.format(host=host, port=port))
+        click.echo(CLI_LIST_RULE)
+        click.echo("")
+
         if kind in ("all", "models"):
-            click.echo(json.dumps({"kind": "models", "items": [asdict(m) for m in client.list_models()]}))
+            _emit_section(CLI_LIST_SECTION_MODELS, _format_models(client.list_models()))
         if kind in ("all", "loras"):
-            click.echo(json.dumps({"kind": "loras", "items": [asdict(m) for m in client.list_loras()]}))
+            _emit_section(CLI_LIST_SECTION_LORAS, _format_loras(client.list_loras()))
         if kind in ("all", "control_nets"):
-            click.echo(
-                json.dumps({"kind": "control_nets", "items": [asdict(m) for m in client.list_control_nets()]})
+            _emit_section(
+                CLI_LIST_SECTION_CONTROL_NETS, _format_control_nets(client.list_control_nets())
             )
         if kind in ("all", "textual_inversions"):
-            click.echo(
-                json.dumps(
-                    {"kind": "textual_inversions", "items": [asdict(m) for m in client.list_textual_inversions()]}
-                )
+            _emit_section(
+                CLI_LIST_SECTION_TEXTUAL_INVERSIONS,
+                _format_textual_inversions(client.list_textual_inversions()),
             )
         if kind in ("all", "upscalers"):
-            click.echo(json.dumps({"kind": "upscalers", "items": [asdict(m) for m in client.list_upscalers()]}))
+            _emit_section(CLI_LIST_SECTION_UPSCALERS, _format_upscalers(client.list_upscalers()))
+
+        click.echo(CLI_LIST_FOOTER)
 
 
 @main.command(name=CLI_COMMAND_GENERATE)
