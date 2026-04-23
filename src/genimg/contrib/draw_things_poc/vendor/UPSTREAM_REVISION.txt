@@ -1,0 +1,1 @@
+kcjerrell/dt-grpc-ts main @ 2026-04-22 (pin to a git SHA in production workflows)

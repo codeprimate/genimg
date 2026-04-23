@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "genimg"
-version = "0.12.1"
+version = "0.12.2"
 description = "AI image generation tool with prompt optimization"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -46,6 +46,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+draw-things = [
+    "grpcio>=1.60.0",
+    "flatbuffers>=24.0.0",
+    "fpzip>=1.0.0",
+]
 dev = [
     # Testing
     "pytest>=7.4.0",
@@ -61,6 +66,11 @@ dev = [
     "types-requests>=2.31.0",
     "types-Pillow>=10.0.0",
     "types-PyYAML>=6.0.0",
+    # Draw Things PoC tests / codegen
+    "grpcio>=1.60.0",
+    "grpcio-tools>=1.60.0",
+    "flatbuffers>=24.0.0",
+    "fpzip>=1.0.0",
     # Pre-commit
     "pre-commit>=3.5.0",
     # Build and publish
@@ -71,6 +81,7 @@ dev = [
 [project.scripts]
 genimg = "genimg.__main__:main"
 genimg-ui = "genimg.ui.gradio_app:main"
+genimg-draw-things = "genimg.contrib.draw_things_poc.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/codeprimate/genimg"
@@ -82,7 +93,12 @@ Repository = "https://github.com/codeprimate/genimg"
 where = ["src"]
 
 [tool.setuptools.package-data]
-genimg = ["prompts.yaml", "ui_models.yaml", "assets/logo/*"]
+genimg = [
+    "prompts.yaml",
+    "ui_models.yaml",
+    "assets/logo/*",
+    "contrib/draw_things_poc/vendor/*.pem",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -105,7 +121,12 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/genimg"]
-omit = ["tests/*", "src/genimg/__main__.py", "src/genimg/core/image_analysis/backends/_joytag_models.py"]
+omit = [
+    "tests/*",
+    "src/genimg/__main__.py",
+    "src/genimg/core/image_analysis/backends/_joytag_models.py",
+    "src/genimg/contrib/draw_things_poc/generated/*",
+]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -140,6 +161,7 @@ exclude = [
     "build",
     "dist",
     "src/genimg/core/image_analysis/backends/_joytag_models.py",  # vendored; do not lint/format
+    "src/genimg/contrib/draw_things_poc/generated",
 ]
 
 [tool.ruff.lint]
@@ -162,6 +184,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "N806", "SIM117"]  # assert in tests; mock names (Popen); nested with
+"tests/test_draw_things_poc.py" = ["S101", "N806", "SIM117", "N802"]  # gRPC fake stubs use PascalCase RPC names
 "src/genimg/ui/gradio_app.py" = ["N806", "SIM117"]  # UI constants (_UI_CONCURRENCY_ID, _JS_SET_PAGE_TITLE); nested with for Gradio layout
 "src/genimg/core/image_analysis/backends/joytag.py" = ["N812"]  # TVF common alias for torchvision.transforms.functional
 
@@ -188,3 +211,11 @@ module = [
     "torchvision.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["genimg.contrib.draw_things_poc.generated.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["genimg.contrib.draw_things_poc.client"]
+ignore_errors = true

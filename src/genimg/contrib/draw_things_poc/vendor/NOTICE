@@ -1,0 +1,10 @@
+Draw Things gRPC wire artifacts (vendored for the genimg PoC client)
+
+- imageService.proto, config.fbs: from kcjerrell/dt-grpc-ts (tracks Draw Things wire format).
+- draw_things_root_ca.pem: from dt-grpc-ts resources/root_ca.crt (TLS trust for local Draw Things gRPC).
+
+Upstream revision is recorded in UPSTREAM_REVISION.txt.
+
+Licensing: upstream draw-things-community materials may be GPL; this repository only vendors
+.proto / .fbs / a CA certificate for interoperability. Confirm compliance before redistributing
+bundled server binaries or derived works.
