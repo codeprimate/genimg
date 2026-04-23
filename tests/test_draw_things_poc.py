@@ -165,8 +165,18 @@ def test_z_image_preset_sampler_is_uni_pc_trailing() -> None:
     assert z.sampler == int(SamplerType.UniPCTrailing)
 
 
+def test_flux2_klein_preset_matches_distilled_defaults() -> None:
+    p = resolve_draw_things_preset("flux2-klein")
+    assert p is not None
+    assert p.sampler == int(SamplerType.DDIM)
+    assert p.width_px == 1024 and p.height_px == 1024
+    assert p.steps == 4
+    assert p.guidance_scale == pytest.approx(1.0)
+
+
 def test_resolve_draw_things_preset_case_insensitive() -> None:
     assert resolve_draw_things_preset("Z-IMAGE") is not None
+    assert resolve_draw_things_preset("FLUX2-KLEIN") is not None
     assert resolve_draw_things_preset(None) is None
     assert resolve_draw_things_preset("") is None
     assert resolve_draw_things_preset("   ") is None
@@ -421,7 +431,7 @@ def test_cli_generate_two_inputs_emits_first_only_notice(
     monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
     from genimg.contrib.draw_things_poc.cli import generate_cmd
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     result = runner.invoke(
         generate_cmd,
         [
@@ -439,9 +449,8 @@ def test_cli_generate_two_inputs_emits_first_only_notice(
     )
     assert result.exit_code == 0
     assert outp.is_file()
-    err = (result.stderr or "").lower()
-    out = (result.output or "").lower()
-    assert "only the first" in err or "only the first" in out
+    combined = (result.output or "").lower()
+    assert "only the first" in combined
 
 
 def test_cli_generate_preset_omitted_strength_uses_bundle_value(

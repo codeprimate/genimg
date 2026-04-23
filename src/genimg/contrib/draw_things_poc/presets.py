@@ -61,6 +61,18 @@ DRAW_THINGS_PRESETS: tuple[DrawThingsPreset, ...] = (
         strength=1.0,
         sampler=int(SamplerType.UniPCTrailing),
     ),
+    # FLUX.2 [klein] distilled checkpoints: keep CFG at 1.0; few steps; 1024² is a common native size.
+    # Sampler DDIM approximates DDIM-style schedules often used with Klein in ComfyUI workflows.
+    DrawThingsPreset(
+        id="flux2-klein",
+        title="FLUX.2 [klein] (distilled-style defaults)",
+        width_px=1024,
+        height_px=1024,
+        steps=5,
+        guidance_scale=1.0,
+        strength=1.0,
+        sampler=int(SamplerType.DDIM),
+    ),
 )
 
 
