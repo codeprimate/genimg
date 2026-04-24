@@ -169,8 +169,8 @@ def test_flux2_klein_preset_matches_distilled_defaults() -> None:
     p = resolve_draw_things_preset("flux2-klein")
     assert p is not None
     assert p.sampler == int(SamplerType.DDIM)
-    assert p.width_px == 1024 and p.height_px == 1024
-    assert p.steps == 4
+    assert p.width_px == 1280 and p.height_px == 1280
+    assert p.steps == 5
     assert p.guidance_scale == pytest.approx(1.0)
 
 
@@ -529,6 +529,90 @@ def test_cli_generate_preset_explicit_strength_overrides_bundle(
     )
     assert result.exit_code == 0, result.output
     assert cap["strength"] == pytest.approx(0.55)
+
+
+def test_cli_generate_preset_omitted_dims_use_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+    from genimg.contrib.draw_things_poc.presets import resolve_draw_things_preset
+
+    cap: dict[str, int] = {}
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+        def generate_image_last_tensor(self, **kwargs: object) -> bytes:
+            cap["width_px"] = int(kwargs["width_px"])
+            cap["height_px"] = int(kwargs["height_px"])
+            return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    outp = tmp_path / "o.png"
+    bundle = resolve_draw_things_preset("z-image")
+    assert bundle is not None
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        ["--preset", "z-image", "--prompt", "x", "--model", "m.ckpt", "--out", str(outp)],
+    )
+    assert result.exit_code == 0, result.output
+    assert cap["width_px"] == bundle.width_px
+    assert cap["height_px"] == bundle.height_px
+
+
+def test_cli_generate_preset_explicit_dims_ignore_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+
+    cap: dict[str, int] = {}
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+        def generate_image_last_tensor(self, **kwargs: object) -> bytes:
+            cap["width_px"] = int(kwargs["width_px"])
+            cap["height_px"] = int(kwargs["height_px"])
+            return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    outp = tmp_path / "o.png"
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        [
+            "--preset",
+            "z-image",
+            "--width",
+            "512",
+            "--height",
+            "640",
+            "--prompt",
+            "x",
+            "--model",
+            "m.ckpt",
+            "--out",
+            str(outp),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert cap["width_px"] == 512
+    assert cap["height_px"] == 640
 
 
 def test_cli_list_assets_human_text(monkeypatch: pytest.MonkeyPatch) -> None:

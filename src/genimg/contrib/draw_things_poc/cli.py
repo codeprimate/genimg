@@ -9,6 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 import click
+from click.core import ParameterSource
 from PIL import Image
 
 from genimg.contrib.draw_things_poc.client import DrawThingsClient
@@ -87,6 +88,12 @@ class _SamplerParam(click.ParamType):
 
 
 SAMPLER_PARAM = _SamplerParam()
+
+
+def _use_preset_default_for_param(ctx: click.Context, param_name: str) -> bool:
+    """True when the user did not set this option (CLI, env, or prompt); preset may fill it."""
+    src = ctx.get_parameter_source(param_name)
+    return src is None or src is ParameterSource.DEFAULT
 
 
 def _client_common_kwargs(
@@ -340,9 +347,9 @@ def list_samplers(as_json: bool) -> None:
     default=None,
     type=float,
     help=(
-        "Denoise strength (FlatBuffers ``strength``): img2img usually uses values below 1.0. "
-        "Omit to use the default (1.0 without ``--preset``, or the preset’s strength with ``--preset``). "
-        "Pass explicitly to override a preset (e.g. ``--preset z-image --strength 0.55`` with ``-i``)."
+        "Denoise strength (FlatBuffers ``strength``): img2img often uses values below 1.0. "
+        "Omit for 1.0 without ``--preset``, or the preset’s bundled strength when you set "
+        "``--preset`` and do not pass ``--strength``."
     ),
 )
 @click.option(
@@ -361,7 +368,12 @@ def list_samplers(as_json: bool) -> None:
 @click.option(
     "--lora",
     multiple=True,
-    help='LoRA checkpoint file name (from list-assets), optional weight: "file.ckpt:0.75". Repeatable.',
+    help=(
+        "LoRA stack: omit for none. Use the checkpoint file string from "
+        '"list-assets --kind loras" (verbatim). Per entry: FILE or FILE:WEIGHT '
+        "(weight defaults to 0.8). Pass multiple times for several LoRAs, e.g. "
+        '"--lora style.ckpt:0.6 --lora detail.ckpt:0.4". Order is preserved.'
+    ),
 )
 @click.option(
     "--upscaler",
@@ -391,11 +403,13 @@ def list_samplers(as_json: bool) -> None:
     help=(
         "Input image for img2img; repeat flag per file (-i a.png -i b.png). "
         "Only the first file is used in this revision. Size should match "
-        "--width/--height after rounding to multiples of 64; pass ``--strength`` (often < 1) to override preset defaults."
+        "--width/--height after rounding to multiples of 64; pass ``--strength`` (often < 1) for img2img."
     ),
 )
 @click.option("--out", type=click.Path(path_type=Path), required=True)
+@click.pass_context
 def generate_cmd(
+    ctx: click.Context,
     host: str,
     port: int,
     ca_pem: Path | None,
@@ -417,18 +431,26 @@ def generate_cmd(
     input_paths: tuple[Path, ...],
     out: Path,
 ) -> None:
-    """Run txt2img or img2img and save decoded PNG."""
+    """Run txt2img or img2img and save decoded PNG.
+
+    LoRAs: optional --lora (repeatable); see the --lora option below.
+    """
     sampler_effective: int | None = sampler
     bundle = resolve_draw_things_preset(preset)
     if bundle is not None:
-        width = bundle.width_px
-        height = bundle.height_px
-        steps = bundle.steps
-        cfg = bundle.guidance_scale
-        if strength is None:
+        if _use_preset_default_for_param(ctx, "width"):
+            width = bundle.width_px
+        if _use_preset_default_for_param(ctx, "height"):
+            height = bundle.height_px
+        if _use_preset_default_for_param(ctx, "steps"):
+            steps = bundle.steps
+        if _use_preset_default_for_param(ctx, "cfg"):
+            cfg = bundle.guidance_scale
+        if _use_preset_default_for_param(ctx, "strength"):
             strength = bundle.strength
-        sampler_effective = bundle.sampler
-        if sampler is not None:
+        if _use_preset_default_for_param(ctx, "sampler"):
+            sampler_effective = bundle.sampler
+        else:
             sampler_effective = sampler
     elif strength is None:
         strength = DEFAULT_STRENGTH

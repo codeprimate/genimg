@@ -105,8 +105,9 @@ def resolve_draw_things_preset(name: str | None) -> DrawThingsPreset | None:
 def draw_things_preset_option_help() -> str:
     """Paragraph for ``--preset`` documenting every registered bundle."""
     lines = [
-        "Known-good tuning bundles. Each overrides --width, --height, --steps, --cfg, "
-        "and --strength, and picks a default sampler unless you pass --sampler.",
+        "Known-good tuning bundles. For each of --width, --height, --steps, --cfg, "
+        "--strength, and --sampler, the preset fills in a value only if you omit that flag; "
+        "anything you pass on the command line still wins.",
         "",
     ]
     lines.extend(p.cli_help_sentence() for p in DRAW_THINGS_PRESETS)
