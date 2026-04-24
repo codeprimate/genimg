@@ -46,16 +46,15 @@ from genimg.core.image_analysis import (
     unload_describe_models,
 )
 from genimg.core.provider_ids import (
-    KNOWN_IMAGE_PROVIDER_IDS,
     PROVIDER_DRAW_THINGS,
     PROVIDER_OLLAMA,
     PROVIDER_OPENROUTER,
 )
+from genimg.core.providers import get_registry
 from genimg.core.providers.draw_things.presets import (
     draw_things_preset_ids,
     resolve_draw_things_preset,
 )
-from genimg.core.providers import get_registry
 from genimg.logging_config import get_logger, log_prompts
 
 logger = get_logger(__name__)
@@ -69,6 +68,12 @@ DEFAULT_UI_HOST = "127.0.0.1"
 
 # Base page title (browser tab); status prefixes are prepended during optimize/generate
 BASE_PAGE_TITLE = "genimg – AI image generation"
+
+# Image-provider dropdown: Ollama image gen is omitted while upstream is broken; CLI/registry unchanged.
+_GRADIO_IMAGE_PROVIDER_CHOICES: tuple[str, ...] = (
+    PROVIDER_OPENROUTER,
+    PROVIDER_DRAW_THINGS,
+)
 
 
 def _page_title_with_status(status_tag: str) -> str:
@@ -297,6 +302,10 @@ def _load_ui_models() -> tuple[list[str], list[str], list[str], str, str, str, s
         and resolve_draw_things_preset(config_draw_things_preset) is not None
     ):
         default_draw_things = config_draw_things_preset
+
+    # Gradio hides Ollama as an image provider; env default "ollama" maps to OpenRouter in the UI.
+    if default_image_provider == PROVIDER_OLLAMA:
+        default_image_provider = PROVIDER_OPENROUTER
 
     if default_image_provider == PROVIDER_OPENROUTER:
         default_image_model: str = config.default_image_model
@@ -1011,6 +1020,7 @@ def _run_optimize_only_stream(
         )
         logger.info("Prompt: %s", truncated)
     config = Config.from_env()
+    provider_eff = _effective_provider_for_ui(provider, config)
     config.optimize_thinking = optimize_thinking
     try:
         config.validate()
@@ -1168,7 +1178,7 @@ def _build_blocks() -> gr.Blocks:
     </div>
     <div style="flex: 1; min-width: 200px;">
         <p style="font-size: 1.1em; color: #6b7280; margin: 0 0 4px 0; font-weight: 400;">AI-powered image generation with intelligent prompt optimization</p>
-        <p style="font-size: 0.9em; color: #9ca3af; margin: 0; font-weight: 400;">Ollama prompt enhancement • Ollama/OpenRouter/Draw Things image models • Reference images for supported providers</p>
+        <p style="font-size: 0.9em; color: #9ca3af; margin: 0; font-weight: 400;">Ollama prompt enhancement • OpenRouter/Draw Things image models • Reference images for supported providers</p>
     </div>
 </div>
 """
@@ -1259,7 +1269,7 @@ def _build_blocks() -> gr.Blocks:
             with gr.Column(scale=1):
                 provider_dd = gr.Dropdown(
                     label="Image provider",
-                    choices=list(KNOWN_IMAGE_PROVIDER_IDS),
+                    choices=list(_GRADIO_IMAGE_PROVIDER_CHOICES),
                     value=default_image_provider,
                     visible=True,
                 )
