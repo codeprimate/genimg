@@ -6,7 +6,7 @@ A Python package for generating AI images with intelligent prompt optimization. 
 
 ## Features
 
-- 🎨 **Multiple AI Models & Providers**: Generate images via **OpenRouter** (cloud) or **Ollama** (local). Choose provider and model in the UI or config.
+- 🎨 **Multiple AI Models & Providers**: Generate images via **OpenRouter** (cloud), **Ollama** (local), or **Draw Things** (local gRPC on macOS). Choose provider and model in the UI or config.
 - ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama models; optional in both CLI and web UI
 - 🖼️ **Reference Images**: Use reference images to guide style/generation (OpenRouter); process refs for optimization context (both providers). CLI and web UI.
 - 📑 **Character turnaround (CLI)**: `genimg character` builds a turnaround-style sheet from one or more reference images (built-in prompt plus optional `--prompt` / `-p`).
@@ -73,7 +73,8 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
 # Optional
 GENIMG_DEFAULT_MODEL=bytedance-seed/seedream-4.5
-GENIMG_DEFAULT_IMAGE_PROVIDER=openrouter   # or "ollama" for local image generation
+GENIMG_DEFAULT_IMAGE_PROVIDER=openrouter   # or "ollama"/"draw_things" for local image generation
+GENIMG_DRAW_THINGS_DEFAULT_MODEL=moodymix_zitv10dpo_f16.ckpt
 GENIMG_OPTIMIZATION_MODEL=huihui_ai/qwen3.5-abliterated:4b
 GENIMG_VERBOSITY=0                        # 0=quiet (WARNING+), 1=INFO+prompts, 2=DEBUG (CLI/UI/library)
 ```
@@ -132,8 +133,8 @@ Then open your browser to the displayed URL (default: http://127.0.0.1:7860).
 The web UI supports:
 
 - **Prompt & optimization**: Main prompt, optional enhancement (checkbox), and an editable optimized-prompt box. Use **Enhance Prompt** to run optimization, or **Generate** with optimization on to optimize then generate in one go.
-- **Reference image**: Upload a reference image. With **OpenRouter** as image provider it is sent for style/guidance; with **Ollama** it is used only as context for optimization (reference not sent to the image model). Optional **Describe** (prose or tags) and **Use image description** to feed the description into optimization.
-- **Provider & models**: Choose image provider (**OpenRouter** or **Ollama**) and pick image/optimization models from dropdowns (package config and installed Ollama models).
+- **Reference image**: Upload a reference image. It is sent only when the selected provider supports references (for example OpenRouter and Draw Things). With **Ollama** it is used only as optimization context (not sent to the image model). Optional **Describe** (prose or tags) and **Use image description** feed description text into optimization.
+- **Provider & models**: Choose image provider (**OpenRouter**, **Ollama**, or **Draw Things**) and pick image/optimization models from dropdowns.
 - **Generation**: **Generate** with progress, **Stop** to cancel, then view or download the result (JPG, timestamped filename).
 - **Browser notifications**: Optional alerts when generation or optimization completes (permission on first load; useful if the tab is in the background).
 - **Edits preserved**: Changes to the optimized prompt made while generation is running are kept when the run finishes.

@@ -6,9 +6,11 @@ This module handles API keys, model selection, and other configuration settings.
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from dotenv import load_dotenv
 
+from genimg.core.provider_ids import KNOWN_IMAGE_PROVIDER_IDS, PROVIDER_DRAW_THINGS
 from genimg.logging_config import get_logger
 from genimg.utils.exceptions import ConfigurationError
 
@@ -23,9 +25,12 @@ DEFAULT_IMAGE_PROVIDER = "ollama"
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
 DEFAULT_OPTIMIZATION_MODEL = "huihui_ai/qwen3.5-abliterated:4b"
+DEFAULT_DRAW_THINGS_HOST = "127.0.0.1"
+DEFAULT_DRAW_THINGS_PORT = 7859
+DEFAULT_DRAW_THINGS_PRESET = "z-image"
 
-# Provider ids accepted by validate(); do not import from genimg.core.providers (circular import)
-KNOWN_IMAGE_PROVIDERS = ("openrouter", "ollama")
+# Provider ids accepted by validate(); sourced from neutral provider_ids module.
+KNOWN_IMAGE_PROVIDERS = KNOWN_IMAGE_PROVIDER_IDS
 
 
 @dataclass
@@ -43,6 +48,25 @@ class Config:
 
     # Ollama (image generation when default_image_provider == "ollama")
     ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL
+
+    # Draw Things (image generation when provider == "draw_things")
+    draw_things_host: str = DEFAULT_DRAW_THINGS_HOST
+    draw_things_port: int = DEFAULT_DRAW_THINGS_PORT
+    draw_things_use_tls: bool = True
+    draw_things_insecure: bool = False
+    draw_things_shared_secret: str | None = None
+    draw_things_root_ca_pem_path: Path | None = None
+    default_draw_things_image_model: str = ""
+    draw_things_preset: str = DEFAULT_DRAW_THINGS_PRESET
+    draw_things_width_px: int | None = None
+    draw_things_height_px: int | None = None
+    draw_things_steps: int | None = None
+    draw_things_guidance_scale: float | None = None
+    draw_things_strength: float | None = None
+    draw_things_sampler: int | None = None
+    draw_things_hires_fix: bool | None = None
+    draw_things_upscaler: str | None = None
+    draw_things_upscaler_scale_factor: int | None = None
 
     # Image Processing Configuration
     min_image_pixels: int = 2500  # minimum total pixels for reference images
@@ -100,6 +124,31 @@ class Config:
                 return default
             return val.strip().lower() in ("1", "true", "yes")
 
+        def _opt_int_env(name: str) -> int | None:
+            val = os.getenv(name)
+            if val is None or val == "":
+                return None
+            return int(val)
+
+        def _opt_float_env(name: str) -> float | None:
+            val = os.getenv(name)
+            if val is None or val == "":
+                return None
+            return float(val)
+
+        def _opt_bool_env(name: str) -> bool | None:
+            val = os.getenv(name)
+            if val is None or val == "":
+                return None
+            return val.strip().lower() in ("1", "true", "yes")
+
+        def _opt_str_env(name: str) -> str | None:
+            val = os.getenv(name)
+            if val is None:
+                return None
+            v = val.strip()
+            return v if v else None
+
         debug_api = _bool_env("GENIMG_DEBUG_API", False)
         optimize_thinking = _bool_env(
             "GENIMG_OPTIMIZE_THINKING",
@@ -120,6 +169,40 @@ class Config:
                 "GENIMG_OPTIMIZATION_MODEL", cls.default_optimization_model
             ),
             ollama_base_url=ollama_base_url,
+            draw_things_host=(
+                os.getenv("GENIMG_DRAW_THINGS_HOST", cls.draw_things_host).strip()
+                or DEFAULT_DRAW_THINGS_HOST
+            ),
+            draw_things_port=_int_env("GENIMG_DRAW_THINGS_PORT", cls.draw_things_port),
+            draw_things_use_tls=_bool_env("GENIMG_DRAW_THINGS_USE_TLS", cls.draw_things_use_tls),
+            draw_things_insecure=_bool_env("GENIMG_DRAW_THINGS_INSECURE", cls.draw_things_insecure),
+            draw_things_shared_secret=_opt_str_env("GENIMG_DRAW_THINGS_SHARED_SECRET"),
+            draw_things_root_ca_pem_path=(
+                Path(ca_path)
+                if (ca_path := _opt_str_env("GENIMG_DRAW_THINGS_ROOT_CA_PEM_PATH")) is not None
+                else None
+            ),
+            default_draw_things_image_model=(
+                os.getenv(
+                    "GENIMG_DRAW_THINGS_DEFAULT_MODEL",
+                    cls.default_draw_things_image_model,
+                ).strip()
+            ),
+            draw_things_preset=(
+                os.getenv("GENIMG_DRAW_THINGS_PRESET", cls.draw_things_preset).strip()
+                or DEFAULT_DRAW_THINGS_PRESET
+            ),
+            draw_things_width_px=_opt_int_env("GENIMG_DRAW_THINGS_WIDTH_PX"),
+            draw_things_height_px=_opt_int_env("GENIMG_DRAW_THINGS_HEIGHT_PX"),
+            draw_things_steps=_opt_int_env("GENIMG_DRAW_THINGS_STEPS"),
+            draw_things_guidance_scale=_opt_float_env("GENIMG_DRAW_THINGS_GUIDANCE_SCALE"),
+            draw_things_strength=_opt_float_env("GENIMG_DRAW_THINGS_STRENGTH"),
+            draw_things_sampler=_opt_int_env("GENIMG_DRAW_THINGS_SAMPLER"),
+            draw_things_hires_fix=_opt_bool_env("GENIMG_DRAW_THINGS_HIRES_FIX"),
+            draw_things_upscaler=_opt_str_env("GENIMG_DRAW_THINGS_UPSCALER"),
+            draw_things_upscaler_scale_factor=_opt_int_env(
+                "GENIMG_DRAW_THINGS_UPSCALER_SCALE_FACTOR"
+            ),
             min_image_pixels=_int_env("GENIMG_MIN_IMAGE_PIXELS", 2500),
             optimize_thinking=optimize_thinking,
             debug_api=debug_api,
@@ -171,6 +254,23 @@ class Config:
                 raise ConfigurationError(
                     "OpenRouter API key appears to be invalid. It should start with 'sk-'."
                 )
+        elif provider == PROVIDER_DRAW_THINGS:
+            if not self.draw_things_host.strip():
+                raise ConfigurationError(
+                    "Draw Things host is required when default provider is draw_things."
+                )
+            if self.draw_things_port < 1 or self.draw_things_port > 65535:
+                raise ConfigurationError(
+                    f"Draw Things port must be between 1 and 65535, got {self.draw_things_port}."
+                )
+            if self.draw_things_use_tls and not self.draw_things_insecure:
+                if self.draw_things_root_ca_pem_path is not None and (
+                    not self.draw_things_root_ca_pem_path.is_file()
+                ):
+                    raise ConfigurationError(
+                        "Draw Things root CA PEM path does not exist or is not a file: "
+                        f"{self.draw_things_root_ca_pem_path}"
+                    )
         # provider == "ollama": no API key required; ollama_base_url can use default
 
         self._validated = True

@@ -12,10 +12,14 @@ from genimg.core.providers.registry import (
 from genimg.core.providers.registry import (
     get_registry as _get_registry_impl,
 )
+from genimg.core.provider_ids import (
+    KNOWN_IMAGE_PROVIDER_IDS,
+    PROVIDER_DRAW_THINGS,
+    PROVIDER_OLLAMA,
+    PROVIDER_OPENROUTER,
+)
 
-PROVIDER_OPENROUTER = "openrouter"
-PROVIDER_OLLAMA = "ollama"
-KNOWN_IMAGE_PROVIDERS = (PROVIDER_OPENROUTER, PROVIDER_OLLAMA)
+KNOWN_IMAGE_PROVIDERS = KNOWN_IMAGE_PROVIDER_IDS
 
 _builtins_registered = False
 
@@ -27,9 +31,11 @@ def _register_builtins(reg: ProviderRegistry) -> None:
         return
     from genimg.core.providers.ollama import OllamaProvider
     from genimg.core.providers.openrouter import OpenRouterProvider
+    from genimg.core.providers.draw_things.provider import DrawThingsProvider
 
     reg.register(PROVIDER_OPENROUTER, OpenRouterProvider())
     reg.register(PROVIDER_OLLAMA, OllamaProvider())
+    reg.register(PROVIDER_DRAW_THINGS, DrawThingsProvider())
     _builtins_registered = True
 
 

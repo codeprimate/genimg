@@ -45,6 +45,7 @@ from genimg.core.image_gen import (
     build_png_info_for_generation,
     save_generation_cli,
 )
+from genimg.core.provider_ids import KNOWN_IMAGE_PROVIDER_IDS
 from genimg.core.providers import get_registry
 from genimg.logging_config import configure_logging, get_verbosity_from_env
 
@@ -125,9 +126,13 @@ def cli(ctx: click.Context) -> None:
 )
 @click.option(
     "--provider",
-    type=click.Choice(["openrouter", "ollama"], case_sensitive=False),
+    type=click.Choice(list(KNOWN_IMAGE_PROVIDER_IDS), case_sensitive=False),
     default=None,
-    help="Image generation provider (default from config: ollama or openrouter).",
+    help=(
+        "Image generation provider (default from config). "
+        "For draw_things, set GENIMG_DRAW_THINGS_DEFAULT_MODEL "
+        "(GENIMG_DEFAULT_MODEL does not apply)."
+    ),
 )
 @click.option(
     "--debug-api",
@@ -198,7 +203,7 @@ def generate(
             if impl is not None and not getattr(impl, "supports_reference_image", True):
                 raise ValidationError(
                     f"Reference images are not supported for provider {provider_eff!r}. "
-                    "Use --provider openrouter for reference image support.",
+                    "Use a provider that supports reference images.",
                     field="reference_image",
                 )
 
@@ -384,9 +389,12 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
 )
 @click.option(
     "--provider",
-    type=click.Choice(["openrouter", "ollama"], case_sensitive=False),
+    type=click.Choice(list(KNOWN_IMAGE_PROVIDER_IDS), case_sensitive=False),
     default=None,
-    help="Image provider (default: openrouter for this command).",
+    help=(
+        "Image provider (default: openrouter for this command). "
+        "For draw_things, set GENIMG_DRAW_THINGS_DEFAULT_MODEL."
+    ),
 )
 @click.option(
     "--out", "-o", type=click.Path(path_type=Path), default=None, help="Output file path."
@@ -463,14 +471,13 @@ def character(
         config.validate()
 
         provider_eff = provider if provider is not None else "openrouter"
-        if provider_eff == "ollama":
-            impl = get_registry().get("ollama")
-            if impl is not None and not getattr(impl, "supports_reference_image", True):
-                raise ValidationError(
-                    f"Reference images are not supported for provider {provider_eff!r}. "
-                    "Use --provider openrouter for reference image support.",
-                    field="reference_image",
-                )
+        impl = get_registry().get(provider_eff)
+        if impl is not None and not getattr(impl, "supports_reference_image", True):
+            raise ValidationError(
+                f"Reference images are not supported for provider {provider_eff!r}. "
+                "Use a provider that supports reference images.",
+                field="reference_image",
+            )
 
         user_prompt = (prompt or "").strip()
         effective_prompt = CHARACTER_TURNAROUND_PROMPT + (

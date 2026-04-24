@@ -28,6 +28,12 @@ ollama_image_models:
   - x/flux2-klein
 default_ollama_image_model: "x/z-image-turbo"
 
+# Draw Things checkpoint suggestions.
+draw_things_image_models:
+  - moodymix_zitv10dpo_f16.ckpt
+  - flux_2_klein_9b_i8x.ckpt
+default_draw_things_image_model: "moodymix_zitv10dpo_f16.ckpt"
+
 # Ollama models for prompt optimization (dropdown suggestions; user can type another).
 default_optimization_model: "huihui_ai/qwen3.5-abliterated:4b"
 optimization_models:

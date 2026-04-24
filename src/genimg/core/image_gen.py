@@ -20,6 +20,7 @@ from PIL.ExifTags import Base
 from PIL.PngImagePlugin import PngInfo
 
 from genimg.core.config import Config, get_config
+from genimg.core.provider_ids import PROVIDER_DRAW_THINGS
 from genimg.core.providers import get_registry
 from genimg.logging_config import get_logger
 from genimg.utils.exceptions import ValidationError
@@ -408,7 +409,7 @@ def generate_image(
 
     config = config or get_config()
     provider_id = provider if provider is not None else config.default_image_provider
-    model = model if model is not None else config.default_image_model
+    model = _effective_image_model(provider_id=provider_id, model=model, config=config)
     timeout = timeout if timeout is not None else config.generation_timeout
 
     impl = get_registry().get(provider_id)
@@ -418,7 +419,7 @@ def generate_image(
     if refs and not getattr(impl, "supports_reference_image", True):
         raise ValidationError(
             f"Reference images are not supported for provider {provider_id!r}. "
-            "Use OpenRouter for reference image support.",
+            "Use a provider that supports reference images.",
             field="reference_image",
         )
 
@@ -434,3 +435,23 @@ def generate_image(
     )
     result.had_reference = bool(refs)
     return result
+
+
+def _effective_image_model(*, provider_id: str, model: str | None, config: Config) -> str:
+    """Resolve model fallback rules by provider."""
+    if model is not None:
+        stripped = model.strip()
+        if stripped:
+            return stripped
+
+    if provider_id == PROVIDER_DRAW_THINGS:
+        fallback = (config.default_draw_things_image_model or "").strip()
+        if not fallback:
+            raise ValidationError(
+                "Draw Things requires a default model. Set GENIMG_DRAW_THINGS_DEFAULT_MODEL "
+                "or pass an explicit --model.",
+                field="model",
+            )
+        return fallback
+
+    return config.default_image_model

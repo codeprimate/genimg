@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "genimg"
-version = "0.12.2"
+version = "0.13.0"
 description = "AI image generation tool with prompt optimization"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,16 +43,14 @@ dependencies = [
     "safetensors>=0.4.0",
     "timm>=0.9.0",
     "einops>=0.7.0",
-]
-
-[project.optional-dependencies]
-draw-things = [
     # Must match vendored gRPC/protobuf generated stubs (see generated/imageService_pb2*.py).
     "grpcio>=1.80.0",
     "protobuf>=6.31.0",
     "flatbuffers>=24.0.0",
     "fpzip>=1.0.0",
 ]
+
+[project.optional-dependencies]
 dev = [
     # Testing
     "pytest>=7.4.0",
@@ -68,12 +66,8 @@ dev = [
     "types-requests>=2.31.0",
     "types-Pillow>=10.0.0",
     "types-PyYAML>=6.0.0",
-    # Draw Things PoC tests / codegen (grpcio/protobuf aligned with checked-in *_pb2*.py)
-    "grpcio>=1.80.0",
+    # Draw Things PoC codegen (aligned with checked-in *_pb2*.py)
     "grpcio-tools>=1.80.0",
-    "protobuf>=6.31.0",
-    "flatbuffers>=24.0.0",
-    "fpzip>=1.0.0",
     # Pre-commit
     "pre-commit>=3.5.0",
     # Build and publish
@@ -101,6 +95,7 @@ genimg = [
     "ui_models.yaml",
     "assets/logo/*",
     "contrib/draw_things_poc/vendor/*.pem",
+    "core/providers/draw_things/vendor/*.pem",
 ]
 
 [tool.pytest.ini_options]

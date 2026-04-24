@@ -212,11 +212,72 @@ class TestConfigProviderAwareValidation:
         assert "Unknown default_image_provider" in str(exc_info.value)
         assert "unknown" in str(exc_info.value)
 
+    def test_validate_draw_things_default_no_openrouter_key_succeeds(self):
+        c = Config(
+            default_image_provider="draw_things",
+            openrouter_api_key="",
+            draw_things_host="127.0.0.1",
+            draw_things_port=7859,
+        )
+        c.validate()
+        assert c.is_valid() is True
+
+    def test_validate_draw_things_missing_host_raises(self):
+        c = Config(
+            default_image_provider="draw_things",
+            draw_things_host="",
+        )
+        with pytest.raises(ConfigurationError) as exc_info:
+            c.validate()
+        assert "host" in str(exc_info.value).lower()
+
+    def test_validate_draw_things_invalid_port_raises(self):
+        c = Config(
+            default_image_provider="draw_things",
+            draw_things_host="127.0.0.1",
+            draw_things_port=70000,
+        )
+        with pytest.raises(ConfigurationError) as exc_info:
+            c.validate()
+        assert "port" in str(exc_info.value).lower()
+
     def test_known_image_providers_constant(self):
         assert "openrouter" in KNOWN_IMAGE_PROVIDERS
         assert "ollama" in KNOWN_IMAGE_PROVIDERS
+        assert "draw_things" in KNOWN_IMAGE_PROVIDERS
         assert DEFAULT_IMAGE_PROVIDER == "ollama"
         assert DEFAULT_OLLAMA_BASE_URL == "http://127.0.0.1:11434"
+
+    def test_from_env_draw_things_fields(self):
+        with patch.dict(
+            os.environ,
+            {
+                "GENIMG_DRAW_THINGS_HOST": "10.0.0.5",
+                "GENIMG_DRAW_THINGS_PORT": "9999",
+                "GENIMG_DRAW_THINGS_USE_TLS": "0",
+                "GENIMG_DRAW_THINGS_INSECURE": "1",
+                "GENIMG_DRAW_THINGS_SHARED_SECRET": "secret",
+                "GENIMG_DRAW_THINGS_DEFAULT_MODEL": "model.ckpt",
+                "GENIMG_DRAW_THINGS_PRESET": "flux2-klein",
+                "GENIMG_DRAW_THINGS_WIDTH_PX": "1024",
+                "GENIMG_DRAW_THINGS_STEPS": "6",
+                "GENIMG_DRAW_THINGS_GUIDANCE_SCALE": "1.25",
+                "GENIMG_DRAW_THINGS_HIRES_FIX": "1",
+            },
+            clear=False,
+        ):
+            c = Config.from_env()
+        assert c.draw_things_host == "10.0.0.5"
+        assert c.draw_things_port == 9999
+        assert c.draw_things_use_tls is False
+        assert c.draw_things_insecure is True
+        assert c.draw_things_shared_secret == "secret"
+        assert c.default_draw_things_image_model == "model.ckpt"
+        assert c.draw_things_preset == "flux2-klein"
+        assert c.draw_things_width_px == 1024
+        assert c.draw_things_steps == 6
+        assert c.draw_things_guidance_scale == pytest.approx(1.25)
+        assert c.draw_things_hires_fix is True
 
 
 @pytest.mark.unit

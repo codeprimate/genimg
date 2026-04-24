@@ -45,7 +45,13 @@ from genimg.core.image_analysis import (
     get_description,
     unload_describe_models,
 )
-from genimg.core.providers import KNOWN_IMAGE_PROVIDERS
+from genimg.core.provider_ids import (
+    KNOWN_IMAGE_PROVIDER_IDS,
+    PROVIDER_DRAW_THINGS,
+    PROVIDER_OLLAMA,
+    PROVIDER_OPENROUTER,
+)
+from genimg.core.providers import get_registry
 from genimg.logging_config import get_logger, log_prompts
 
 logger = get_logger(__name__)
@@ -177,11 +183,41 @@ def _logo_data_url(size: int = 64) -> str | None:
     return f"data:image/png;base64,{b64}"
 
 
-def _load_ui_models() -> tuple[list[str], list[str], str, str, str, list[str], str]:
+def _provider_supports_reference(provider_id: str | None) -> bool:
+    """Return whether provider supports reference images (unknown -> False)."""
+    if provider_id is None or not isinstance(provider_id, str):
+        return False
+    impl = get_registry().get(provider_id)
+    if impl is None:
+        return False
+    return bool(getattr(impl, "supports_reference_image", True))
+
+
+def _reference_b64_for_generate(provider_id: str | None, ref_b64: str | None) -> str | None:
+    """Return reference payload only when provider supports reference images."""
+    if not ref_b64:
+        return None
+    if not _provider_supports_reference(provider_id):
+        return None
+    return ref_b64
+
+
+def _effective_provider_for_ui(provider: str | None, config: Config) -> str:
+    """Resolve provider for UI side decisions (ref gating, unload behavior)."""
+    if provider is not None and isinstance(provider, str) and provider.strip():
+        return provider
+    default_provider = getattr(config, "default_image_provider", PROVIDER_OPENROUTER)
+    if not isinstance(default_provider, str) or not default_provider.strip():
+        return PROVIDER_OPENROUTER
+    return default_provider
+
+
+def _load_ui_models() -> tuple[list[str], list[str], list[str], str, str, str, str, list[str], str]:
     """
     Load image and optimization model lists from ui_models.yaml in the package.
-    Returns (image_models, ollama_image_models, default_image_provider, default_image_model,
-             default_ollama_model, optimization_models, default_optimization_model).
+    Returns (image_models, ollama_image_models, draw_things_image_models,
+             default_image_provider, default_image_model, default_ollama_model,
+             default_draw_things_model, optimization_models, default_optimization_model).
     """
     try:
         with (
@@ -212,12 +248,35 @@ def _load_ui_models() -> tuple[list[str], list[str], str, str, str, list[str], s
             m for m in ollama_image_models if m != default_ollama
         ]
 
+    # Draw Things image models from YAML (checkpoint filenames)
+    draw_things_image_models: list[str] = data.get("draw_things_image_models") or [
+        "moodymix_zitv10dpo_f16.ckpt",
+        "flux_2_klein_9b_i8x.ckpt",
+    ]
+    default_draw_things: str = data.get("default_draw_things_image_model") or (
+        draw_things_image_models[0] if draw_things_image_models else "moodymix_zitv10dpo_f16.ckpt"
+    )
+    if default_draw_things and default_draw_things not in draw_things_image_models:
+        draw_things_image_models = [default_draw_things] + [
+            m for m in draw_things_image_models if m != default_draw_things
+        ]
+
     # Config: default provider and model for that provider
     config = Config.from_env()
     default_image_provider: str = config.default_image_provider
-    default_image_model: str = (
-        config.default_image_model if default_image_provider == "openrouter" else default_ollama
-    )
+    config_draw_things_default = (config.default_draw_things_image_model or "").strip()
+    if config_draw_things_default and config_draw_things_default not in draw_things_image_models:
+        draw_things_image_models = [config_draw_things_default] + [
+            m for m in draw_things_image_models if m != config_draw_things_default
+        ]
+    default_draw_things = config_draw_things_default or default_draw_things
+
+    if default_image_provider == PROVIDER_OPENROUTER:
+        default_image_model: str = config.default_image_model
+    elif default_image_provider == PROVIDER_DRAW_THINGS:
+        default_image_model = default_draw_things
+    else:
+        default_image_model = default_ollama
 
     # Optimization models from installed Ollama models
     default_opt: str = config.default_optimization_model
@@ -232,9 +291,11 @@ def _load_ui_models() -> tuple[list[str], list[str], str, str, str, list[str], s
     return (
         image_models,
         ollama_image_models,
+        draw_things_image_models,
         default_image_provider,
         default_image_model,
         default_ollama,
+        default_draw_things,
         opt_models,
         default_opt,
     )
@@ -377,6 +438,7 @@ def _run_generate(
         return None, None, "Enter a prompt to generate."
 
     config = Config.from_env()
+    provider_eff = _effective_provider_for_ui(provider, config)
     try:
         config.validate()
     except ConfigurationError as e:
@@ -411,10 +473,11 @@ def _run_generate(
             return None, None, _exception_to_message(e)
 
     try:
+        ref_b64_to_send = _reference_b64_for_generate(provider_eff, ref_b64)
         result = generate_image(
             effective_prompt,
             model=model or None,
-            reference_images_b64=[ref_b64] if ref_b64 else None,
+            reference_images_b64=[ref_b64_to_send] if ref_b64_to_send else None,
             provider=provider,
             config=config,
             cancel_check=cancel_check,
@@ -481,6 +544,7 @@ def _run_generate_stream(
         )
         logger.info("Prompt: %s", truncated)
     config = Config.from_env()
+    provider_eff = _effective_provider_for_ui(provider, config)
     config.optimize_thinking = optimize_thinking
     try:
         config.validate()
@@ -537,7 +601,7 @@ def _run_generate_stream(
                 method=description_method,
                 verbosity=description_verbosity or "detailed",
             )
-            if provider == "ollama":
+            if provider_eff == PROVIDER_OLLAMA:
                 unload_describe_models()
         except Exception as e:
             yield (
@@ -551,7 +615,7 @@ def _run_generate_stream(
                 _notification_body("Generation failed: ", _exception_to_message(e)),
             )
             return
-    ref_b64_to_send = ref_b64 if provider != "ollama" else None
+    ref_b64_to_send = _reference_b64_for_generate(provider_eff, ref_b64)
     # Use optimized box only if it was produced for this exact (prompt, ref_hash).
     # Normalize prompt so whitespace differences don't trigger re-optimize and overwrite user edits.
     state_matches = (
@@ -965,7 +1029,7 @@ def _run_optimize_only_stream(
                 method=description_method,
                 verbosity=description_verbosity or "detailed",
             )
-            if provider == "ollama":
+            if provider_eff == PROVIDER_OLLAMA:
                 unload_describe_models()
         except Exception as e:
             yield (
@@ -1036,9 +1100,11 @@ def _build_blocks() -> gr.Blocks:
     (
         image_models,
         ollama_image_models,
+        draw_things_image_models,
         default_image_provider,
         default_image_model,
         default_ollama,
+        default_draw_things_image_model,
         opt_models,
         default_opt,
     ) = _load_ui_models()
@@ -1065,7 +1131,7 @@ def _build_blocks() -> gr.Blocks:
     </div>
     <div style="flex: 1; min-width: 200px;">
         <p style="font-size: 1.1em; color: #6b7280; margin: 0 0 4px 0; font-weight: 400;">AI-powered image generation with intelligent prompt optimization</p>
-        <p style="font-size: 0.9em; color: #9ca3af; margin: 0; font-weight: 400;">Ollama prompt enhancement • Ollama/OpenRouter image models • Reference images for style transfer</p>
+        <p style="font-size: 0.9em; color: #9ca3af; margin: 0; font-weight: 400;">Ollama prompt enhancement • Ollama/OpenRouter/Draw Things image models • Reference images for supported providers</p>
     </div>
 </div>
 """
@@ -1149,14 +1215,14 @@ def _build_blocks() -> gr.Blocks:
                     label="Use image description/tags",
                     value=False,
                     interactive=False,
-                    info="Use description in optimization; when provider is Ollama, ref image is not sent.",
+                    info="Use description in optimization; reference images are sent only when the selected provider supports them.",
                 )
 
         with gr.Row():
             with gr.Column(scale=1):
                 provider_dd = gr.Dropdown(
                     label="Image provider",
-                    choices=list(KNOWN_IMAGE_PROVIDERS),
+                    choices=list(KNOWN_IMAGE_PROVIDER_IDS),
                     value=default_image_provider,
                     visible=True,
                 )
@@ -1166,8 +1232,12 @@ def _build_blocks() -> gr.Blocks:
                     value=default_image_model,
                     choices=(
                         image_models
-                        if default_image_provider == "openrouter"
-                        else ollama_image_models
+                        if default_image_provider == PROVIDER_OPENROUTER
+                        else (
+                            draw_things_image_models
+                            if default_image_provider == PROVIDER_DRAW_THINGS
+                            else ollama_image_models
+                        )
                     ),
                     allow_custom_value=True,
                     visible=True,
@@ -1175,17 +1245,25 @@ def _build_blocks() -> gr.Blocks:
                 )
                 ref_message = gr.HTML(
                     value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
-                    visible=(default_image_provider == "ollama"),
+                    visible=(not _provider_supports_reference(default_image_provider)),
                 )
 
         def _on_provider_change(provider: str) -> tuple[Any, Any]:
-            if provider == "ollama":
+            if provider == PROVIDER_OLLAMA:
                 return (
                     gr.update(choices=ollama_image_models, value=default_ollama),
                     gr.update(
                         visible=True,
                         value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
                     ),
+                )
+            if provider == PROVIDER_DRAW_THINGS:
+                return (
+                    gr.update(
+                        choices=draw_things_image_models,
+                        value=default_draw_things_image_model,
+                    ),
+                    gr.update(visible=False),
                 )
             config = Config.from_env()
             openrouter_default = config.default_image_model or (

@@ -35,6 +35,22 @@ def _run_character(*args: str) -> Result:
     return runner.invoke(cli, ["character", "--format", "png", *args])
 
 
+@pytest.mark.unit
+def test_generate_help_lists_draw_things_provider() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["generate", "--help"])
+    assert result.exit_code == 0
+    assert "draw_things" in (result.output or "")
+
+
+@pytest.mark.unit
+def test_character_help_lists_draw_things_provider() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["character", "--help"])
+    assert result.exit_code == 0
+    assert "draw_things" in (result.output or "")
+
+
 _CLI_MINIMAL_PNG_BUF = io.BytesIO()
 Image.new("RGB", (1, 1), color=(0, 0, 0)).save(_CLI_MINIMAL_PNG_BUF, format="PNG")
 _CLI_MINIMAL_PNG = _CLI_MINIMAL_PNG_BUF.getvalue()

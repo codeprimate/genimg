@@ -4,6 +4,7 @@ import pytest
 
 from genimg.core.providers import (
     KNOWN_IMAGE_PROVIDERS,
+    PROVIDER_DRAW_THINGS,
     PROVIDER_OLLAMA,
     PROVIDER_OPENROUTER,
     get_registry,
@@ -24,6 +25,12 @@ class TestProviderRegistry:
         assert impl is not None
         assert getattr(impl, "supports_reference_image", None) is False
 
+    def test_get_draw_things_returns_implementation(self):
+        reg = get_registry()
+        impl = reg.get(PROVIDER_DRAW_THINGS)
+        assert impl is not None
+        assert getattr(impl, "supports_reference_image", None) is True
+
     def test_get_unknown_returns_none(self):
         reg = get_registry()
         assert reg.get("unknown") is None
@@ -33,8 +40,10 @@ class TestProviderRegistry:
         ids = reg.provider_ids()
         assert PROVIDER_OPENROUTER in ids
         assert PROVIDER_OLLAMA in ids
-        assert len(ids) >= 2
+        assert PROVIDER_DRAW_THINGS in ids
+        assert len(ids) >= 3
 
     def test_known_image_providers_constant(self):
         assert PROVIDER_OPENROUTER in KNOWN_IMAGE_PROVIDERS
         assert PROVIDER_OLLAMA in KNOWN_IMAGE_PROVIDERS
+        assert PROVIDER_DRAW_THINGS in KNOWN_IMAGE_PROVIDERS

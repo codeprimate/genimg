@@ -461,6 +461,47 @@ class TestGenerateImageValidation:
             )
         assert exc_info.value.field == "reference_image"
 
+    def test_draw_things_uses_draw_things_default_model(self):
+        config = Config(
+            default_image_provider="draw_things",
+            default_image_model="openrouter/default",
+            default_draw_things_image_model="drawthings/default.ckpt",
+            draw_things_host="127.0.0.1",
+            draw_things_port=7859,
+        )
+        mock_provider = MagicMock()
+        mock_provider.supports_reference_image = True
+        mock_provider.generate.return_value = GenerationResult(
+            image=Image.open(io.BytesIO(MINIMAL_PNG)).copy(),
+            _format="png",
+            generation_time=0.01,
+            model_used="drawthings/default.ckpt",
+            prompt_used="a cat",
+            had_reference=False,
+        )
+
+        with patch("genimg.core.image_gen.get_registry") as m_reg:
+            m_reg.return_value.get.return_value = mock_provider
+            generate_image("a cat", config=config, provider="draw_things", model=None)
+
+        assert mock_provider.generate.call_args.kwargs["model"] == "drawthings/default.ckpt"
+
+    def test_draw_things_without_default_model_raises(self):
+        config = Config(
+            default_image_provider="draw_things",
+            default_draw_things_image_model="",
+            draw_things_host="127.0.0.1",
+            draw_things_port=7859,
+        )
+        mock_provider = MagicMock()
+        mock_provider.supports_reference_image = True
+        with patch("genimg.core.image_gen.get_registry") as m_reg:
+            m_reg.return_value.get.return_value = mock_provider
+            with pytest.raises(ValidationError) as exc_info:
+                generate_image("a cat", config=config, provider="draw_things", model=None)
+        assert exc_info.value.field == "model"
+        assert "GENIMG_DRAW_THINGS_DEFAULT_MODEL" in str(exc_info.value)
+
 
 @pytest.mark.unit
 class TestGenerateImageMocked:
