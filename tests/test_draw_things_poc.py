@@ -164,8 +164,9 @@ def test_z_image_preset_sampler_is_uni_pc_trailing() -> None:
     assert z is not None
     assert z.sampler == int(SamplerType.UniPCTrailing)
     assert z.default_hires_fix is True
-    assert z.default_upscaler is None
-    assert z.default_upscaler_scale_factor is None
+    assert z.default_model == "moodymix_zitv10dpo_f16.ckpt"
+    assert z.default_upscaler == "remacri_4x_f16.ckpt"
+    assert z.default_upscaler_scale_factor == 4
 
 
 def test_flux2_klein_preset_matches_distilled_defaults() -> None:
@@ -176,8 +177,9 @@ def test_flux2_klein_preset_matches_distilled_defaults() -> None:
     assert p.steps == 5
     assert p.guidance_scale == pytest.approx(1.0)
     assert p.default_hires_fix is False
-    assert p.default_upscaler is None
-    assert p.default_upscaler_scale_factor is None
+    assert p.default_model == "flux_2_klein_9b_i8x.ckpt"
+    assert p.default_upscaler == "remacri_4x_f16.ckpt"
+    assert p.default_upscaler_scale_factor == 4
 
 
 def test_resolve_draw_things_preset_case_insensitive() -> None:
@@ -460,7 +462,8 @@ def test_provider_generate_with_reference_image_first_only() -> None:
 
 
 def test_cli_generate_two_inputs_emits_first_only_notice(
-    monkeypatch: pytest.MonkeyPatch, tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     from click.testing import CliRunner
 
@@ -504,7 +507,8 @@ def test_cli_generate_two_inputs_emits_first_only_notice(
 
 
 def test_cli_generate_z_image_preset_passes_default_hires_to_client(
-    monkeypatch: pytest.MonkeyPatch, tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     from click.testing import CliRunner
 
@@ -535,12 +539,131 @@ def test_cli_generate_z_image_preset_passes_default_hires_to_client(
     )
     assert result.exit_code == 0, result.output
     assert cap["hires_fix"] is True
-    assert cap["upscaler"] is None
-    assert cap["upscaler_scale_factor"] is None
+    assert cap["upscaler"] == "remacri_4x_f16.ckpt"
+    assert cap["upscaler_scale_factor"] == 4
+
+
+def test_cli_generate_z_image_preset_omits_model_uses_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+    from genimg.contrib.draw_things_poc.presets import resolve_draw_things_preset
+
+    cap: dict[str, object] = {}
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+        def generate_image_last_tensor(self, **kwargs: object) -> bytes:
+            cap["model"] = kwargs.get("model")
+            return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    bundle = resolve_draw_things_preset("z-image")
+    assert bundle is not None
+    outp = tmp_path / "o.png"
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        ["--preset", "z-image", "--prompt", "x", "--out", str(outp)],
+    )
+    assert result.exit_code == 0, result.output
+    assert cap["model"] == bundle.default_model
+
+
+def test_cli_generate_flux2_klein_preset_passes_defaults_to_client(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+
+    cap: dict[str, object] = {}
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+        def generate_image_last_tensor(self, **kwargs: object) -> bytes:
+            cap["hires_fix"] = kwargs.get("hires_fix")
+            cap["upscaler"] = kwargs.get("upscaler")
+            cap["upscaler_scale_factor"] = kwargs.get("upscaler_scale_factor")
+            return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    outp = tmp_path / "o.png"
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        [
+            "--preset",
+            "flux2-klein",
+            "--prompt",
+            "x",
+            "--model",
+            "m.ckpt",
+            "--out",
+            str(outp),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert cap["hires_fix"] is False
+    assert cap["upscaler"] == "remacri_4x_f16.ckpt"
+    assert cap["upscaler_scale_factor"] == 4
+
+
+def test_cli_generate_flux2_klein_preset_omits_model_uses_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+    from genimg.contrib.draw_things_poc.presets import resolve_draw_things_preset
+
+    cap: dict[str, object] = {}
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+        def generate_image_last_tensor(self, **kwargs: object) -> bytes:
+            cap["model"] = kwargs.get("model")
+            return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    bundle = resolve_draw_things_preset("flux2-klein")
+    assert bundle is not None
+    outp = tmp_path / "o.png"
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        ["--preset", "flux2-klein", "--prompt", "x", "--out", str(outp)],
+    )
+    assert result.exit_code == 0, result.output
+    assert cap["model"] == bundle.default_model
 
 
 def test_cli_generate_z_image_no_hires_fix_flag_disables_preset(
-    monkeypatch: pytest.MonkeyPatch, tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     from click.testing import CliRunner
 
@@ -582,7 +705,8 @@ def test_cli_generate_z_image_no_hires_fix_flag_disables_preset(
 
 
 def test_cli_generate_z_image_explicit_upscaler_overrides_preset(
-    monkeypatch: pytest.MonkeyPatch, tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     from click.testing import CliRunner
 
@@ -631,7 +755,8 @@ def test_cli_generate_z_image_explicit_upscaler_overrides_preset(
 
 
 def test_cli_generate_preset_omitted_strength_uses_bundle_value(
-    monkeypatch: pytest.MonkeyPatch, tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     from click.testing import CliRunner
 
@@ -666,7 +791,8 @@ def test_cli_generate_preset_omitted_strength_uses_bundle_value(
 
 
 def test_cli_generate_preset_explicit_strength_overrides_bundle(
-    monkeypatch: pytest.MonkeyPatch, tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     from click.testing import CliRunner
 
@@ -708,8 +834,37 @@ def test_cli_generate_preset_explicit_strength_overrides_bundle(
     assert cap["strength"] == pytest.approx(0.55)
 
 
+def test_cli_generate_no_preset_requires_model(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    outp = tmp_path / "o.png"
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        ["--prompt", "x", "--out", str(outp)],
+    )
+    assert result.exit_code != 0
+    combined = (result.output or "") + (getattr(result, "stderr", "") or "")
+    assert "--model is required" in combined
+
+
 def test_cli_generate_preset_omitted_dims_use_bundle(
-    monkeypatch: pytest.MonkeyPatch, tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     from click.testing import CliRunner
 
@@ -746,7 +901,8 @@ def test_cli_generate_preset_omitted_dims_use_bundle(
 
 
 def test_cli_generate_preset_explicit_dims_ignore_bundle(
-    monkeypatch: pytest.MonkeyPatch, tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     from click.testing import CliRunner
 

@@ -337,7 +337,14 @@ def list_samplers(as_json: bool) -> None:
 )
 @click.option("--shared-secret", default=None)
 @click.option("--prompt", required=True)
-@click.option("--model", required=True)
+@click.option(
+    "--model",
+    default=None,
+    help=(
+        "Checkpoint from list-assets --kind models. Required without ``--preset``, or when "
+        "your preset does not define a default model; otherwise omit to use the preset default."
+    ),
+)
 @click.option("--width", default=512, type=int, show_default=True)
 @click.option("--height", default=512, type=int, show_default=True)
 @click.option("--steps", default=20, type=int, show_default=True)
@@ -424,7 +431,7 @@ def generate_cmd(
     ca_pem: Path | None,
     shared_secret: str | None,
     prompt: str,
-    model: str,
+    model: str | None,
     width: int,
     height: int,
     steps: int,
@@ -464,6 +471,8 @@ def generate_cmd(
             sampler_effective = sampler
         if bundle.default_hires_fix and _use_preset_default_for_param(ctx, "hires_fix"):
             hires_fix = True
+        if bundle.default_model and _use_preset_default_for_param(ctx, "model"):
+            model = bundle.default_model
         if bundle.default_upscaler and _use_preset_default_for_param(ctx, "upscaler"):
             upscaler = bundle.default_upscaler
         if bundle.default_upscaler_scale_factor is not None and _use_preset_default_for_param(
@@ -472,6 +481,12 @@ def generate_cmd(
             upscaler_scale = bundle.default_upscaler_scale_factor
     elif strength is None:
         strength = DEFAULT_STRENGTH
+    if model is None or not str(model).strip():
+        raise click.UsageError(
+            "--model is required unless your --preset supplies a default checkpoint (omit --model "
+            "to use it)."
+        )
+    model = str(model).strip()
     if upscaler_scale is not None and upscaler_scale > 1 and not (upscaler and upscaler.strip()):
         raise click.UsageError("--upscaler-scale > 1 requires --upscaler.")
     kwargs = _client_common_kwargs(host, port, ca_pem, shared_secret)
