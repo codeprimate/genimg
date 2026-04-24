@@ -11,6 +11,8 @@ from pathlib import Path
 
 from PIL import Image
 
+from genimg.core.config import Config
+from genimg.core.image_gen import GenerationResult
 from genimg.core.providers.draw_things.client import DrawThingsClient
 from genimg.core.providers.draw_things.constants import (
     DEFAULT_DRAW_THINGS_HOST,
@@ -23,8 +25,6 @@ from genimg.core.providers.draw_things.constants import (
 from genimg.core.providers.draw_things.generated import imageService_pb2_grpc as pb2_grpc
 from genimg.core.providers.draw_things.presets import resolve_draw_things_preset
 from genimg.core.providers.draw_things.tensor_image import dt_tensor_bytes_to_pil
-from genimg.core.config import Config
-from genimg.core.image_gen import GenerationResult
 from genimg.logging_config import get_logger
 from genimg.utils.exceptions import APIError, ValidationError
 
@@ -42,6 +42,7 @@ class _ResolvedTuning:
     hires_fix: bool
     upscaler: str | None
     upscaler_scale_factor: int | None
+    loras: tuple[tuple[str, float], ...]
 
 
 class DrawThingsProvider:
@@ -96,6 +97,7 @@ class DrawThingsProvider:
                 hires_fix=bool(preset.default_hires_fix),
                 upscaler=preset.default_upscaler,
                 upscaler_scale_factor=preset.default_upscaler_scale_factor,
+                loras=tuple(preset.default_loras),
             )
         else:
             resolved = _ResolvedTuning(
@@ -108,6 +110,7 @@ class DrawThingsProvider:
                 hires_fix=False,
                 upscaler=None,
                 upscaler_scale_factor=None,
+                loras=(),
             )
 
         overrides: tuple[tuple[str, str], ...] = (
@@ -165,7 +168,9 @@ class DrawThingsProvider:
         port = getattr(config, "draw_things_port", None)
         if port is None:
             port = self._port if self._port is not None else DEFAULT_DRAW_THINGS_PORT
-        root_ca_pem_path = getattr(config, "draw_things_root_ca_pem_path", None) or self._root_ca_pem_path
+        root_ca_pem_path = (
+            getattr(config, "draw_things_root_ca_pem_path", None) or self._root_ca_pem_path
+        )
         use_tls = getattr(config, "draw_things_use_tls", self._use_tls)
         insecure = getattr(config, "draw_things_insecure", self._insecure)
         shared_secret = getattr(config, "draw_things_shared_secret", None) or self._shared_secret
@@ -197,6 +202,7 @@ class DrawThingsProvider:
                 hires_fix=tuning.hires_fix,
                 upscaler=tuning.upscaler,
                 upscaler_scale_factor=tuning.upscaler_scale_factor,
+                loras=tuning.loras or None,
                 init_image=init_image,
             )
         try:

@@ -42,6 +42,9 @@ class DrawThingsPreset:
     default_upscaler_scale_factor: int | None = None
     """When set with ``default_upscaler``, may fill ``--upscaler-scale`` if you omit it."""
 
+    default_loras: tuple[tuple[str, float], ...] = ()
+    """``(checkpoint_filename, weight), …`` for ``GenerationConfiguration.loras`` (order preserved)."""
+
     def sampler_wire_name(self) -> str:
         """Enum member name for ``sampler`` (for help strings)."""
         for name in dir(SamplerType):
@@ -69,6 +72,9 @@ class DrawThingsPreset:
                 f"upscaler {self.default_upscaler!r} at {self.default_upscaler_scale_factor}× "
                 "if you omit --upscaler / --upscaler-scale"
             )
+        if self.default_loras:
+            lora_bits = ", ".join(f"{name!r} @ {w:g}" for name, w in self.default_loras)
+            bits.append(f"LoRAs: {lora_bits}")
         if bits:
             return f"{base} Preset defaults: {'; '.join(bits)}."
         return base
@@ -104,6 +110,10 @@ DRAW_THINGS_PRESETS: tuple[DrawThingsPreset, ...] = (
         default_model="flux_2_klein_9b_i8x.ckpt",
         default_upscaler="remacri_4x_f16.ckpt",
         default_upscaler_scale_factor=2,
+        default_loras=(
+            ("bfs_head_v1_flux_klein_9b_step3500_rank128_lora_f16.ckpt", 0.95),
+            ("klein_snofs_v1_3_lora_f16.ckpt", 0.95),
+        ),
     ),
 )
 
@@ -138,10 +148,10 @@ def draw_things_preset_option_help() -> str:
     """Paragraph for ``--preset`` documenting every registered bundle."""
     lines = [
         "Known-good tuning bundles. For each of --width, --height, --steps, --cfg, "
-        "--strength, --sampler, --hires-fix/--no-hires-fix, --model (when defined), and "
-        "(when defined) --upscaler / --upscaler-scale, the preset fills in a value only if "
-        "you omit that "
-        "option; anything you pass on the command line still wins.",
+        "--strength, --sampler, --hires-fix/--no-hires-fix, --model (when defined), "
+        "(when defined) --upscaler / --upscaler-scale, and default LoRA stacks (when defined), "
+        "the preset fills in a value only if you omit that option; anything you pass on the "
+        "command line still wins.",
         "",
     ]
     lines.extend(p.cli_help_sentence() for p in DRAW_THINGS_PRESETS)

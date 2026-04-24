@@ -166,7 +166,8 @@ def test_z_image_preset_sampler_is_uni_pc_trailing() -> None:
     assert z.default_hires_fix is True
     assert z.default_model == "moodymix_zitv10dpo_f16.ckpt"
     assert z.default_upscaler == "remacri_4x_f16.ckpt"
-    assert z.default_upscaler_scale_factor == 4
+    assert z.default_upscaler_scale_factor == 2
+    assert z.default_loras == ()
 
 
 def test_flux2_klein_preset_matches_distilled_defaults() -> None:
@@ -179,7 +180,11 @@ def test_flux2_klein_preset_matches_distilled_defaults() -> None:
     assert p.default_hires_fix is False
     assert p.default_model == "flux_2_klein_9b_i8x.ckpt"
     assert p.default_upscaler == "remacri_4x_f16.ckpt"
-    assert p.default_upscaler_scale_factor == 4
+    assert p.default_upscaler_scale_factor == 2
+    assert p.default_loras == (
+        ("bfs_head_v1_flux_klein_9b_step3500_rank128_lora_f16.ckpt", 0.95),
+        ("klein_snofs_v1_3_lora_f16.ckpt", 0.95),
+    )
 
 
 def test_resolve_draw_things_preset_case_insensitive() -> None:
@@ -540,7 +545,7 @@ def test_cli_generate_z_image_preset_passes_default_hires_to_client(
     assert result.exit_code == 0, result.output
     assert cap["hires_fix"] is True
     assert cap["upscaler"] == "remacri_4x_f16.ckpt"
-    assert cap["upscaler_scale_factor"] == 4
+    assert cap["upscaler_scale_factor"] == 2
 
 
 def test_cli_generate_z_image_preset_omits_model_uses_bundle(
@@ -599,6 +604,7 @@ def test_cli_generate_flux2_klein_preset_passes_defaults_to_client(
             cap["hires_fix"] = kwargs.get("hires_fix")
             cap["upscaler"] = kwargs.get("upscaler")
             cap["upscaler_scale_factor"] = kwargs.get("upscaler_scale_factor")
+            cap["loras"] = kwargs.get("loras")
             return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
@@ -622,7 +628,11 @@ def test_cli_generate_flux2_klein_preset_passes_defaults_to_client(
     assert result.exit_code == 0, result.output
     assert cap["hires_fix"] is False
     assert cap["upscaler"] == "remacri_4x_f16.ckpt"
-    assert cap["upscaler_scale_factor"] == 4
+    assert cap["upscaler_scale_factor"] == 2
+    assert cap["loras"] == (
+        ("bfs_head_v1_flux_klein_9b_step3500_rank128_lora_f16.ckpt", 0.95),
+        ("klein_snofs_v1_3_lora_f16.ckpt", 0.95),
+    )
 
 
 def test_cli_generate_flux2_klein_preset_omits_model_uses_bundle(
@@ -644,6 +654,7 @@ def test_cli_generate_flux2_klein_preset_omits_model_uses_bundle(
 
         def generate_image_last_tensor(self, **kwargs: object) -> bytes:
             cap["model"] = kwargs.get("model")
+            cap["loras"] = kwargs.get("loras")
             return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
@@ -659,6 +670,7 @@ def test_cli_generate_flux2_klein_preset_omits_model_uses_bundle(
     )
     assert result.exit_code == 0, result.output
     assert cap["model"] == bundle.default_model
+    assert cap["loras"] == bundle.default_loras
 
 
 def test_cli_generate_z_image_no_hires_fix_flag_disables_preset(

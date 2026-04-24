@@ -376,10 +376,12 @@ def list_samplers(as_json: bool) -> None:
     "--lora",
     multiple=True,
     help=(
-        "LoRA stack: omit for none. Use the checkpoint file string from "
+        "LoRA stack: omit to use a preset’s default LoRAs when ``--preset`` defines any, "
+        "else none. Use the checkpoint file string from "
         '"list-assets --kind loras" (verbatim). Per entry: FILE or FILE:WEIGHT '
         "(weight defaults to 0.8). Pass multiple times for several LoRAs, e.g. "
-        '"--lora style.ckpt:0.6 --lora detail.ckpt:0.4". Order is preserved.'
+        '"--lora style.ckpt:0.6 --lora detail.ckpt:0.4". Order is preserved; any '
+        "``--lora`` replaces the preset stack entirely."
     ),
 )
 @click.option(
@@ -481,6 +483,15 @@ def generate_cmd(
             upscaler_scale = bundle.default_upscaler_scale_factor
     elif strength is None:
         strength = DEFAULT_STRENGTH
+
+    loras_cli = tuple(_parse_lora_option(x) for x in lora) if lora else ()
+    if lora:
+        loras = loras_cli
+    elif bundle is not None and bundle.default_loras:
+        loras = bundle.default_loras
+    else:
+        loras = None
+
     if model is None or not str(model).strip():
         raise click.UsageError(
             "--model is required unless your --preset supplies a default checkpoint (omit --model "
@@ -491,7 +502,6 @@ def generate_cmd(
         raise click.UsageError("--upscaler-scale > 1 requires --upscaler.")
     kwargs = _client_common_kwargs(host, port, ca_pem, shared_secret)
     seed_val: int | None = seed if seed >= 0 else None
-    loras = tuple(_parse_lora_option(x) for x in lora) if lora else None
     init_image: Image.Image | None = None
     if input_paths:
         if len(input_paths) > 1:

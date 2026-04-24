@@ -22,7 +22,6 @@ from genimg import (
     process_reference_image,
     validate_prompt,
 )
-from genimg.core.reference import merge_jpeg_base64_references_horizontally
 from genimg.cli import progress
 from genimg.cli.character_prompt import CHARACTER_TURNAROUND_PROMPT
 from genimg.cli.handlers import (
@@ -45,8 +44,13 @@ from genimg.core.image_gen import (
     build_png_info_for_generation,
     save_generation_cli,
 )
-from genimg.core.provider_ids import KNOWN_IMAGE_PROVIDER_IDS
+from genimg.core.provider_ids import KNOWN_IMAGE_PROVIDER_IDS, PROVIDER_DRAW_THINGS
 from genimg.core.providers import get_registry
+from genimg.core.providers.draw_things.presets import (
+    CHARACTER_COMMAND_DRAW_THINGS_PRESET_ID,
+    resolve_draw_things_preset,
+)
+from genimg.core.reference import merge_jpeg_base64_references_horizontally
 from genimg.logging_config import configure_logging, get_verbosity_from_env
 
 
@@ -373,6 +377,10 @@ and model to DEFAULT_IMAGE_MODEL so GENIMG_DEFAULT_IMAGE_PROVIDER / GENIMG_DEFAU
 do not apply (unlike ``genimg generate``).
 
 \b
+Draw Things: ``--provider draw_things`` forces the ``flux2-klein`` preset and the preset's
+default checkpoint; ``--model`` is ignored (use ``genimg generate`` for other Draw Things models).
+
+\b
 With -v / -vv: stderr shows full reference paths on the refs line and a longer --prompt preview.
 """
 )
@@ -385,7 +393,13 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
 )
 @click.option("--prompt", "-p", default=None, help="Optional extra instructions for the model.")
 @click.option(
-    "--model", "-m", default=None, help="OpenRouter image model (default: pinned Seedream)."
+    "--model",
+    "-m",
+    default=None,
+    help=(
+        "Image model (default: pinned Seedream for OpenRouter). "
+        "Ignored with --provider draw_things (character uses the flux2-klein preset)."
+    ),
 )
 @click.option(
     "--provider",
@@ -393,7 +407,7 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
     default=None,
     help=(
         "Image provider (default: openrouter for this command). "
-        "For draw_things, set GENIMG_DRAW_THINGS_DEFAULT_MODEL."
+        "draw_things pins the flux2-klein preset for this command; --model is ignored."
     ),
 )
 @click.option(
@@ -491,7 +505,23 @@ def character(
                     "TITLE sanitizes to an empty filename stem; using 'character' as the basename."
                 )
 
-        model_eff = model if model is not None else DEFAULT_IMAGE_MODEL
+        if provider_eff == PROVIDER_DRAW_THINGS:
+            dt_preset = resolve_draw_things_preset(CHARACTER_COMMAND_DRAW_THINGS_PRESET_ID)
+            if dt_preset is None:
+                raise ValidationError(
+                    f"Draw Things character preset {CHARACTER_COMMAND_DRAW_THINGS_PRESET_ID!r} "
+                    "is not registered.",
+                    field="draw_things_preset",
+                )
+            config.draw_things_preset = dt_preset.id
+            ckpt = (dt_preset.default_model or "").strip()
+            if ckpt:
+                config.default_draw_things_image_model = ckpt
+            model_for_generate: str | None = None
+            model_for_ui = f"{dt_preset.id} · {ckpt}" if ckpt else dt_preset.id
+        else:
+            model_for_generate = model if model is not None else DEFAULT_IMAGE_MODEL
+            model_for_ui = model_for_generate
 
         path_list = list(paths)
         ref_b64_list: list[str] = []
@@ -513,11 +543,11 @@ def character(
                 title=title,
                 ref_count=len(path_list),
                 provider_id=provider_eff,
-                model_id=model_eff,
+                model_id=model_for_ui,
             )
 
         gen_kw: dict = {
-            "model": model_eff,
+            "model": model_for_generate,
             "reference_images_b64": ref_b64_list,
             "config": config,
             "cancel_check": cancel_check,
@@ -527,7 +557,7 @@ def character(
         result: GenerationResult
         if not quiet:
             with progress.generation_progress(
-                model=model_eff,
+                model=model_for_ui,
                 optimized=False,
                 reference_used=True,
                 primary_task_label="Generating character sheet",
