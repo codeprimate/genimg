@@ -51,7 +51,7 @@ def test_provider_uses_preset_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _CaptureClient.last_kwargs["height_px"] == 1280
     assert _CaptureClient.last_kwargs["steps"] == 8
     assert _CaptureClient.last_kwargs["guidance_scale"] == pytest.approx(1.0)
-    assert _CaptureClient.last_kwargs["strength"] == pytest.approx(1.0)
+    assert _CaptureClient.last_kwargs["strength"] == pytest.approx(0.8)
     assert _CaptureClient.last_kwargs["sampler"] == int(SamplerType.UniPCTrailing)
     assert _CaptureClient.last_kwargs["hires_fix"] is True
     assert _CaptureClient.last_kwargs["upscaler"] == "remacri_4x_f16.ckpt"

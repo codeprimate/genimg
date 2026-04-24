@@ -79,9 +79,8 @@ def build_txt2img_configuration_bytes(
     upscaler_scale_factor: int | None = None,
     hires_fix_strength: float = 0.7,
     strength: float = DEFAULT_STRENGTH,
-    for_img2img: bool = False,
 ) -> bytes:
-    """Pack a minimal ``GenerationConfiguration`` suitable for txt2img.
+    """Pack a minimal ``GenerationConfiguration`` suitable for txt2img or img2img.
 
     **Hi-res fix** (``hires_fix``): two diffusion passes — first near **⅔** of the final canvas
     (each axis snapped to the nearest 64 px), then to the target size. Independent of upscaler.
@@ -89,9 +88,8 @@ def build_txt2img_configuration_bytes(
     **Upscaler** (``upscaler`` + optional ``upscaler_scale_factor`` > 1): post-render upscale
     checkpoint (e.g. Remacri) after generation. Either, neither, or both may be enabled.
 
-    When ``for_img2img`` is true, sets ``preserve_original_after_inpaint`` to **false** so the
-    server does not snap the result back to the init image (Draw Things / dt-grpc-ts default for
-    that field is **true** in ``drawThingsDefault``).
+    ``preserve_original_after_inpaint`` is left at its FlatBuffers default (``True``) to match
+    native Draw Things UI behaviour for both txt2img and img2img passes.
     """
     rw_px = round_dimension_to_multiple_of_64(width_px)
     rh_px = round_dimension_to_multiple_of_64(height_px)
@@ -164,8 +162,6 @@ def build_txt2img_configuration_bytes(
     GenCfg.AddNegativeOriginalImageHeight(builder, int(rh_px))
     GenCfg.AddNegativeOriginalImageWidth(builder, int(rw_px))
     GenCfg.AddMaskBlur(builder, 1.5)
-    if for_img2img:
-        GenCfg.AddPreserveOriginalAfterInpaint(builder, False)
     if loras_vec:
         GenCfg.AddLoras(builder, loras_vec)
     root = GenCfg.End(builder)

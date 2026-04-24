@@ -221,7 +221,6 @@ class DrawThingsClient:
             hires_fix_strength=hires_fix_strength,
             strength=strength,
             sampler=use_sampler,
-            for_img2img=init_image is not None,
         )
 
         req = ImageGenerationRequest()
