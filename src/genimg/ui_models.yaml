@@ -28,10 +28,11 @@ ollama_image_models:
   - x/flux2-klein
 default_ollama_image_model: "x/z-image-turbo"
 
-# Draw Things checkpoint suggestions.
-draw_things_image_models:
-  - moodymix_zitv10dpo_f16.ckpt
-  - flux_2_klein_9b_i8x.ckpt
+# Draw Things (Gradio): dropdown choices are preset ids from `genimg.core.providers.draw_things.presets`
+# (`draw_things_preset_ids()`), not the list below. Keep `default_draw_things_image_model` as a
+# checkpoint filename: on load, the UI picks the preset whose `default_model` equals this value;
+# if none match, the first registered preset id is the default.
+draw_things_image_models: []
 default_draw_things_image_model: "moodymix_zitv10dpo_f16.ckpt"
 
 # Ollama models for prompt optimization (dropdown suggestions; user can type another).

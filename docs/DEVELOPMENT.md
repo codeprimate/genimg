@@ -42,7 +42,9 @@ cp .env.example .env
   - Can also be provided via CLI: `genimg generate --api-key sk-or-v1-...`
 
 **Optional (Image Generation):**
-- `GENIMG_DEFAULT_MODEL` — Default image generation model (default: `bytedance-seed/seedream-4.5`)
+- `GENIMG_DEFAULT_IMAGE_PROVIDER` — `openrouter`, `ollama`, or `draw_things` (project default in code is `ollama`; README examples often use OpenRouter)
+- `GENIMG_DEFAULT_MODEL` — Default image generation model for the active provider (OpenRouter-style id when provider is openrouter)
+- `GENIMG_DRAW_THINGS_HOST`, `GENIMG_DRAW_THINGS_PORT`, `GENIMG_DRAW_THINGS_PRESET`, `GENIMG_DRAW_THINGS_DEFAULT_MODEL` (default checkpoint when using Draw Things), and other `GENIMG_DRAW_THINGS_*` variables — see README for Draw Things local gRPC and preset overrides
 - `GENIMG_OPTIMIZATION_MODEL` — Default Ollama model for prompt optimization (default: `huihui_ai/qwen3.5-abliterated:4b`)
 
 **Optional (Web UI):**

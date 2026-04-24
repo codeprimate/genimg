@@ -351,7 +351,7 @@ Each decision record includes:
 
 **Date**: 2026-02-16
 
-**Decision**: Support multiple image generation providers (e.g. OpenRouter, Ollama) behind a common interface. Use a global provider registry; CLI accepts `--provider`; Gradio UI lets the user choose provider and loads models per provider.
+**Decision**: Support multiple image generation providers (e.g. OpenRouter, Ollama, Draw Things) behind a common interface. Use a global provider registry; CLI accepts `--provider`; Gradio UI lets the user choose provider and loads models per provider.
 
 **Context**: OpenRouter was the initial provider (ADR-005). Users and use cases benefit from also supporting Ollama (local, no API key). We need a single code path that can switch providers without duplicating UI/CLI logic.
 
@@ -366,7 +366,7 @@ Each decision record includes:
 - Reference-image compatibility can be validated per provider (e.g. Ollama vs OpenRouter capabilities).
 
 **Consequences**:
-- `genimg.core.providers` holds base, registry, and provider implementations (e.g. `ollama`, `openrouter`).
+- `genimg.core.providers` holds base, registry, and provider implementations (e.g. `ollama`, `openrouter`, `draw_things`).
 - Config includes default image provider and provider-specific settings (e.g. Ollama base URL).
 - Gradio model dropdown and API calls depend on selected provider; tests cover provider selection and validation.
 
@@ -559,6 +559,33 @@ Each decision record includes:
 **Consequences**:
 - `.cursor/rules/ai_process_01_create_specification.mdc` through `ai_process_04_create_release.mdc` exist and are referenced in workspace rules. When the user asks to create a spec, plan, implement a plan, or create release notes, the agent should request and follow the corresponding rule.
 - No runtime impact; this is tooling and process for development and release.
+
+---
+
+## ADR-020: Draw Things as a local image provider (gRPC + presets)
+
+**Date**: 2026-04-24
+
+**Decision**: Add a third built-in image provider, **`draw_things`**, that talks to the **Draw Things** macOS app over **gRPC** with **FlatBuffers** `GenerationConfiguration` payloads (generated Python from upstream `.fbs` / `.proto`), vendored **TLS** material, and optional **fpzip** for compressed response tensors. Ship a **named preset** system for CLI and Gradio (preset **ids** map to checkpoint names, resolution, sampler, steps, CFG, strength, and optional hi-res / upscaler defaults). Use a **minimum gRPC deadline** (five minutes) so local runs that include hi-res or heavy steps are not cut off by a short default timeout. Build **one** FlatBuffers configuration path for both txt2img and img2img (no separate `for_img2img` flag); tune default **strength** in presets (e.g. **0.8**) for img2img-style consistency.
+
+**Context**: Users wanted local, high-quality generation on Apple Silicon without sending pixels to the cloud. Draw Things already exposes a gRPC API used by TypeScript clients; genimg needed a provider that matches the existing registry/`generate_image` contract (prompt, optional reference, cancellation, timeouts).
+
+**Options Considered**:
+1. **First-class provider in `genimg.core.providers.draw_things`** with optional extras and duplicated generated modules (no import from the old PoC tree): Chosen for CI-friendly stubs and a single supported path.
+2. **Keep only the contrib PoC**: Rejected for discoverability and for `genimg generate` / Gradio integration.
+3. **HTTP proxy to Draw Things**: Not offered by the app; gRPC is the supported integration.
+
+**Rationale**:
+- Registry and `Config` already model multiple providers; adding `draw_things` reuses validation, CLI `--provider`, and Gradio wiring.
+- Presets reduce user error (correct resolution and sampler per model family) and keep the UI dropdown stable (preset ids instead of long checkpoint strings).
+- A generous minimum deadline avoids false timeouts on local GPU-heavy jobs; caller-specific timeouts can still be higher.
+- Unifying txt2img/img2img configuration avoids divergent bugs; strength and reference tensor drive behavior instead of a parallel builder API.
+
+**Consequences**:
+- Install size: optional `draw-things` extra pulls gRPC and tensor-related dependencies; core remains importable without them until the provider is invoked.
+- **Platform**: Practical use targets **macOS** with Draw Things listening (default **127.0.0.1:7859**); other platforms may only run unit tests with fakes.
+- **Reference images**: Supported for Draw Things (img2img path), unlike Ollama image generation.
+- **Documentation**: `docs/SPEC.md`, `docs/CHANGELOG.md`, README, and this ADR record the behavior; `_local_docs/` implementation plan should stay aligned for residual PoC tests.
 
 ---
 

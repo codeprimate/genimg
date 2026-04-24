@@ -380,7 +380,7 @@ This appears when using OpenRouter for image generation. Set `OPENROUTER_API_KEY
 
 ### Reference images with Ollama
 
-Reference images are sent to the image model only when using the **OpenRouter** provider. With **Ollama**, the reference is used only as context for prompt optimization (e.g. with "Use image description"); the image is not sent to the Ollama image model.
+Reference images are sent to the image model when using **OpenRouter** or **Draw Things**. With **Ollama**, the reference is used only as context for prompt optimization (e.g. with "Use image description"); the image is not sent to the Ollama image model.
 
 ### Image Processing Errors
 

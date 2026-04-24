@@ -13,6 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - (none)
 
+## [0.13.1] - 2026-04-24
+
+### Changed
+- **Draw Things gRPC:** minimum client deadline (`MIN_GENERATION_TIMEOUT_SECONDS`, five minutes) so slow local jobs are less likely to time out before the server finishes.
+- **Gradio:** Draw Things image model dropdown uses **preset ids** from the preset registry (not raw checkpoint filenames from YAML); selection resolves to checkpoint and `draw_things_preset` in config.
+- **Draw Things FlatBuffers builder:** `build_txt2img_configuration_bytes` no longer takes `for_img2img`; one configuration path covers txt2img and img2img (inpainting behavior unchanged).
+- **Draw Things presets:** default denoise **strength** for the **z-image** preset set to **0.8** (was 1.0) for more consistent img2img-style output.
+
+## [0.13.0] - 2026-04-24
+
+### Added
+- **Draw Things** image provider (`draw_things`): core integration under `genimg.core.providers.draw_things` (gRPC to the local Draw Things app, FlatBuffers `GenerationConfiguration`, vendored TLS CA, tensor decode with optional **`fpzip`**).
+- **`genimg generate --provider draw_things`** and registry wiring (`provider_ids`, config validation for host when Draw Things is the default provider).
+- **Presets** for Draw Things (`genimg-draw-things --preset`, `presets.py`): named bundles (steps, resolution, CFG, sampler, strength, optional hi-res fix / upscaler defaults); includes **FLUX.2 [klein]** tuning.
+- **Gradio** and **`ui_models.yaml`:** Draw Things surfaced alongside OpenRouter and Ollama; Draw Things–specific config env vars documented in README.
+
+## [0.12.2] - 2026-04-23
+
+### Added
+- Optional **`draw-things`** dependency extra (gRPC, **protobuf**, **flatbuffers**, **fpzip**) and CLI entry point **`genimg-draw-things`** exposing the earlier **`genimg.contrib.draw_things_poc`** experiment (codegen tooling and tests under `tools/draw_things_codegen/`, `tests/test_draw_things_poc.py`).
+
 ## [0.12.1] - 2026-04-18
 
 ### Added

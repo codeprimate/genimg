@@ -1,7 +1,7 @@
 # AI Image Generator - Functional Specification
 
-**Version:** 1.3  
-**Date:** February 25, 2026  
+**Version:** 1.4  
+**Date:** April 24, 2026  
 **Status:** Implemented (matches current implementation)
 
 ---
@@ -63,7 +63,7 @@ Users must be able to:
 ### 2.1 Image Generation
 
 - **As a user**, I can provide a text description of an image I want to create
-- **As a user**, I can select image generation provider (e.g. OpenRouter or Ollama) and model to find what best suits my needs
+- **As a user**, I can select image generation provider (e.g. OpenRouter, Ollama, or Draw Things) and model to find what best suits my needs
 - **As a user**, I can generate images without writing code or calling APIs directly
 - **As a user**, I can see the generated image immediately after creation
 - **As a user**, I can download generated images in standard formats
@@ -78,7 +78,7 @@ Users must be able to:
 
 ### 2.3 Reference Images
 
-- **As a user**, I can provide a reference image to guide the generation (when using the OpenRouter provider)
+- **As a user**, I can provide a reference image to guide the generation when using a provider that sends references to the image model (e.g. OpenRouter or Draw Things)
 - **As a user**, I can upload images in common formats (PNG, JPEG, WebP, HEIC, HEIF)
 - **As a user**, I can describe how the reference image should influence the output via my prompt
 - **As a user**, I can generate a text description of my reference image (tags or prose) in the UI and use that description during prompt optimization
@@ -93,7 +93,7 @@ Users must be able to:
 
 ### 2.5 Configuration
 
-- **As a user**, I can provide my API credentials when using the OpenRouter provider (optional when using Ollama only)
+- **As a user**, I can provide my API credentials when using the OpenRouter provider (optional when using Ollama or Draw Things for image generation only)
 - **As a user**, I can select image generation provider and models for optimization and generation
 - **As a user**, I can configure settings via environment variables or `.env` file
 - **As a user**, I can launch the web UI with custom host, port, and sharing options
@@ -148,17 +148,18 @@ A **reference image** is an optional visual input provided by the user to guide 
 
 ### 3.4 Image Generation Provider and Model
 
-An **image generation provider** is a backend that can generate images (e.g. **openrouter**, **ollama**). The system uses a provider registry; the user selects a provider (or uses the default) and a **model** ID that is meaningful for that provider.
+An **image generation provider** is a backend that can generate images (e.g. **openrouter**, **ollama**, **draw_things**). The system uses a provider registry; the user selects a provider (or uses the default) and a **model** ID that is meaningful for that provider.
 
 - **OpenRouter**: Cloud API; supports text and optional reference images; requires an API key; model IDs are OpenRouter-style (e.g. `google/gemini-2.5-flash-image`, `bytedance-seed/seedream-4.5`).
-- **Ollama**: Local service; text-to-image only (no reference images); no API key; model IDs are Ollama model names (e.g. `x/z-image-turbo`, `x/flux2-klein`).
+- **Ollama**: Local service; text-to-image only (no reference images to the image model); no API key; model IDs are Ollama model names (e.g. `x/z-image-turbo`, `x/flux2-klein`).
+- **Draw Things**: Local gRPC to the Draw Things macOS app; text-to-image and image-to-image (optional reference); no OpenRouter API key; model IDs are Draw Things checkpoint file strings (CLI) or **preset ids** in the Gradio UI that resolve to checkpoints and generation defaults.
 
-An **image generation model** is a specific model within a provider (e.g. a given OpenRouter or Ollama model). Different models have different capabilities, styles, speeds, costs, and availability.
+An **image generation model** is a specific model within a provider (e.g. a given OpenRouter, Ollama, or Draw Things checkpoint). Different models have different capabilities, styles, speeds, costs, and availability.
 
 **Characteristics:**
 - Provider is selected via config or CLI (`--provider`); default is configurable (default: **ollama**).
-- Reference images are only supported when the **OpenRouter** provider is used.
-- OpenRouter: API key required; internet required. Ollama: no API key; local only.
+- Reference images are sent to the image model when using **OpenRouter** or **Draw Things**; with **Ollama** the reference is not sent to the image model (description-based optimization path still applies).
+- OpenRouter: API key required; internet required. Ollama: no API key; local only. Draw Things: no API key; local app and gRPC; optional Python extras for wire types and tensor decode.
 
 ### 3.5 Generated Image
 
@@ -198,7 +199,7 @@ flowchart TD
 
 **Steps:**
 1. User enters a text description of desired image
-2. User selects image generation provider (openrouter or ollama) and model
+2. User selects image generation provider (openrouter, ollama, or draw_things) and model
 3. User provides API credentials only if using OpenRouter and not already configured
 4. User initiates generation
 5. System generates image via selected provider
@@ -329,7 +330,7 @@ flowchart TD
 7. User iterates or downloads
 
 **Reference Image Considerations:**
-- Reference-based generation requires the **OpenRouter** provider (not ollama)
+- Reference-based generation to the image model requires **OpenRouter** or **Draw Things** (not the Ollama image provider)
 - Prompt must describe relationship to reference (style, subject, composition)
 - Optimization must preserve reference-related instructions
 - Some models may interpret references differently
@@ -421,24 +422,24 @@ flowchart TD
 ### 5.2 Image Generation
 
 #### 5.2.1 Provider and Model Selection
-- System shall support multiple image generation **providers** (openrouter, ollama) via a provider registry
+- System shall support multiple image generation **providers** (openrouter, ollama, draw_things) via a provider registry
 - System shall allow user to select provider via CLI `--provider` or config default (default provider: ollama)
-- System shall allow user to select image generation model per provider (OpenRouter model IDs or Ollama model names)
+- System shall allow user to select image generation model per provider (OpenRouter model IDs, Ollama model names, or Draw Things checkpoint strings / preset-driven defaults)
 - System shall provide a default model per provider (from config and/or `ui_models.yaml`)
-- System shall maintain recommended model lists: OpenRouter models in `ui_models.yaml` (`image_models`), Ollama image models in `ui_models.yaml` (`ollama_image_models`)
+- System shall maintain recommended model lists: OpenRouter models in `ui_models.yaml` (`image_models`), Ollama image models in `ui_models.yaml` (`ollama_image_models`); Draw Things **preset ids** for the Gradio dropdown are derived from the built-in preset registry (YAML may map a default checkpoint to a preset for startup default)
 - System shall support custom model IDs for flexibility (provider-specific format)
 
 #### 5.2.2 Generation Execution
-- System shall delegate to the selected provider (openrouter or ollama); each provider implements the same protocol (prompt, optional reference_image_b64, timeout, cancel_check)
-- System shall send prompt and optional reference image (OpenRouter only) to the selected model
-- System shall handle API authentication when provider is OpenRouter (Bearer token); no auth for Ollama
+- System shall delegate to the selected provider (openrouter, ollama, or draw_things); each provider implements the same protocol (prompt, optional reference_image_b64, timeout, cancel_check)
+- System shall send prompt and optional reference image to the selected model when the provider supports reference-conditioned generation (OpenRouter and Draw Things)
+- System shall handle API authentication when provider is OpenRouter (Bearer token); no OpenRouter auth for Ollama or Draw Things
 - System shall track generation time for user feedback
 - System shall retrieve generated image in appropriate format (PIL Image; format from API)
 - System shall handle NSFW content detection if provided by API (provider-dependent)
 
 #### 5.2.3 Generation Parameters
 - System shall use prompt (original or optimized) as primary input
-- System shall include reference image when provided (OpenRouter provider only)
+- System shall include reference image when provided (providers that support reference to the image model: OpenRouter and Draw Things)
 - System shall configure API to return image output
 - System shall handle model-specific parameter requirements
 
@@ -449,7 +450,7 @@ flowchart TD
 - System shall accept PNG, JPEG, WebP, HEIC, and HEIF formats
 - System shall validate image format on upload
 - System shall provide clear feedback on unsupported formats
-- **Note:** Sending the reference image to the model is only supported with the **OpenRouter** provider. With Ollama, the user can still use a reference image via “Use image description/tags” (or CLI `--use-reference-description`), where the image is described locally and only the description is used in optimization; the image is not sent.
+- **Note:** Sending the reference image to the image model is supported with **OpenRouter** and **Draw Things**. With **Ollama**, the user can still use a reference image via “Use image description/tags” (or CLI `--use-reference-description`), where the image is described locally and only the description is used in optimization; the image is not sent to the Ollama image model.
 
 #### 5.3.2 Image Processing
 - System shall resize reference images to fit within configurable maximum pixel count (`max_image_pixels`), preserving aspect ratio
@@ -521,15 +522,15 @@ flowchart TD
 
 #### 5.6.1 API Credentials
 - System shall require an OpenRouter API key only when the **OpenRouter** image generation provider is used
-- When the default or selected provider is **Ollama**, no API key is required for image generation
+- When the default or selected provider is **Ollama** or **Draw Things**, no OpenRouter API key is required for image generation
 - System shall accept OpenRouter API key via environment variable (`OPENROUTER_API_KEY`) or CLI (`--api-key`)
 - System shall store credentials securely during session
 - System shall not log or display credentials in plain text
 
 #### 5.6.2 Model and Provider Configuration
-- System shall allow selection of image generation **provider** (openrouter | ollama) and **model** (provider-specific ID)
+- System shall allow selection of image generation **provider** (openrouter | ollama | draw_things) and **model** (provider-specific ID)
 - System shall allow selection of prompt optimization model (Ollama)
-- System shall maintain model lists via `ui_models.yaml`: `image_models` (OpenRouter), `ollama_image_models` (Ollama), `optimization_models` (Ollama); UI loads these from the package
+- System shall maintain model lists via `ui_models.yaml`: `image_models` (OpenRouter), `ollama_image_models` (Ollama), `optimization_models` (Ollama); Draw Things Gradio choices come from the preset registry; UI loads YAML and package data from the package
 - System shall provide reasonable defaults: default provider **ollama**, default image model and optimization model from config / YAML
 - System shall allow custom model IDs for flexibility
 - System shall support configuration via environment variables:
@@ -550,8 +551,8 @@ flowchart TD
 #### 5.6.4 CLI Parameters
 - System shall support `--prompt` or `-p` for text description input (required)
 - System shall support `--model` or `-m` for image generation model selection (provider-specific)
-- System shall support `--provider` for image generation provider: `openrouter` or `ollama` (default from config)
-- System shall support `--reference` or `-r` for reference image file path (valid only with provider openrouter)
+- System shall support `--provider` for image generation provider: `openrouter`, `ollama`, or `draw_things` (default from config)
+- System shall support `--reference` or `-r` for reference image file path when the selected provider sends references to the image model (OpenRouter and Draw Things)
 - System shall support `--no-optimize` flag to skip prompt optimization
 - System shall support `--out` or `-o` for output image file path
 - System shall support `--optimization-model` for selecting optimization model (Ollama)
@@ -599,11 +600,13 @@ Reference Image:
 ```
 Configuration:
   - openrouter_api_key: string (required when provider is openrouter, sensitive)
-  - default_image_provider: string (e.g. "openrouter" | "ollama", default: "ollama")
+  - default_image_provider: string (e.g. "openrouter" | "ollama" | "draw_things", default: "ollama")
   - default_image_model: string (provider-specific model ID)
   - default_optimization_model: string (Ollama model name)
   - optimization_enabled: boolean (runtime)
   - ollama_base_url: string (optional; for Ollama provider and optimization)
+  - draw_things_host, draw_things_port: string/int (when provider is draw_things)
+  - draw_things_preset, default_draw_things_image_model: strings (preset id and checkpoint; optional per-field overrides for width, steps, sampler, etc. via env — see code and README)
   - debug_api: boolean (optional)
   - min_image_pixels, max_image_pixels: int (reference image constraints; config validated at load)
   - aspect_ratio: (width, height) optional; pad resized image to this ratio (default 1:1)
@@ -714,9 +717,10 @@ Cache Entry:
 Image generation is abstracted behind a **provider registry**. Built-in providers:
 
 - **openrouter** — Cloud API (OpenRouter); supports reference images; requires API key.
-- **ollama** — Local Ollama service; text-to-image only; no API key; uses `ollama_base_url` (default `http://127.0.0.1:11434`).
+- **ollama** — Local Ollama service; text-to-image only (no reference to the image model); no API key; uses `ollama_base_url` (default `http://127.0.0.1:11434`).
+- **draw_things** — Local gRPC to the Draw Things app; text- and image-conditioned generation; optional Python extras for wire types and tensor decode; configurable host, port, TLS, and preset/checkpoint (see §7.3).
 
-The default provider is **ollama**. Users select provider via `--provider` (CLI) or config (`GENIMG_DEFAULT_IMAGE_PROVIDER`). Reference images are only supported with the OpenRouter provider; the CLI and library validate and guide the user when a reference is supplied with another provider.
+The default provider is **ollama**. Users select provider via `--provider` (CLI) or config (`GENIMG_DEFAULT_IMAGE_PROVIDER`). Reference images are sent to the image model for **openrouter** and **draw_things**; the CLI and library validate and guide the user when a reference is supplied with **ollama** as the image provider.
 
 ### 7.1 OpenRouter API
 
@@ -793,6 +797,27 @@ Error:
 **Error scenarios:** Model not found, Ollama not installed, timeout (>120s optimization), process killed (cancellation).
 
 **Assumptions:** Ollama installed and available (PATH for optimization; base URL for image generation). At least one compatible model installed for the chosen use (optimization and/or image generation).
+
+### 7.3 Draw Things (local gRPC)
+
+**Purpose:** Image generation when provider is **draw_things**.
+
+**Transport:** gRPC to the Draw Things application (defaults aligned with Draw Things’ local server, e.g. host `127.0.0.1` and port **7859**); TLS with a vendored CA unless configured otherwise.
+
+**Request path:** FlatBuffers **GenerationConfiguration** (and optional reference image tensor for img2img) built in Python; same configuration builder path for txt2img and img2img.
+
+**Capabilities:**
+- Text-to-image and image-to-image (optional reference image)
+- Named **presets** (CLI `genimg-draw-things --preset`, registry in code) bundling resolution, steps, CFG, sampler, strength, and optional hi-res / upscaler defaults
+- Gradio lists **preset ids** for Draw Things; selection resolves to checkpoint and updates `draw_things_preset` / default checkpoint in config
+
+**Authentication:** No OpenRouter key; optional shared secret for the local server if configured.
+
+**Dependencies (optional extra):** gRPC, protobuf, flatbuffers, and **fpzip** for compressed tensors — required for real calls, not for importing unrelated modules.
+
+**Error scenarios:** Server unreachable, TLS or certificate errors, missing optional packages, unsupported tensor format, timeout (including a **minimum** client deadline so long local jobs are not cut off too early).
+
+**Assumptions:** Draw Things is running with gRPC enabled; user has installed a checkpoint compatible with the selected preset or explicit `--model`.
 
 ---
 
@@ -874,7 +899,7 @@ Error:
 - Credentials not displayed in UI (password input type)
 - Temporary files cleaned up after use
 - No sensitive data in error messages
-- Network communication uses HTTPS
+- Network communication uses HTTPS for OpenRouter; Draw Things uses TLS to the configured local gRPC endpoint when TLS is enabled
 
 **Data Privacy:**
 - Prompts and images sent to external services (user aware)
@@ -889,18 +914,18 @@ Error:
 
 #### 9.1.1 Network Connectivity
 - **Constraint:** Internet connection required only when using **OpenRouter** provider for image generation
-- **Impact:** With **ollama** provider, image generation can run fully local (no internet)
-- **Rationale:** OpenRouter is cloud-based; Ollama is local
+- **Impact:** With **ollama** or **draw_things**, image generation can run fully local (no internet for the image call)
+- **Rationale:** OpenRouter is cloud-based; Ollama and Draw Things are local
 
 #### 9.1.2 Service Dependencies
 - **Constraint:** When provider is **openrouter**, depends on OpenRouter API availability and internet
 - **Impact:** OpenRouter outages prevent image generation when using that provider
-- **Mitigation:** User can switch to **ollama** provider for local image generation without internet
+- **Mitigation:** User can switch to **ollama** or **draw_things** for local image generation without internet
 
 #### 9.1.3 Local Service Dependency
-- **Constraint:** Prompt optimization requires Ollama (subprocess). Image generation when provider is **ollama** requires Ollama service (HTTP).
-- **Impact:** Optimization unavailable without Ollama; ollama-provider image generation unavailable without Ollama
-- **Mitigation:** Optimization is optional; user can use **openrouter** provider for image generation without running Ollama
+- **Constraint:** Prompt optimization requires Ollama (subprocess). Image generation when provider is **ollama** requires Ollama service (HTTP). Image generation when provider is **draw_things** requires the Draw Things app with gRPC enabled.
+- **Impact:** Optimization unavailable without Ollama; Ollama-provider image generation unavailable without Ollama; Draw Things provider unavailable without the Draw Things server process
+- **Mitigation:** Optimization is optional; user can use **openrouter** for cloud image generation; user can choose **ollama** or **draw_things** for local image generation depending on installed software
 
 #### 9.1.4 Image Size Limits
 - **Constraint:** Reference images bounded by configurable `max_image_pixels` (default 2MP) and rejected if below `min_image_pixels`; optional `aspect_ratio` for pad-after-resize
