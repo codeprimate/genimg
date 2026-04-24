@@ -39,6 +39,23 @@ def pixels_to_start_blocks(px: int) -> int:
     return max(1, rounded // LAYOUT_BLOCK_PX)
 
 
+def hires_fix_start_block_count(*, final_blocks: int, final_px: int) -> int:
+    """Blocks for hires first pass: ~⅔ of ``final_px``, snapped to nearest 64 px (layout grid).
+
+    Uses the same half-up rounding as ``round_dimension_to_multiple_of_64``. The result is
+    always strictly smaller than ``final_blocks`` so the upscale stage has headroom.
+    """
+    if final_blocks < 2:
+        raise ValueError(
+            "Hires fix needs a final canvas of at least 2×64 px on this axis; "
+            f"got {final_blocks} block(s) ({final_px} px after rounding)."
+        )
+    ideal_px = float(final_px) * (2.0 / 3.0)
+    half = LAYOUT_BLOCK_PX // 2
+    b = max(1, int((ideal_px + float(half)) // float(LAYOUT_BLOCK_PX)))
+    return min(b, final_blocks - 1)
+
+
 def resolve_seed(seed: int | None) -> int:
     """Match TS behavior: random unsigned when seed is None or negative."""
     if seed is None or seed < 0:
@@ -57,6 +74,7 @@ def build_txt2img_configuration_bytes(
     request_id: int,
     sampler: int = SamplerType.DPMPP2MKarras,
     loras: Sequence[tuple[str, float]] | None = None,
+    hires_fix: bool = False,
     upscaler: str | None = None,
     upscaler_scale_factor: int | None = None,
     hires_fix_strength: float = 0.7,
@@ -65,8 +83,11 @@ def build_txt2img_configuration_bytes(
 ) -> bytes:
     """Pack a minimal ``GenerationConfiguration`` suitable for txt2img.
 
-    When ``upscaler`` and ``upscaler_scale_factor`` > 1 are set, enables **hires fix** so the
-    first pass runs at ``final / scale`` blocks (e.g. 2× Remacri: 1024² → 512² then upscale).
+    **Hi-res fix** (``hires_fix``): two diffusion passes — first near **⅔** of the final canvas
+    (each axis snapped to the nearest 64 px), then to the target size. Independent of upscaler.
+
+    **Upscaler** (``upscaler`` + optional ``upscaler_scale_factor`` > 1): post-render upscale
+    checkpoint (e.g. Remacri) after generation. Either, neither, or both may be enabled.
 
     When ``for_img2img`` is true, sets ``preserve_original_after_inpaint`` to **false** so the
     server does not snap the result back to the init image (Draw Things / dt-grpc-ts default for
@@ -79,18 +100,17 @@ def build_txt2img_configuration_bytes(
     seed_u = resolve_seed(seed)
 
     loras = tuple(loras) if loras is not None else ()
-    scale = int(upscaler_scale_factor) if upscaler_scale_factor is not None else 1
-    use_hires = bool(upscaler and upscaler.strip() and scale > 1)
-    if use_hires:
-        if sw % scale != 0 or sh % scale != 0:
-            raise ValueError(
-                f"Hires upscale {scale}× requires start_width/start_height blocks "
-                f"({sw}×{sh}) divisible by {scale}; adjust width/height."
-            )
-        hires_sw = sw // scale
-        hires_sh = sh // scale
+    use_hires_fix = bool(hires_fix)
+    if use_hires_fix:
+        hires_sw = hires_fix_start_block_count(final_blocks=sw, final_px=rw_px)
+        hires_sh = hires_fix_start_block_count(final_blocks=sh, final_px=rh_px)
 
-    builder = flatbuffers.Builder(16384 if (loras or use_hires) else 4096)
+    upscaler_scale = int(upscaler_scale_factor) if upscaler_scale_factor is not None else 0
+    use_upscaler_scale = bool(upscaler and upscaler.strip() and upscaler_scale > 1)
+
+    builder = flatbuffers.Builder(
+        16384 if (loras or use_hires_fix or (upscaler and upscaler.strip())) else 4096
+    )
     model_off = builder.CreateString(model)
 
     loras_vec = 0
@@ -126,15 +146,15 @@ def build_txt2img_configuration_bytes(
     GenCfg.AddStrength(builder, float(strength))
     GenCfg.AddModel(builder, model_off)
     GenCfg.AddSampler(builder, int(sampler))
-    if use_hires:
+    if use_hires_fix:
         GenCfg.AddHiresFix(builder, True)
         GenCfg.AddHiresFixStartWidth(builder, hires_sw)
         GenCfg.AddHiresFixStartHeight(builder, hires_sh)
         GenCfg.AddHiresFixStrength(builder, float(hires_fix_strength))
     if upscaler_off:
         GenCfg.AddUpscaler(builder, upscaler_off)
-    if use_hires:
-        GenCfg.AddUpscalerScaleFactor(builder, min(255, max(1, scale)))
+    if use_upscaler_scale:
+        GenCfg.AddUpscalerScaleFactor(builder, min(255, upscaler_scale))
     GenCfg.AddSeedMode(builder, int(SeedMode.ScaleAlike))
     # Match dt-grpc-ts ``drawThingsDefault`` / ``buildConfig``: zero originals break some pipelines.
     GenCfg.AddOriginalImageHeight(builder, int(rh_px))

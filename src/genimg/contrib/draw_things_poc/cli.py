@@ -376,23 +376,32 @@ def list_samplers(as_json: bool) -> None:
     ),
 )
 @click.option(
+    "--hires-fix/--no-hires-fix",
+    "hires_fix",
+    default=False,
+    help=(
+        "Two-pass diffusion at ~⅔ canvas then full size (independent of --upscaler). "
+        "Omit both hires flags to let a preset apply its default if any."
+    ),
+)
+@click.option(
     "--upscaler",
     default=None,
-    help="Upscaler checkpoint file name from list-assets (e.g. remacri_4x_f16.ckpt).",
+    help="Post-render upscaler checkpoint from list-assets (e.g. remacri_4x_f16.ckpt).",
 )
 @click.option(
     "--upscaler-scale",
     "upscaler_scale",
     type=int,
     default=None,
-    help="Integer scale for hires upscale (2 = 200%%). Requires --upscaler; first pass is final/size.",
+    help="Upscaler network scale (2 or 4, etc.). Requires --upscaler. Independent of hi-res fix.",
 )
 @click.option(
     "--hires-fix-strength",
     default=0.7,
     type=float,
     show_default=True,
-    help="Denoise strength for the hires upscale stage.",
+    help="Denoise strength for the second hi-res fix diffusion pass (when --hires-fix is on).",
 )
 @click.option(
     "--input",
@@ -425,6 +434,7 @@ def generate_cmd(
     seed: int,
     sampler: int | None,
     lora: tuple[str, ...],
+    hires_fix: bool,
     upscaler: str | None,
     upscaler_scale: int | None,
     hires_fix_strength: float,
@@ -452,6 +462,14 @@ def generate_cmd(
             sampler_effective = bundle.sampler
         else:
             sampler_effective = sampler
+        if bundle.default_hires_fix and _use_preset_default_for_param(ctx, "hires_fix"):
+            hires_fix = True
+        if bundle.default_upscaler and _use_preset_default_for_param(ctx, "upscaler"):
+            upscaler = bundle.default_upscaler
+        if bundle.default_upscaler_scale_factor is not None and _use_preset_default_for_param(
+            ctx, "upscaler_scale"
+        ):
+            upscaler_scale = bundle.default_upscaler_scale_factor
     elif strength is None:
         strength = DEFAULT_STRENGTH
     if upscaler_scale is not None and upscaler_scale > 1 and not (upscaler and upscaler.strip()):
@@ -480,6 +498,7 @@ def generate_cmd(
             seed=seed_val,
             timeout_seconds=600.0,
             loras=loras,
+            hires_fix=hires_fix,
             upscaler=upscaler,
             upscaler_scale_factor=upscaler_scale,
             hires_fix_strength=hires_fix_strength,

@@ -30,6 +30,15 @@ class DrawThingsPreset:
     sampler: int
     """FlatBuffers ``SamplerType`` wire value."""
 
+    default_hires_fix: bool = False
+    """When true, ``generate --preset`` may set ``--hires-fix`` if you omit both hires flags."""
+
+    default_upscaler: str | None = None
+    """When set, ``generate --preset`` may fill ``--upscaler`` if you omit it (post-render upscaler)."""
+
+    default_upscaler_scale_factor: int | None = None
+    """When set with ``default_upscaler``, may fill ``--upscaler-scale`` if you omit it."""
+
     def sampler_wire_name(self) -> str:
         """Enum member name for ``sampler`` (for help strings)."""
         for name in dir(SamplerType):
@@ -42,11 +51,22 @@ class DrawThingsPreset:
 
     def cli_help_sentence(self) -> str:
         """One line for ``--preset`` epilog-style documentation."""
-        return (
+        base = (
             f"{self.id}: {self.title} — {self.width_px}×{self.height_px}, {self.steps} steps, "
             f"CFG {self.guidance_scale}, denoise {self.strength}, default sampler "
             f"{self.sampler_wire_name()}."
         )
+        bits: list[str] = []
+        if self.default_hires_fix:
+            bits.append("hi-res fix on if you omit --hires-fix/--no-hires-fix")
+        if self.default_upscaler and self.default_upscaler_scale_factor is not None:
+            bits.append(
+                f"upscaler {self.default_upscaler!r} at {self.default_upscaler_scale_factor}× "
+                "if you omit --upscaler / --upscaler-scale"
+            )
+        if bits:
+            return f"{base} Preset defaults: {'; '.join(bits)}."
+        return base
 
 
 # Register presets here (single source of truth).
@@ -60,6 +80,7 @@ DRAW_THINGS_PRESETS: tuple[DrawThingsPreset, ...] = (
         guidance_scale=1.0,
         strength=1.0,
         sampler=int(SamplerType.UniPCTrailing),
+        default_hires_fix=True,
     ),
     # FLUX.2 [klein] distilled checkpoints: keep CFG at 1.0; few steps; 1024² is a common native size.
     # Sampler DDIM approximates DDIM-style schedules often used with Klein in ComfyUI workflows.
@@ -106,8 +127,9 @@ def draw_things_preset_option_help() -> str:
     """Paragraph for ``--preset`` documenting every registered bundle."""
     lines = [
         "Known-good tuning bundles. For each of --width, --height, --steps, --cfg, "
-        "--strength, and --sampler, the preset fills in a value only if you omit that flag; "
-        "anything you pass on the command line still wins.",
+        "--strength, --sampler, --hires-fix/--no-hires-fix, and (when defined) "
+        "--upscaler / --upscaler-scale, the preset fills in a value only if you omit that "
+        "option; anything you pass on the command line still wins.",
         "",
     ]
     lines.extend(p.cli_help_sentence() for p in DRAW_THINGS_PRESETS)

@@ -163,6 +163,9 @@ def test_z_image_preset_sampler_is_uni_pc_trailing() -> None:
     z = resolve_draw_things_preset("z-image")
     assert z is not None
     assert z.sampler == int(SamplerType.UniPCTrailing)
+    assert z.default_hires_fix is True
+    assert z.default_upscaler is None
+    assert z.default_upscaler_scale_factor is None
 
 
 def test_flux2_klein_preset_matches_distilled_defaults() -> None:
@@ -172,6 +175,9 @@ def test_flux2_klein_preset_matches_distilled_defaults() -> None:
     assert p.width_px == 1280 and p.height_px == 1280
     assert p.steps == 5
     assert p.guidance_scale == pytest.approx(1.0)
+    assert p.default_hires_fix is False
+    assert p.default_upscaler is None
+    assert p.default_upscaler_scale_factor is None
 
 
 def test_resolve_draw_things_preset_case_insensitive() -> None:
@@ -192,13 +198,15 @@ def test_build_txt2img_configuration_loras_hires_upscaler() -> None:
         seed=1,
         request_id=99,
         loras=[("lora.ckpt", 0.75)],
+        hires_fix=True,
         upscaler="r.ckpt",
         upscaler_scale_factor=2,
     )
     cfg = GenerationConfiguration.GetRootAs(raw, 0)
     assert cfg.HiresFix() is True
-    assert cfg.HiresFixStartWidth() == 8
-    assert cfg.HiresFixStartHeight() == 8
+    # ~⅔ of 1024 px → 682.67 → nearest 64 px grid → 704 px → 11 blocks
+    assert cfg.HiresFixStartWidth() == 11
+    assert cfg.HiresFixStartHeight() == 11
     assert cfg.StartWidth() == 16
     assert cfg.StartHeight() == 16
     assert cfg.UpscalerScaleFactor() == 2
@@ -208,19 +216,61 @@ def test_build_txt2img_configuration_loras_hires_upscaler() -> None:
     # ``cfg.Loras(0)`` uses a broken lazy import in generated ``GenerationConfiguration.py``.
 
 
-def test_build_txt2img_configuration_hires_requires_divisible_blocks() -> None:
-    with pytest.raises(ValueError, match="divisible"):
-        build_txt2img_configuration_bytes(
-            model="m.ckpt",
-            width_px=960,
-            height_px=512,
-            steps=10,
-            guidance_scale=7.0,
-            seed=1,
-            request_id=1,
-            upscaler="r.ckpt",
-            upscaler_scale_factor=2,
-        )
+def test_build_txt2img_configuration_hires_non_divisible_final_ok() -> None:
+    """Hi-res fix first pass is ~⅔ of final (64 px grid), without any upscaler."""
+    raw = build_txt2img_configuration_bytes(
+        model="m.ckpt",
+        width_px=960,
+        height_px=512,
+        steps=10,
+        guidance_scale=7.0,
+        seed=1,
+        request_id=1,
+        hires_fix=True,
+    )
+    cfg = GenerationConfiguration.GetRootAs(raw, 0)
+    assert cfg.HiresFix() is True
+    assert cfg.StartWidth() == 15 and cfg.StartHeight() == 8
+    assert cfg.HiresFixStartWidth() == 10
+    assert cfg.HiresFixStartHeight() == 5
+    assert cfg.Upscaler() in (None, b"")
+    assert cfg.UpscalerScaleFactor() == 0
+
+
+def test_build_txt2img_configuration_upscaler_only_no_hires_fix() -> None:
+    """Post-render upscaler without hi-res fix."""
+    raw = build_txt2img_configuration_bytes(
+        model="m.ckpt",
+        width_px=512,
+        height_px=512,
+        steps=10,
+        guidance_scale=7.0,
+        seed=1,
+        request_id=1,
+        hires_fix=False,
+        upscaler="remacri_4x_f16.ckpt",
+        upscaler_scale_factor=4,
+    )
+    cfg = GenerationConfiguration.GetRootAs(raw, 0)
+    assert cfg.HiresFix() is False
+    u = cfg.Upscaler()
+    assert (u.decode("utf-8") if isinstance(u, (bytes, bytearray)) else u) == "remacri_4x_f16.ckpt"
+    assert cfg.UpscalerScaleFactor() == 4
+
+
+def test_hires_fix_start_block_count_two_thirds_snap() -> None:
+    from genimg.contrib.draw_things_poc.config_builder import hires_fix_start_block_count
+
+    assert hires_fix_start_block_count(final_blocks=16, final_px=1024) == 11
+    assert hires_fix_start_block_count(final_blocks=8, final_px=512) == 5
+    assert hires_fix_start_block_count(final_blocks=2, final_px=128) == 1
+
+
+def test_hires_fix_start_block_count_requires_room() -> None:
+    from genimg.contrib.draw_things_poc.config_builder import hires_fix_start_block_count
+
+    with pytest.raises(ValueError, match="at least 2"):
+        hires_fix_start_block_count(final_blocks=1, final_px=64)
 
 
 def test_decode_metadata_override_models() -> None:
@@ -451,6 +501,133 @@ def test_cli_generate_two_inputs_emits_first_only_notice(
     assert outp.is_file()
     combined = (result.output or "").lower()
     assert "only the first" in combined
+
+
+def test_cli_generate_z_image_preset_passes_default_hires_to_client(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+
+    cap: dict[str, object] = {}
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+        def generate_image_last_tensor(self, **kwargs: object) -> bytes:
+            cap["hires_fix"] = kwargs.get("hires_fix")
+            cap["upscaler"] = kwargs.get("upscaler")
+            cap["upscaler_scale_factor"] = kwargs.get("upscaler_scale_factor")
+            return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    outp = tmp_path / "o.png"
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        ["--preset", "z-image", "--prompt", "x", "--model", "m.ckpt", "--out", str(outp)],
+    )
+    assert result.exit_code == 0, result.output
+    assert cap["hires_fix"] is True
+    assert cap["upscaler"] is None
+    assert cap["upscaler_scale_factor"] is None
+
+
+def test_cli_generate_z_image_no_hires_fix_flag_disables_preset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+
+    cap: dict[str, object] = {}
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+        def generate_image_last_tensor(self, **kwargs: object) -> bytes:
+            cap["hires_fix"] = kwargs.get("hires_fix")
+            return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    outp = tmp_path / "o.png"
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        [
+            "--preset",
+            "z-image",
+            "--no-hires-fix",
+            "--prompt",
+            "x",
+            "--model",
+            "m.ckpt",
+            "--out",
+            str(outp),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert cap["hires_fix"] is False
+
+
+def test_cli_generate_z_image_explicit_upscaler_overrides_preset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    from click.testing import CliRunner
+
+    import genimg.contrib.draw_things_poc.cli as cli_mod
+
+    cap: dict[str, object] = {}
+
+    class _C(DrawThingsClient):
+        def __init__(self, **kwargs: object) -> None:
+            kwargs = dict(kwargs)
+            kwargs["grpc_stub"] = _FakeStub()
+            super().__init__(**kwargs)  # type: ignore[arg-type]
+
+        def generate_image_last_tensor(self, **kwargs: object) -> bytes:
+            cap["hires_fix"] = kwargs.get("hires_fix")
+            cap["upscaler"] = kwargs.get("upscaler")
+            cap["upscaler_scale_factor"] = kwargs.get("upscaler_scale_factor")
+            return super().generate_image_last_tensor(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli_mod, "DrawThingsClient", _C)
+    from genimg.contrib.draw_things_poc.cli import generate_cmd
+
+    outp = tmp_path / "o.png"
+    runner = CliRunner()
+    result = runner.invoke(
+        generate_cmd,
+        [
+            "--preset",
+            "z-image",
+            "--prompt",
+            "x",
+            "--model",
+            "m.ckpt",
+            "--out",
+            str(outp),
+            "--upscaler",
+            "custom.ckpt",
+            "--upscaler-scale",
+            "4",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert cap["hires_fix"] is True
+    assert cap["upscaler"] == "custom.ckpt"
+    assert cap["upscaler_scale_factor"] == 4
 
 
 def test_cli_generate_preset_omitted_strength_uses_bundle_value(
