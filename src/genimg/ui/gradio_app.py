@@ -51,6 +51,10 @@ from genimg.core.provider_ids import (
     PROVIDER_OLLAMA,
     PROVIDER_OPENROUTER,
 )
+from genimg.core.providers.draw_things.presets import (
+    draw_things_preset_ids,
+    resolve_draw_things_preset,
+)
 from genimg.core.providers import get_registry
 from genimg.logging_config import get_logger, log_prompts
 
@@ -212,6 +216,28 @@ def _effective_provider_for_ui(provider: str | None, config: Config) -> str:
     return default_provider
 
 
+def _resolve_draw_things_selection(
+    *,
+    provider_eff: str,
+    model: str | None,
+    config: Config,
+) -> str | None:
+    """Map Draw Things UI model selection to preset + checkpoint defaults."""
+    if provider_eff != PROVIDER_DRAW_THINGS:
+        return model
+    selected = (model or "").strip()
+    if not selected:
+        selected = (config.draw_things_preset or "").strip()
+    preset = resolve_draw_things_preset(selected)
+    if preset is None:
+        return model
+    config.draw_things_preset = preset.id
+    if preset.default_model:
+        config.default_draw_things_image_model = preset.default_model
+        return preset.default_model
+    return model
+
+
 def _load_ui_models() -> tuple[list[str], list[str], list[str], str, str, str, str, list[str], str]:
     """
     Load image and optimization model lists from ui_models.yaml in the package.
@@ -248,28 +274,29 @@ def _load_ui_models() -> tuple[list[str], list[str], list[str], str, str, str, s
             m for m in ollama_image_models if m != default_ollama
         ]
 
-    # Draw Things image models from YAML (checkpoint filenames)
-    draw_things_image_models: list[str] = data.get("draw_things_image_models") or [
-        "moodymix_zitv10dpo_f16.ckpt",
-        "flux_2_klein_9b_i8x.ckpt",
-    ]
-    default_draw_things: str = data.get("default_draw_things_image_model") or (
-        draw_things_image_models[0] if draw_things_image_models else "moodymix_zitv10dpo_f16.ckpt"
+    # Draw Things model dropdown shows preset ids, not checkpoint filenames.
+    draw_things_image_models: list[str] = list(draw_things_preset_ids())
+    yaml_draw_things_default = (data.get("default_draw_things_image_model") or "").strip()
+    yaml_default_preset = ""
+    if yaml_draw_things_default:
+        for preset_id in draw_things_image_models:
+            preset = resolve_draw_things_preset(preset_id)
+            if preset and preset.default_model == yaml_draw_things_default:
+                yaml_default_preset = preset_id
+                break
+    default_draw_things = yaml_default_preset or (
+        draw_things_image_models[0] if draw_things_image_models else ""
     )
-    if default_draw_things and default_draw_things not in draw_things_image_models:
-        draw_things_image_models = [default_draw_things] + [
-            m for m in draw_things_image_models if m != default_draw_things
-        ]
 
     # Config: default provider and model for that provider
     config = Config.from_env()
     default_image_provider: str = config.default_image_provider
-    config_draw_things_default = (config.default_draw_things_image_model or "").strip()
-    if config_draw_things_default and config_draw_things_default not in draw_things_image_models:
-        draw_things_image_models = [config_draw_things_default] + [
-            m for m in draw_things_image_models if m != config_draw_things_default
-        ]
-    default_draw_things = config_draw_things_default or default_draw_things
+    config_draw_things_preset = (config.draw_things_preset or "").strip()
+    if (
+        config_draw_things_preset
+        and resolve_draw_things_preset(config_draw_things_preset) is not None
+    ):
+        default_draw_things = config_draw_things_preset
 
     if default_image_provider == PROVIDER_OPENROUTER:
         default_image_model: str = config.default_image_model
@@ -474,9 +501,14 @@ def _run_generate(
 
     try:
         ref_b64_to_send = _reference_b64_for_generate(provider_eff, ref_b64)
+        resolved_model = _resolve_draw_things_selection(
+            provider_eff=provider_eff,
+            model=model,
+            config=config,
+        )
         result = generate_image(
             effective_prompt,
-            model=model or None,
+            model=resolved_model or None,
             reference_images_b64=[ref_b64_to_send] if ref_b64_to_send else None,
             provider=provider,
             config=config,
@@ -718,9 +750,14 @@ def _run_generate_stream(
         "",
     )
     try:
+        resolved_model = _resolve_draw_things_selection(
+            provider_eff=provider_eff,
+            model=model,
+            config=config,
+        )
         result = generate_image(
             effective_prompt,
-            model=model or None,
+            model=resolved_model or None,
             reference_images_b64=[ref_b64_to_send] if ref_b64_to_send else None,
             provider=provider,
             config=config,

@@ -17,6 +17,7 @@ from genimg.core.providers.draw_things.constants import (
     DEFAULT_DRAW_THINGS_PORT,
     DEFAULT_STRENGTH,
     ERR_PREFIX_API,
+    MIN_GENERATION_TIMEOUT_SECONDS,
     MSG_PROVIDER_DECODE_NOT_IMPLEMENTED,
 )
 from genimg.core.providers.draw_things.generated import imageService_pb2_grpc as pb2_grpc
@@ -180,6 +181,7 @@ class DrawThingsProvider:
             shared_secret=shared_secret,
             grpc_stub=self._grpc_stub,
         ) as client:
+            timeout_seconds = float(max(timeout, MIN_GENERATION_TIMEOUT_SECONDS))
             raw = client.generate_image_last_tensor(
                 prompt=prompt,
                 model=model,
@@ -188,7 +190,7 @@ class DrawThingsProvider:
                 steps=tuning.steps,
                 guidance_scale=tuning.guidance_scale,
                 seed=None,
-                timeout_seconds=float(timeout),
+                timeout_seconds=timeout_seconds,
                 cancel_check=cancel_check,
                 strength=tuning.strength,
                 sampler=tuning.sampler,
