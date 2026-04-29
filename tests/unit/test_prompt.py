@@ -10,6 +10,7 @@ from genimg.core.prompt import (
     OPTIMIZATION_TEMPLATE,
     _strip_ollama_thinking,
     check_ollama_available,
+    list_ollama_image_models,
     list_ollama_models,
     optimize_prompt,
     optimize_prompt_with_ollama,
@@ -167,6 +168,41 @@ model2:v1               def456      3 GB    2 days ago"""
             with patch("genimg.core.prompt.subprocess.run") as m:
                 m.side_effect = subprocess.TimeoutExpired("ollama", 5)
                 assert list_ollama_models() == []
+
+
+@pytest.mark.unit
+class TestListOllamaImageModels:
+    def test_returns_empty_when_ollama_not_available(self):
+        with patch("genimg.core.prompt.check_ollama_available", return_value=False):
+            assert list_ollama_image_models() == []
+
+    def test_filters_to_x_and_my_namespaces(self):
+        with patch(
+            "genimg.core.prompt.list_ollama_models",
+            return_value=[
+                "x/z-image-turbo",
+                "x/flux2-klein",
+                "my/custom-model",
+                "llama2",
+                "huihui_ai/qwen3.5-abliterated:4b",
+            ],
+        ):
+            assert list_ollama_image_models() == [
+                "x/z-image-turbo",
+                "x/flux2-klein",
+                "my/custom-model",
+            ]
+
+    def test_returns_empty_when_no_matching_namespace(self):
+        with patch(
+            "genimg.core.prompt.list_ollama_models",
+            return_value=["llama2", "mistral:7b"],
+        ):
+            assert list_ollama_image_models() == []
+
+    def test_returns_empty_when_no_models_installed(self):
+        with patch("genimg.core.prompt.list_ollama_models", return_value=[]):
+            assert list_ollama_image_models() == []
 
 
 @pytest.mark.unit

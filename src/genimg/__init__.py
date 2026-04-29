@@ -32,7 +32,12 @@ from genimg.core.config import (
     set_config,
 )
 from genimg.core.image_gen import GenerationResult, generate_image
-from genimg.core.prompt import list_ollama_models, optimize_prompt, validate_prompt
+from genimg.core.prompt import (
+    list_ollama_image_models,
+    list_ollama_models,
+    optimize_prompt,
+    validate_prompt,
+)
 from genimg.core.reference import process_reference_image
 from genimg.logging_config import configure_logging, set_verbosity
 from genimg.utils.cache import clear_cache, get_cache, get_cached_prompt
@@ -67,6 +72,7 @@ __all__ = [
     "get_cached_prompt",
     "get_cache",
     "get_config",
+    "list_ollama_image_models",
     "list_ollama_models",
     "optimize_prompt",
     "process_reference_image",

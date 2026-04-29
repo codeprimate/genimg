@@ -22,10 +22,8 @@ image_models:
 
 default_image_model: "bytedance-seed/seedream-4.5"
 
-# Ollama image-generation models (see https://ollama.com/blog/image-generation).
-ollama_image_models:
-  - x/z-image-turbo
-  - x/flux2-klein
+# Ollama image-generation models are enumerated dynamically (x/ and my/ namespaces).
+# Set default_ollama_image_model to pin a preferred model at the top of the dropdown.
 default_ollama_image_model: "x/z-image-turbo"
 
 # Draw Things (Gradio): dropdown choices are preset ids from `genimg.core.providers.draw_things.presets`

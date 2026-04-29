@@ -179,6 +179,23 @@ def list_ollama_models() -> list[str]:
         return []
 
 
+_OLLAMA_IMAGE_NAMESPACES = ("x/", "my/")
+
+
+def list_ollama_image_models() -> list[str]:
+    """
+    List installed Ollama image-generation models.
+
+    Filters all installed models to those whose name starts with a known
+    image-generation namespace (``x/`` or ``my/``).
+
+    Returns:
+        List of image model names. Returns empty list if Ollama is not available
+        or no matching models are installed.
+    """
+    return [m for m in list_ollama_models() if m.startswith(_OLLAMA_IMAGE_NAMESPACES)]
+
+
 def optimize_prompt_with_ollama(
     prompt: str,
     model: str | None = None,

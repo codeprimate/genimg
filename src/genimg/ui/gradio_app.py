@@ -34,6 +34,7 @@ from genimg import (
     ValidationError,
     __version__,
     generate_image,
+    list_ollama_image_models,
     list_ollama_models,
     optimize_prompt,
     process_reference_image,
@@ -267,15 +268,15 @@ def _load_ui_models() -> tuple[list[str], list[str], list[str], str, str, str, s
     if default_image_yaml and default_image_yaml not in image_models:
         image_models = [default_image_yaml] + [m for m in image_models if m != default_image_yaml]
 
-    # Ollama image models from YAML or fallback (see https://ollama.com/blog/image-generation)
-    ollama_image_models: list[str] = data.get("ollama_image_models") or [
-        "x/z-image-turbo",  # Alibaba Tongyi Lab, photorealistic + bilingual text
-        "x/flux2-klein",  # Black Forest Labs FLUX.2 Klein, 4B/9B
-    ]
+    # Ollama image models: all installed models in the x/ and my/ namespaces
+    # (see https://ollama.com/blog/image-generation)
+    ollama_image_models: list[str] = list_ollama_image_models()
     default_ollama: str = data.get("default_ollama_image_model") or (
-        ollama_image_models[0] if ollama_image_models else "x/z-image-turbo"
+        ollama_image_models[0] if ollama_image_models else ""
     )
     if default_ollama and default_ollama not in ollama_image_models:
+        ollama_image_models = [default_ollama] + ollama_image_models
+    elif default_ollama and ollama_image_models:
         ollama_image_models = [default_ollama] + [
             m for m in ollama_image_models if m != default_ollama
         ]
