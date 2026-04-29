@@ -22,7 +22,7 @@ optimization:
     Key Props: List significant objects and their positions in the scene
 
     Action/Context: Describe what is happening, body language, interactions, or emotional tone
-    Visual style and aesthetic: Describe look and feel in terms appropriate to the medium. For photography: type of photography, lighting mood, focus character (e.g. soft background, sharp throughout)—no camera technical details (lens, aspect ratio). For illustration, painting, anime, or other non-photo types: describe visual characteristics and style (e.g. brushwork, line quality, color palette, rendering style, anime aesthetic, painterly vs flat, level of detail) so the prompt clearly conveys the intended look.
+    Visual style and aesthetic: Describe look and feel in terms appropriate to the medium. For photography: type of photography, lighting mood, focus character (e.g. soft background, sharp throughout)—no camera technical details (lens, aspect ratio). For illustration, painting, anime, or other non-photo types: describe visual characteristics and style (e.g. brushwork, line quality, color palette, rendering style, anime aesthetic, painterly vs flat, level of detail) using concrete scene vocabulary only—never end with a sentence that evaluates, summarizes, or comments on the text you wrote (e.g. do not write that it conveys a look or suits an image system).
 
     Key principles:
     - Retain and integrate all soft biometric information provided by the user. Soft biometrics are physical and visual attributes of people (e.g. age, ethnicity, body type, facial features, skin tone, hair color and texture, eye shape and color, build, distinctive marks). Whatever level of detail the user gives—whether a brief note or a full attribute list—must be carried through into the improved prompt. Do not drop, generalize, or summarize these details; weave them into the scene and subject descriptions so the output preserves exact resemblance and identity cues.
@@ -34,7 +34,7 @@ optimization:
     - Remove redundancy while preserving essential details
     - Preserve the information in the original prompt; elaborate in a creative and consistent way rather than replacing or contradicting it
 
-    Transform the user's description into a clear, unambiguous prompt that any image generation system could interpret consistently.
+    Transform the user's description into a single block of clear, unambiguous scene and style wording an image model can follow—no preamble, no postscript, no commentary about the task.
     {reference_image_instruction}
 
     Output ONLY the improved prompt. Do not include explanations, prefixes, or markdown formatting.
@@ -66,7 +66,7 @@ optimization:
     Key Props: List significant objects and their positions in the scene
 
     Action/Context: Describe what is happening, body language, interactions, or emotional tone
-    Visual style and aesthetic: Describe look and feel in terms appropriate to the medium. For photography: type of photography, lighting mood, focus character (e.g. soft background, sharp throughout)—no camera technical details (lens, aspect ratio). For illustration, painting, anime, or other non-photo types: describe visual characteristics and style (e.g. brushwork, line quality, color palette, rendering style, anime aesthetic, painterly vs flat, level of detail) so the prompt clearly conveys the intended look.
+    Visual style and aesthetic: Describe look and feel in terms appropriate to the medium. For photography: type of photography, lighting mood, focus character (e.g. soft background, sharp throughout)—no camera technical details (lens, aspect ratio). For illustration, painting, anime, or other non-photo types: describe visual characteristics and style (e.g. brushwork, line quality, color palette, rendering style, anime aesthetic, painterly vs flat, level of detail) using concrete scene vocabulary only—never end with a sentence that evaluates, summarizes, or comments on the text you wrote (e.g. do not write that it conveys a look or suits an image system).
 
     Key principles:
     - Retain and integrate all soft biometric information provided by the user and the reference description. Soft biometrics are physical and visual attributes of people (e.g. age, ethnicity, body type, facial features, skin tone, hair color and texture, eye shape and color, build, distinctive marks). Whatever level of detail the user or reference gives—whether a brief note or a full attribute list—must be carried through into the improved prompt. Do not drop, generalize, or summarize these details; weave them into the scene and subject descriptions so the output preserves exact resemblance and identity cues.
@@ -78,7 +78,7 @@ optimization:
     - Remove redundancy while preserving essential details
     - Preserve the information in the original prompt; elaborate in a creative and consistent way rather than replacing or contradicting it
 
-    Transform the user's description into a clear, unambiguous prompt that any image generation system could interpret consistently.
+    Transform the user's description into a single block of clear, unambiguous scene and style wording an image model can follow—no preamble, no postscript, no commentary about the task.
 
     Output ONLY the improved prompt. Do not include explanations, prefixes, or markdown formatting.
     Just output the optimized prompt text directly, following the framework outlined above.
