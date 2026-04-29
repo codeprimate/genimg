@@ -616,6 +616,9 @@ class TestStopAndPromptHandlers:
 class TestBuildBlocksAndLaunch:
     """Test _build_blocks and launch (build UI, no server)."""
 
+    def test_provider_choices_include_ollama(self) -> None:
+        assert "ollama" in gradio_app._GRADIO_IMAGE_PROVIDER_CHOICES
+
     def test_build_blocks_returns_blocks(self) -> None:
         app = gradio_app._build_blocks()
         assert app is not None

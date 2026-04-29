@@ -69,9 +69,10 @@ DEFAULT_UI_HOST = "127.0.0.1"
 # Base page title (browser tab); status prefixes are prepended during optimize/generate
 BASE_PAGE_TITLE = "genimg – AI image generation"
 
-# Image-provider dropdown: Ollama image gen is omitted while upstream is broken; CLI/registry unchanged.
+# Image-provider dropdown: include all built-in image providers.
 _GRADIO_IMAGE_PROVIDER_CHOICES: tuple[str, ...] = (
     PROVIDER_OPENROUTER,
+    PROVIDER_OLLAMA,
     PROVIDER_DRAW_THINGS,
 )
 
@@ -302,10 +303,6 @@ def _load_ui_models() -> tuple[list[str], list[str], list[str], str, str, str, s
         and resolve_draw_things_preset(config_draw_things_preset) is not None
     ):
         default_draw_things = config_draw_things_preset
-
-    # Gradio hides Ollama as an image provider; env default "ollama" maps to OpenRouter in the UI.
-    if default_image_provider == PROVIDER_OLLAMA:
-        default_image_provider = PROVIDER_OPENROUTER
 
     if default_image_provider == PROVIDER_OPENROUTER:
         default_image_model: str = config.default_image_model
