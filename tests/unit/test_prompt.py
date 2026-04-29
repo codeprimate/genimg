@@ -87,28 +87,30 @@ class TestStripOllamaThinking:
 
 @pytest.mark.unit
 class TestCheckOllamaAvailable:
-    def test_returns_true_when_ollama_list_succeeds(self):
-        with patch("genimg.core.prompt.subprocess.run") as m:
-            m.return_value = MagicMock(returncode=0)
+    def test_returns_true_when_api_tags_succeeds(self):
+        with patch("genimg.core.prompt.requests.get") as m:
+            m.return_value = MagicMock(status_code=200)
             assert check_ollama_available() is True
             m.assert_called_once()
-            assert m.call_args[0][0] == ["ollama", "list"]
+            assert m.call_args[0][0].endswith("/api/tags")
 
-    def test_returns_false_when_ollama_list_fails(self):
-        with patch("genimg.core.prompt.subprocess.run") as m:
-            m.return_value = MagicMock(returncode=1)
+    def test_returns_false_when_api_tags_non_200(self):
+        with patch("genimg.core.prompt.requests.get") as m:
+            m.return_value = MagicMock(status_code=503)
             assert check_ollama_available() is False
 
-    def test_returns_false_on_filenotfound(self):
-        with patch("genimg.core.prompt.subprocess.run") as m:
-            m.side_effect = FileNotFoundError()
+    def test_returns_false_on_request_error(self):
+        import requests
+
+        with patch("genimg.core.prompt.requests.get") as m:
+            m.side_effect = requests.RequestException()
             assert check_ollama_available() is False
 
     def test_returns_false_on_timeout(self):
-        import subprocess
+        import requests
 
-        with patch("genimg.core.prompt.subprocess.run") as m:
-            m.side_effect = subprocess.TimeoutExpired("ollama", 5)
+        with patch("genimg.core.prompt.requests.get") as m:
+            m.side_effect = requests.exceptions.Timeout("read", 5)
             assert check_ollama_available() is False
 
 
@@ -118,55 +120,65 @@ class TestListOllamaModels:
         with patch("genimg.core.prompt.check_ollama_available", return_value=False):
             assert list_ollama_models() == []
 
-    def test_parses_ollama_list_output(self):
-        output = """NAME                            ID              SIZE    MODIFIED
-huihui_ai/qwen3.5-abliterated:4b:latest   abc123def456    10 GB   2 days ago
-llama2:latest                   def456abc789    4 GB    1 week ago
-mistral:7b                      ghi789jkl012    4 GB    3 days ago"""
-
+    def test_parses_api_tags_json(self):
+        body = {
+            "models": [
+                {"name": "huihui_ai/qwen3.5-abliterated:4b:latest"},
+                {"name": "llama2:latest"},
+                {"name": "mistral:7b"},
+            ]
+        }
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.run") as m:
-                m.return_value = MagicMock(returncode=0, stdout=output)
+            with patch("genimg.core.prompt.requests.get") as m:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = body
+                m.return_value = resp
                 models = list_ollama_models()
                 assert models == ["huihui_ai/qwen3.5-abliterated:4b", "llama2", "mistral:7b"]
 
     def test_strips_latest_tag(self):
-        output = """NAME                    ID          SIZE    MODIFIED
-model1:latest           abc123      5 GB    1 day ago
-model2:v1               def456      3 GB    2 days ago"""
-
+        body = {
+            "models": [
+                {"name": "model1:latest"},
+                {"name": "model2:v1"},
+            ]
+        }
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.run") as m:
-                m.return_value = MagicMock(returncode=0, stdout=output)
+            with patch("genimg.core.prompt.requests.get") as m:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = body
+                m.return_value = resp
                 models = list_ollama_models()
                 assert models == ["model1", "model2:v1"]
 
-    def test_returns_empty_list_on_nonzero_returncode(self):
+    def test_returns_empty_list_on_non_200(self):
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.run") as m:
-                m.return_value = MagicMock(returncode=1, stdout="")
+            with patch("genimg.core.prompt.requests.get") as m:
+                m.return_value = MagicMock(status_code=503)
                 assert list_ollama_models() == []
 
-    def test_returns_empty_list_on_header_only(self):
-        output = """NAME                    ID          SIZE    MODIFIED"""
-
+    def test_returns_empty_list_when_models_missing(self):
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.run") as m:
-                m.return_value = MagicMock(returncode=0, stdout=output)
+            with patch("genimg.core.prompt.requests.get") as m:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = {}
+                m.return_value = resp
                 assert list_ollama_models() == []
 
-    def test_handles_filenotfound(self):
+    def test_handles_request_error(self):
+        import requests
+
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.run") as m:
-                m.side_effect = FileNotFoundError()
+            with patch("genimg.core.prompt.requests.get") as m:
+                m.side_effect = requests.RequestException()
                 assert list_ollama_models() == []
 
     def test_handles_timeout(self):
-        import subprocess
+        import requests
 
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.run") as m:
-                m.side_effect = subprocess.TimeoutExpired("ollama", 5)
+            with patch("genimg.core.prompt.requests.get") as m:
+                m.side_effect = requests.exceptions.Timeout("read", 5)
                 assert list_ollama_models() == []
 
 
@@ -238,11 +250,10 @@ class TestOptimizePrompt:
         cache.clear()
         config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.returncode = 0
-                proc.communicate.return_value = ("  enhanced prompt  \n", "")
-                Popen.return_value = proc
+            with patch("genimg.core.prompt.requests.post") as post:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = {"response": "  enhanced prompt  \n"}
+                post.return_value = resp
                 result = optimize_prompt("original", config=config, enable_cache=True)
         assert result == "enhanced prompt"
         assert cache.get("original", config.default_optimization_model, None) == "enhanced prompt"
@@ -255,24 +266,21 @@ class TestOptimizePrompt:
         # Cache key must use same model as config.default_optimization_model for lookup to hit
         cache.set("cached", config.default_optimization_model, "from cache")
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
+            with patch("genimg.core.prompt.requests.post") as post:
                 result = optimize_prompt_with_ollama("cached", config=config)
         assert result == "from cache"
-        Popen.assert_not_called()
+        post.assert_not_called()
         cache.clear()
 
     def test_optimize_prompt_with_ollama_timeout_raises(self):
-        import subprocess
+        import requests
 
         cache = get_cache()
         cache.clear()
         config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.communicate.side_effect = subprocess.TimeoutExpired("ollama", 10)
-                proc.kill = MagicMock()
-                Popen.return_value = proc
+            with patch("genimg.core.prompt.requests.post") as post:
+                post.side_effect = requests.exceptions.Timeout("read", 10)
                 with pytest.raises(RequestTimeoutError):
                     optimize_prompt_with_ollama("long prompt", config=config, timeout=10)
         cache.clear()
@@ -282,11 +290,8 @@ class TestOptimizePrompt:
         cache.clear()
         config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.returncode = 1
-                proc.communicate.return_value = ("", "error message")
-                Popen.return_value = proc
+            with patch("genimg.core.prompt.requests.post") as post:
+                post.return_value = MagicMock(status_code=500, text="error message")
                 with pytest.raises(APIError) as exc_info:
                     optimize_prompt_with_ollama("abc", config=config)
         assert "error message" in str(exc_info.value)
@@ -297,52 +302,49 @@ class TestOptimizePrompt:
         cache.clear()
         config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.returncode = 0
-                proc.communicate.return_value = ("   \n", "")
-                Popen.return_value = proc
+            with patch("genimg.core.prompt.requests.post") as post:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = {"response": "   \n"}
+                post.return_value = resp
                 with pytest.raises(APIError) as exc_info:
                     optimize_prompt_with_ollama("abc", config=config)
         assert "empty" in str(exc_info.value).lower()
         cache.clear()
 
-    def test_optimize_prompt_with_ollama_filenotfound_raises(self):
+    def test_optimize_prompt_with_ollama_connection_error_raises(self):
+        import requests
+
         cache = get_cache()
         cache.clear()
         config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                Popen.side_effect = FileNotFoundError()
+            with patch("genimg.core.prompt.requests.post") as post:
+                post.side_effect = requests.exceptions.ConnectionError()
                 with pytest.raises(APIError) as exc_info:
                     optimize_prompt_with_ollama("abc", config=config)
-        assert "not found" in str(exc_info.value).lower() or "PATH" in str(exc_info.value)
+        assert "connect" in str(exc_info.value).lower()
         cache.clear()
 
     def test_optimize_prompt_with_ollama_think_flag_false_by_default(self):
-        """When config.optimize_thinking is False (default), subprocess gets --think=false."""
+        """When config.optimize_thinking is False (default), JSON payload has think=False."""
         cache = get_cache()
         cache.clear()
         config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
         assert config.optimize_thinking is False
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.returncode = 0
-                proc.communicate.return_value = ("optimized", "")
-                Popen.return_value = proc
+            with patch("genimg.core.prompt.requests.post") as post:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = {"response": "optimized"}
+                post.return_value = resp
                 optimize_prompt_with_ollama("a red car", config=config)
-        call_args = Popen.call_args[0][0]
-        assert call_args == [
-            "ollama",
-            "run",
-            "--think=false",
-            config.default_optimization_model,
-        ]
+        payload = post.call_args[1]["json"]
+        assert payload["think"] is False
+        assert payload["model"] == config.default_optimization_model
+        assert payload["stream"] is False
         cache.clear()
 
     def test_optimize_prompt_with_ollama_think_flag_true_when_optimize_thinking(self):
-        """When config.optimize_thinking is True, subprocess gets --think=true."""
+        """When config.optimize_thinking is True, JSON payload has think=True."""
         cache = get_cache()
         cache.clear()
         config = Config(
@@ -351,19 +353,14 @@ class TestOptimizePrompt:
             optimize_thinking=True,
         )
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.returncode = 0
-                proc.communicate.return_value = ("optimized", "")
-                Popen.return_value = proc
+            with patch("genimg.core.prompt.requests.post") as post:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = {"response": "optimized"}
+                post.return_value = resp
                 optimize_prompt_with_ollama("a red car", config=config)
-        call_args = Popen.call_args[0][0]
-        assert call_args == [
-            "ollama",
-            "run",
-            "--think=true",
-            config.default_optimization_model,
-        ]
+        payload = post.call_args[1]["json"]
+        assert payload["think"] is True
+        assert payload["model"] == config.default_optimization_model
         cache.clear()
 
     def test_optimize_prompt_with_reference_description_uses_description_template(self):
@@ -378,11 +375,10 @@ class TestOptimizePrompt:
                 return_value="Use this: {reference_description}",
             ) as get_desc_tpl:
                 with patch("genimg.core.prompt.get_optimization_template") as get_std_tpl:
-                    with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                        proc = MagicMock()
-                        proc.returncode = 0
-                        proc.communicate.return_value = ("  improved  \n", "")
-                        Popen.return_value = proc
+                    with patch("genimg.core.prompt.requests.post") as post:
+                        resp = MagicMock(status_code=200)
+                        resp.json.return_value = {"response": "  improved  \n"}
+                        post.return_value = resp
                         result = optimize_prompt(
                             "a cat",
                             config=config,
@@ -400,9 +396,8 @@ class TestOptimizePrompt:
             )
             == "improved"
         )
-        # Input to Ollama should contain the description (communicate(input=...))
-        sent_input = proc.communicate.call_args[1]["input"]
-        assert "fluffy orange tabby" in sent_input
+        sent_prompt = post.call_args[1]["json"]["prompt"]
+        assert "fluffy orange tabby" in sent_prompt
         cache.clear()
 
     def test_optimization_template_contains_placeholder(self):
@@ -413,7 +408,7 @@ class TestOptimizePrompt:
         )
 
     def test_cancel_check_raises_cancellation_error(self):
-        """When cancel_check returns True, optimization is cancelled and process is terminated."""
+        """When cancel_check returns True, optimization is cancelled while HTTP is in flight."""
         import time
 
         cache = get_cache()
@@ -425,122 +420,38 @@ class TestOptimizePrompt:
             call_count[0] += 1
             return call_count[0] >= 2
 
-        def blocking_communicate(*args, **kwargs):
-            time.sleep(2)  # Block so main thread can poll and cancel
-            return ("", "")
+        def slow_post(*args, **kwargs):
+            time.sleep(2)
+            resp = MagicMock(status_code=200)
+            resp.json.return_value = {"response": "done"}
+            return resp
 
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.communicate = blocking_communicate
-                proc.returncode = 0
-                proc.terminate = MagicMock()
-                Popen.return_value = proc
+            with patch("genimg.core.prompt.requests.post", side_effect=slow_post):
                 with pytest.raises(CancellationError) as exc_info:
                     optimize_prompt_with_ollama(
                         "original", config=config, cancel_check=cancel_after_two
                     )
         assert "cancelled" in str(exc_info.value).lower()
-        proc.terminate.assert_called_once()
         cache.clear()
 
 
 @pytest.mark.unit
-class TestSubprocessCleanup:
-    """Test that subprocess cleanup properly waits for process termination."""
+class TestOptimizationHttpTimeout:
+    """HTTP optimization maps timeouts to RequestTimeoutError."""
 
-    def test_timeout_calls_wait_after_kill(self):
-        """When timeout occurs, verify kill() is followed by wait()."""
-        import subprocess
+    def test_timeout_raises_request_timeout_error(self):
+        import requests
 
         cache = get_cache()
         cache.clear()
         config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
 
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.communicate.side_effect = subprocess.TimeoutExpired("ollama", 10)
-                proc.kill = MagicMock()
-                proc.wait = MagicMock()
-                Popen.return_value = proc
-
+            with patch("genimg.core.prompt.requests.post") as post:
+                post.side_effect = requests.exceptions.ReadTimeout("read timed out")
                 with pytest.raises(RequestTimeoutError):
                     optimize_prompt_with_ollama("test", config=config, timeout=10)
-
-                # Verify both kill and wait were called
-                proc.kill.assert_called_once()
-                proc.wait.assert_called_once()
-        cache.clear()
-
-    def test_cancellation_calls_wait_after_terminate(self):
-        """When cancelled, verify terminate() is followed by wait()."""
-        import time
-
-        cache = get_cache()
-        cache.clear()
-        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
-
-        def cancel_immediately():
-            return True
-
-        def blocking_communicate(*args, **kwargs):
-            time.sleep(2)
-            return ("result", "")
-
-        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.communicate = blocking_communicate
-                proc.terminate = MagicMock()
-                proc.wait = MagicMock()
-                Popen.return_value = proc
-
-                with pytest.raises(CancellationError):
-                    optimize_prompt_with_ollama(
-                        "test", config=config, cancel_check=cancel_immediately
-                    )
-
-                # Verify both terminate and wait were called
-                proc.terminate.assert_called_once()
-                proc.wait.assert_called()
-        cache.clear()
-
-    def test_cancellation_kills_if_terminate_times_out(self):
-        """If terminate() times out, verify kill() and wait() are called."""
-        import subprocess
-        import time
-
-        cache = get_cache()
-        cache.clear()
-        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
-
-        def cancel_immediately():
-            return True
-
-        def blocking_communicate(*args, **kwargs):
-            time.sleep(2)
-            return ("result", "")
-
-        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.communicate = blocking_communicate
-                proc.terminate = MagicMock()
-                # First wait() times out, second wait() succeeds
-                proc.wait = MagicMock(side_effect=[subprocess.TimeoutExpired("cmd", 5), None])
-                proc.kill = MagicMock()
-                Popen.return_value = proc
-
-                with pytest.raises(CancellationError):
-                    optimize_prompt_with_ollama(
-                        "test", config=config, cancel_check=cancel_immediately
-                    )
-
-                # Verify terminate, wait (timeout), kill, wait sequence
-                proc.terminate.assert_called_once()
-                assert proc.wait.call_count == 2
-                proc.kill.assert_called_once()
         cache.clear()
 
 
@@ -564,18 +475,14 @@ class TestCancelCheckExceptionHandling:
                 raise ValueError("Simulated user error in cancel_check")
             return False
 
-        def slow_communicate(*args, **kwargs):
-            # Sleep to allow cancel_check to be called multiple times
+        def slow_post(*args, **kwargs):
             time.sleep(0.5)
-            return ("optimized", "")
+            resp = MagicMock(status_code=200)
+            resp.json.return_value = {"response": "optimized"}
+            return resp
 
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.communicate = slow_communicate
-                proc.returncode = 0
-                Popen.return_value = proc
-
+            with patch("genimg.core.prompt.requests.post", side_effect=slow_post):
                 # Suppress expected RuntimeWarning from buggy cancel_check (we are testing it is not raised)
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", category=RuntimeWarning)
@@ -583,10 +490,7 @@ class TestCancelCheckExceptionHandling:
                         "test", config=config, cancel_check=buggy_cancel_check
                     )
 
-                # Should have completed successfully
                 assert result == "optimized"
-
-                # Verify cancel_check was called at least once (it raised exception but was handled)
                 assert call_count[0] >= 1, "cancel_check should be called despite raising exception"
         cache.clear()
 
@@ -601,18 +505,14 @@ class TestCancelCheckExceptionHandling:
         def cancel_with_keyboard_interrupt():
             raise KeyboardInterrupt("User pressed Ctrl+C")
 
-        def blocking_communicate(*args, **kwargs):
+        def blocking_post(*args, **kwargs):
             time.sleep(2)
-            return ("result", "")
+            resp = MagicMock(status_code=200)
+            resp.json.return_value = {"response": "result"}
+            return resp
 
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
-            with patch("genimg.core.prompt.subprocess.Popen") as Popen:
-                proc = MagicMock()
-                proc.communicate = blocking_communicate
-                proc.returncode = 0
-                Popen.return_value = proc
-
-                # KeyboardInterrupt should be re-raised
+            with patch("genimg.core.prompt.requests.post", side_effect=blocking_post):
                 with pytest.raises(KeyboardInterrupt):
                     optimize_prompt_with_ollama(
                         "test", config=config, cancel_check=cancel_with_keyboard_interrupt

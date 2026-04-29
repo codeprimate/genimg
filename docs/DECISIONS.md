@@ -68,14 +68,14 @@ Each decision record includes:
 
 ## ADR-003: Use Ollama Locally for Prompt Optimization
 
-**Date**: 2026-02-06
+**Date**: 2026-02-06 (transport revised 2026-04-29; see ADR-021)
 
-**Decision**: Use Ollama running locally via subprocess for prompt optimization rather than cloud APIs.
+**Decision**: Use Ollama running locally for prompt optimization rather than cloud APIs.
 
 **Context**: Need to optimize user prompts to improve image generation results. Must decide between local and cloud solutions.
 
 **Options Considered**:
-1. **Ollama locally**: Subprocess calls to local Ollama
+1. **Ollama locally**: Calls to local Ollama (originally CLI subprocess; now HTTP API—see ADR-021)
 2. **OpenRouter LLMs**: Use same API for optimization
 3. **OpenAI API**: Direct API calls
 
@@ -89,9 +89,32 @@ Each decision record includes:
 **Consequences**:
 - Requires users to install Ollama separately
 - Optimization feature optional (not all users will have it)
-- Must handle subprocess management (timeout, cancellation)
-- Cannot stream responses easily
+- Must handle timeouts, errors, and cooperative cancellation (see ADR-021 for transport details)
 - Performance depends on user's hardware
+
+---
+
+## ADR-021: Ollama HTTP API for prompt optimization (replace CLI subprocess)
+
+**Date**: 2026-04-29
+
+**Decision**: Implement prompt optimization and model discovery against Ollama's **HTTP API** (`POST /api/generate` with `stream: false`; `GET /api/tags` for health and `list_ollama_models()`), using the same configurable base URL as Ollama image generation (`OLLAMA_BASE_URL` / `GENIMG_OLLAMA_BASE_URL`).
+
+**Context**: Invoking `ollama run` via `subprocess` with piped stdout/stderr captured terminal-oriented escape sequences and line-editing artifacts when stdout was not a TTY, corrupting optimized prompt text in the CLI, logs, and Gradio.
+
+**Options Considered**:
+1. **Keep CLI, strip more sequences**: Fragile; depends on Ollama TTY behavior.
+2. **HTTP `/api/generate` non-streaming**: Clean JSON `response` field; consistent with existing `OllamaProvider` image path.
+3. **Streaming HTTP**: More complex; unnecessary for a single final string.
+
+**Rationale**:
+- Non-streaming generate matches how we already talk to Ollama for images
+- Same host/port as image generation reduces configuration surprise
+- Unit tests can mock `requests` without `Popen`
+
+**Consequences**:
+- Ollama must be **reachable over HTTP** (daemon running); the `ollama` binary does not need to be on `PATH` for optimization or model listing.
+- Cooperative **cancellation** mirrors the Ollama image provider: a daemon worker may still finish an in-flight request after `CancellationError` (no subprocess to `terminate()`).
 
 ---
 
@@ -268,9 +291,9 @@ Each decision record includes:
 
 **Date**: 2026-02-07
 
-**Decision**: Support cancellation of long-running operations (prompt optimization, image generation) by accepting an optional `cancel_check: Optional[Callable[[], bool]]` on the public entry points. When provided, the library runs the blocking work in a daemon thread and polls `cancel_check()` on the calling thread; if it returns True, the library raises `CancellationError` and (for Ollama) terminates the subprocess.
+**Decision**: Support cancellation of long-running operations (prompt optimization, image generation) by accepting an optional `cancel_check: Optional[Callable[[], bool]]` on the public entry points. When provided, the library runs the blocking work in a daemon thread and polls `cancel_check()` on the calling thread; if it returns True, the library raises `CancellationError` (cooperative cancel; no synchronous HTTP or subprocess abort).
 
-**Context**: LIBRARY_SPEC requires cancellation "when supported." Optimization (Ollama) and generation (OpenRouter) can run for many seconds; users must be able to interrupt.
+**Context**: LIBRARY_SPEC requires cancellation "when supported." Optimization (Ollama HTTP) and generation (OpenRouter / Ollama HTTP / Draw Things) can run for many seconds; users must be able to interrupt.
 
 **Options Considered**:
 1. **cancel_check callable**: Caller passes a function returning True to cancel; library polls from the main thread. No new types; works with threading.Event (e.g. `lambda: event.is_set()`).
@@ -279,7 +302,7 @@ Each decision record includes:
 
 **Rationale**:
 - cancel_check is interface-agnostic and testable; caller can use an Event, a flag, or CLI SIGINT handler that sets a flag.
-- For Ollama we can actually terminate the subprocess, so resources are released.
+- Historically, Ollama **prompt optimization** used a subprocess and could `terminate()` it on cancel (pre–HTTP migration). Today optimization and Ollama image generation use **HTTP** on a daemon worker; cancellation stops waiting and raises; in-flight `requests` may complete in the background (same practical trade-off as OpenRouter).
 - For OpenRouter we stop waiting and raise; the HTTP request may complete in the background (requests has no synchronous abort). Acceptable.
 
 **Consequences**:
@@ -291,7 +314,7 @@ Each decision record includes:
 - **cancel_check contract**: Callable should return quickly and not raise; the library catches exceptions from cancel_check and ignores them so a buggy callback does not abort the operation.
 - **Poll interval**: 0.25s. Spec asks for cancellation acknowledged within 100ms; worst case is one poll period (250ms). Can be reduced to 0.1s if stricter latency is needed.
 - **Daemon threads**: Workers are daemon threads so process exit is not blocked if the main thread exits (e.g. after raising CancellationError).
-- **Ollama**: On cancel we call `process.terminate()` then `thread.join(timeout=5)`. The subprocess is actually stopped; no lingering work.
+- **Ollama (HTTP)**: On cancel the library raises `CancellationError` after polling; the worker thread may still be inside `requests` until timeout or completion. No subprocess to terminate (see ADR-021).
 - **OpenRouter**: We only stop waiting and raise; the HTTP request continues in the worker until it completes. No way to abort a synchronous `requests` call from another thread. Thread exits when the request finishes; daemon=True prevents blocking process exit.
 - **Thread accumulation**: Repeated cancel-and-retry can leave a few short-lived worker threads (one per cancelled generation) until their requests complete. Acceptable for CLI; for long-lived servers, document or consider a thread pool if needed.
 - **Python 3.10+**: Built-in `tuple[str, str]` etc. are fine; no need for `typing.Tuple` for return types.

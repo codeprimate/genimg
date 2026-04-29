@@ -1,13 +1,13 @@
 # genimg - AI Image Generation Tool
 
-A Python package for generating AI images with intelligent prompt optimization. Generate high-quality images from simple text descriptions using multiple AI models via OpenRouter, with optional local prompt enhancement via Ollama.
+A Python package for generating AI images with intelligent prompt optimization. Generate high-quality images from simple text descriptions using multiple AI models via OpenRouter (or local providers), with optional local prompt enhancement via the **Ollama HTTP API**.
 
 **Current version:** 0.10.x (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
 
 ## Features
 
 - 🎨 **Multiple AI Models & Providers**: Generate images via **OpenRouter** (cloud), **Ollama** (local), or **Draw Things** (local gRPC on macOS). Choose provider and model in the UI or config.
-- ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama models; optional in both CLI and web UI
+- ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama over **HTTP** (same `OLLAMA_BASE_URL` as Ollama image generation); optional in both CLI and web UI
 - 🖼️ **Reference Images**: Use reference images to guide style/generation (OpenRouter); process refs for optimization context (both providers). CLI and web UI.
 - 📑 **Character turnaround (CLI)**: `genimg character` builds a turnaround-style sheet from one or more reference images (base prompt in bundled `prompts.yaml` under `character.template`, plus optional `--prompt` / `-p`).
 - 📷 **Reference Image Description**: In the web UI, describe a reference image (prose or tags via Florence/JoyTag) and optionally feed that into prompt optimization
@@ -272,7 +272,7 @@ set_verbosity(1)  # 0=WARNING, 1=INFO+prompts, 2=DEBUG; or GENIMG_VERBOSITY
 
 ## Prompt Optimization
 
-Prompt optimization uses Ollama to enhance your simple descriptions into detailed, effective prompts. The optimizer adds:
+Prompt optimization uses Ollama over **HTTP** (same server as image generation: `OLLAMA_BASE_URL` / `GENIMG_OLLAMA_BASE_URL`, default `http://127.0.0.1:11434`) to enhance your simple descriptions into detailed, effective prompts. The optimizer adds:
 
 - Technical photography details (camera angles, lighting)
 - Spatial relationships and scene layout
@@ -286,7 +286,7 @@ Prompt optimization uses Ollama to enhance your simple descriptions into detaile
 ## Available Models
 
 - **Image generation**: Default is OpenRouter model `bytedance-seed/seedream-4.5`. You can switch the provider to **Ollama** and use local image models (see [Ollama image models](https://ollama.com/blog/image-generation)). Set `GENIMG_DEFAULT_IMAGE_PROVIDER=ollama` or choose in the UI.
-- **Prompt optimization**: Uses Ollama (default `huihui_ai/qwen3.5-abliterated:4b`). Pull the model with `ollama pull huihui_ai/qwen3.5-abliterated:4b`.
+- **Prompt optimization**: Uses Ollama (default `huihui_ai/qwen3.5-abliterated:4b`) via the HTTP API. Pull the model with `ollama pull huihui_ai/qwen3.5-abliterated:4b` (or your chosen tag).
 
 Check [OpenRouter's model list](https://openrouter.ai/models) for more cloud image models.
 
@@ -368,9 +368,10 @@ genimg/
 ### "Ollama is not available"
 
 If you see this error and want to use prompt optimization:
-1. Install Ollama from https://ollama.ai
+1. Install Ollama from https://ollama.ai and **start the Ollama app or service** so it listens for HTTP (default `http://127.0.0.1:11434`).
 2. Pull a model: `ollama pull huihui_ai/qwen3.5-abliterated:4b`
-3. Verify it works: `ollama list`
+3. If Ollama runs elsewhere, set **`OLLAMA_BASE_URL`** or **`GENIMG_OLLAMA_BASE_URL`** to match (same variable used for Ollama image generation).
+4. Quick check: `curl -sS http://127.0.0.1:11434/api/tags` should return JSON (adjust the host if you changed the base URL).
 
 You can generate images without Ollama by skipping optimization.
 

@@ -298,16 +298,20 @@ Content-Length: 245632
 }
 ```
 
-### Ollama Optimization
+### Ollama optimization (library)
 
-**Command:**
+genimg optimizes prompts via the **Ollama HTTP API** (`POST /api/generate`, non-streaming), not by shelling out to `ollama run`. Ensure the daemon is up (default `http://127.0.0.1:11434`).
+
+**Equivalent raw HTTP check (optional):**
 ```bash
-echo "You are a prompt engineer..." | ollama run huihui_ai/qwen3.5-abliterated:4b
+curl -sS http://127.0.0.1:11434/api/tags | head
 ```
 
-**Output:**
-```
-A sleek red sports car photographed at golden hour, shot with 85mm lens creating shallow depth of field...
+**From Python (uses your config / env for base URL and model):**
+```python
+from genimg import optimize_prompt
+
+optimized = optimize_prompt("a red car")  # calls Ollama over HTTP
 ```
 
 ## Error Handling
@@ -397,14 +401,15 @@ from unittest.mock import patch, Mock
 from genimg.core.prompt import optimize_prompt
 
 def test_optimize_prompt():
-    """Test prompt optimization with mocked Ollama."""
-    mock_process = Mock()
-    mock_process.communicate.return_value = ("Optimized prompt here", "")
-    mock_process.returncode = 0
-    
-    with patch('subprocess.Popen', return_value=mock_process):
-        result = optimize_prompt("simple prompt")
-        assert "Optimized" in result
+    """Test prompt optimization with mocked Ollama HTTP."""
+    mock_resp = Mock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"response": "Optimized prompt here"}
+
+    with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+        with patch("genimg.core.prompt.requests.post", return_value=mock_resp):
+            result = optimize_prompt("simple prompt")
+    assert "Optimized" in result
 ```
 
 ### Testing Image Processing

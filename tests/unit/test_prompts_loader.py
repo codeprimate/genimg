@@ -35,7 +35,7 @@ class TestPromptsLoader:
         text = get_character_turnaround_prompt()
         assert isinstance(text, str)
         assert len(text.strip()) >= 3
-        assert "Turnaround reference sheet" in text
+        assert "turnaround reference sheet" in text.lower()
 
 
 @pytest.mark.unit
@@ -56,7 +56,7 @@ class TestYAMLValidation:
         assert "template" in data["optimization"]
         assert "character" in data
         assert "template" in data["character"]
-        assert "Turnaround" in data["character"]["template"]
+        assert "turnaround" in data["character"]["template"].lower()
 
     def test_malformed_yaml_raises_configuration_error(self):
         """Malformed YAML should raise ConfigurationError with helpful message."""

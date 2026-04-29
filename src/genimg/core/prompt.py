@@ -1,23 +1,24 @@
 """
 Prompt management and optimization for genimg.
 
-This module handles prompt validation, optimization via Ollama, and caching.
+This module handles prompt validation, optimization via the Ollama HTTP API, and caching.
 """
 
 import re
-import subprocess
 import threading
 import time
 import warnings
 from collections.abc import Callable
 
-from genimg.core.config import Config, get_config
+import requests
+
+from genimg.core.config import DEFAULT_OLLAMA_BASE_URL, Config, get_config
 from genimg.core.prompts_loader import (
     get_optimization_template,
     get_optimization_template_with_description,
 )
 from genimg.logging_config import get_logger, log_prompts
-from genimg.utils.cache import PromptCache, get_cache
+from genimg.utils.cache import get_cache
 from genimg.utils.exceptions import (
     APIError,
     CancellationError,
@@ -37,8 +38,8 @@ OPTIMIZATION_TEMPLATE = get_optimization_template()
 _THINKING_START = "Thinking..."
 _THINKING_END = "...done thinking."
 
-# Ollama CLI can emit CSI sequences (cursor move, erase in line) when stdout is not a TTY;
-# they are captured literally and show up as garbage (e.g. "[4D[K") in the UI.
+# Legacy: Ollama CLI could emit CSI sequences when stdout was not a TTY; API responses may
+# still include terminal styling in rare cases, so we strip them in post-processing.
 _ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
@@ -109,74 +110,71 @@ def validate_prompt(prompt: str) -> None:
         )
 
 
-def check_ollama_available() -> bool:
+def _ollama_api_base(config: Config | None = None) -> str:
+    """Base URL for Ollama HTTP API (no trailing slash)."""
+    cfg = config or get_config()
+    base = (cfg.ollama_base_url or DEFAULT_OLLAMA_BASE_URL).strip().rstrip("/")
+    return base or DEFAULT_OLLAMA_BASE_URL.rstrip("/")
+
+
+def check_ollama_available(config: Config | None = None) -> bool:
     """
-    Check if Ollama is available on the system.
+    Check if the Ollama HTTP API is reachable.
+
+    Uses GET ``/api/tags`` on the configured base URL (``OLLAMA_BASE_URL`` /
+    ``GENIMG_OLLAMA_BASE_URL``).
 
     Returns:
-        True if Ollama is available, False otherwise
+        True if Ollama responds successfully, False otherwise
     """
+    url = f"{_ollama_api_base(config)}/api/tags"
     try:
-        result = subprocess.run(
-            ["ollama", "list"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+        response = requests.get(url, timeout=5)
+        return response.status_code == 200
+    except requests.RequestException:
         return False
 
 
-def list_ollama_models() -> list[str]:
+def list_ollama_models(config: Config | None = None) -> list[str]:
     """
-    List installed Ollama models.
+    List installed Ollama models via the HTTP API (``GET /api/tags``).
 
     Returns:
-        List of installed model names. Returns empty list if Ollama is not available.
-
-    Example output parsing:
-        NAME                            ID              SIZE    MODIFIED
-        huihui_ai/qwen3.5-abliterated:4b:latest   abc123def456    10 GB   2 days ago
-        llama2:latest                   def456abc789    4 GB    1 week ago
-
-        Returns: ["huihui_ai/qwen3.5-abliterated:4b", "llama2"]
+        List of installed model names. Returns empty list if Ollama is not available
+        or the request fails.
     """
-    if not check_ollama_available():
+    cfg = config or get_config()
+    if not check_ollama_available(cfg):
         return []
 
+    url = f"{_ollama_api_base(cfg)}/api/tags"
     try:
-        result = subprocess.run(
-            ["ollama", "list"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode != 0:
+        response = requests.get(url, timeout=5)
+        if response.status_code != 200:
             return []
-
-        # Parse output: skip header line, extract model names (first column)
-        lines = result.stdout.strip().split("\n")
-        if len(lines) <= 1:  # Only header or empty
-            return []
-
-        models = []
-        for line in lines[1:]:  # Skip header
-            line = line.strip()
-            if not line:
-                continue
-            # First column is the model name (may include :tag)
-            parts = line.split()
-            if parts:
-                model_name = parts[0]
-                # Strip :latest tag if present for cleaner display
-                if model_name.endswith(":latest"):
-                    model_name = model_name[:-7]
-                models.append(model_name)
-
-        return models
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+        data = response.json()
+    except (requests.RequestException, ValueError, TypeError):
         return []
+
+    raw_models = data.get("models")
+    if not isinstance(raw_models, list):
+        return []
+
+    models: list[str] = []
+    for entry in raw_models:
+        if not isinstance(entry, dict):
+            continue
+        model_name = entry.get("name")
+        if not model_name or not isinstance(model_name, str):
+            continue
+        model_name = model_name.strip()
+        if not model_name:
+            continue
+        if model_name.endswith(":latest"):
+            model_name = model_name[:-7]
+        models.append(model_name)
+
+    return models
 
 
 _OLLAMA_IMAGE_NAMESPACES = ("x/", "my/")
@@ -261,11 +259,12 @@ def optimize_prompt_with_ollama(
         truncated = prompt if len(prompt) <= _PROMPT_LOG_MAX else prompt[:_PROMPT_LOG_MAX] + "..."
         logger.info("Original prompt: %s", truncated)
 
-    # Check if Ollama is available
-    if not check_ollama_available():
+    # Check if Ollama HTTP API is reachable
+    if not check_ollama_available(config):
         raise APIError(
-            "Ollama is not available. Please install Ollama and ensure it's in your PATH. "
-            "Visit https://ollama.ai for installation instructions."
+            "Ollama is not available. Start the Ollama app or daemon and ensure "
+            "OLLAMA_BASE_URL / GENIMG_OLLAMA_BASE_URL points at your server "
+            f"(default {DEFAULT_OLLAMA_BASE_URL}). Visit https://ollama.ai for installation."
         )
 
     # Prepare the optimization prompt: use description-based or standard template
@@ -282,13 +281,15 @@ def optimize_prompt_with_ollama(
 
     start_time = time.time()
     if cancel_check is None:
-        result = _run_ollama_sync(
+        raw = _call_ollama_generate_api(config, model, optimization_prompt, timeout, use_thinking)
+        optimized = _strip_ollama_thinking(raw.strip())
+        if not optimized:
+            raise APIError("Ollama returned an empty response")
+        cache.set(
             prompt,
             model,
+            optimized,
             reference_hash,
-            timeout,
-            optimization_prompt,
-            cache,
             description_key=description_key,
             use_thinking=use_thinking,
         )
@@ -296,43 +297,24 @@ def optimize_prompt_with_ollama(
         logger.info("Optimized in %.1fs model=%s", elapsed, model)
         if log_prompts():
             truncated = (
-                result if len(result) <= _PROMPT_LOG_MAX else result[:_PROMPT_LOG_MAX] + "..."
+                optimized if len(optimized) <= _PROMPT_LOG_MAX else optimized[:_PROMPT_LOG_MAX] + "..."
             )
             logger.info("Optimized prompt: %s", truncated)
-        return result
+        return optimized
 
-    # Run with cancellation support: subprocess in a thread, main thread polls cancel_check
-    result_holder: list[tuple[str, str] | None] = [None]
+    # Run with cancellation support: HTTP request in a thread, main thread polls cancel_check
+    result_holder: list[str | None] = [None]
     exc_holder: list[BaseException | None] = [None]
-    process_holder: list[subprocess.Popen[str] | None] = [None]
 
-    think_flag = "--think=true" if use_thinking else "--think=false"
-    cmd = ["ollama", "run", think_flag, model]
-
-    def worker_with_process() -> None:
+    def worker_http() -> None:
         try:
-            process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            process_holder[0] = process
-            stdout, stderr = process.communicate(input=optimization_prompt, timeout=timeout)
-            result_holder[0] = (stdout, stderr)
-        except subprocess.TimeoutExpired:
-            if process_holder[0]:
-                process_holder[0].kill()
-                process_holder[0].wait()  # Wait for process cleanup
-            exc_holder[0] = RequestTimeoutError(
-                f"Optimization timed out after {timeout} seconds. "
-                "Try a simpler prompt or increase the timeout."
+            result_holder[0] = _call_ollama_generate_api(
+                config, model, optimization_prompt, timeout, use_thinking
             )
         except BaseException as e:
             exc_holder[0] = e
 
-    thread = threading.Thread(target=worker_with_process, daemon=True)
+    thread = threading.Thread(target=worker_http, daemon=True)
     thread.start()
 
     poll_interval = 0.25
@@ -356,30 +338,14 @@ def optimize_prompt_with_ollama(
                 stacklevel=2,
             )
     if cancelled:
-        proc = process_holder[0]
-        if proc is not None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5.0)  # Wait for graceful termination
-            except subprocess.TimeoutExpired:
-                # If process didn't terminate, force kill
-                proc.kill()
-                proc.wait()  # Wait for cleanup after kill
-            thread.join(timeout=5.0)
+        # Same pattern as Ollama image provider: in-flight HTTP may continue on a daemon thread.
         raise CancellationError("Optimization was cancelled.")
 
     if exc_holder[0] is not None:
         raise exc_holder[0]
 
-    stdout, stderr = result_holder[0] or ("", "")
-    process = process_holder[0]
-    if process is not None and process.returncode != 0:
-        raise APIError(
-            f"Ollama optimization failed: {stderr}",
-            status_code=process.returncode,
-            response=stderr,
-        )
-    optimized = _strip_ollama_thinking((stdout or "").strip())
+    raw = result_holder[0] or ""
+    optimized = _strip_ollama_thinking(raw.strip())
     if not optimized:
         raise APIError("Ollama returned an empty response")
     cache.set(
@@ -400,71 +366,69 @@ def optimize_prompt_with_ollama(
     return optimized
 
 
-def _run_ollama_communicate(
+def _call_ollama_generate_api(
+    config: Config,
     model: str,
     optimization_prompt: str,
     timeout: int,
-    *,
-    use_thinking: bool = False,
-) -> tuple[str, str]:
-    """Run ollama in a subprocess and return (stdout, stderr). Used by sync and worker."""
-    think_flag = "--think=true" if use_thinking else "--think=false"
-    process = subprocess.Popen(
-        ["ollama", "run", think_flag, model],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    use_thinking: bool,
+) -> str:
+    """
+    POST ``/api/generate`` with ``stream: false``; return the ``response`` text field.
+
+    Raises:
+        RequestTimeoutError: HTTP timeout
+        APIError: connection failure, HTTP error, or invalid JSON
+    """
+    base = _ollama_api_base(config)
+    url = f"{base}/api/generate"
+    payload: dict = {
+        "model": model,
+        "prompt": optimization_prompt,
+        "stream": False,
+        "think": use_thinking,
+    }
     try:
-        stdout, stderr = process.communicate(input=optimization_prompt, timeout=timeout)
-    except subprocess.TimeoutExpired as err:
-        process.kill()
-        process.wait()  # Wait for process cleanup
+        response = requests.post(
+            url,
+            json=payload,
+            timeout=timeout,
+            headers={"Content-Type": "application/json"},
+        )
+    except requests.exceptions.Timeout as err:
         raise RequestTimeoutError(
             f"Optimization timed out after {timeout} seconds. "
             "Try a simpler prompt or increase the timeout."
         ) from err
-    if process.returncode != 0:
+    except requests.exceptions.ConnectionError as err:
         raise APIError(
-            f"Ollama optimization failed: {stderr}",
-            status_code=process.returncode,
-            response=stderr,
+            "Failed to connect to Ollama. Is it running? Check OLLAMA_BASE_URL "
+            f"or GENIMG_OLLAMA_BASE_URL (default {DEFAULT_OLLAMA_BASE_URL})."
+        ) from err
+    except requests.exceptions.RequestException as err:
+        raise APIError(f"Ollama request failed: {err!s}") from err
+
+    if response.status_code >= 400:
+        raise APIError(
+            f"Ollama optimization failed: {response.text}",
+            status_code=response.status_code,
+            response=response.text,
         )
-    return stdout, stderr
 
-
-def _run_ollama_sync(
-    prompt: str,
-    model: str,
-    reference_hash: str | None,
-    timeout: int,
-    optimization_prompt: str,
-    cache: PromptCache,
-    description_key: str | None = None,
-    use_thinking: bool = False,
-) -> str:
-    """Run Ollama without cancellation; used when cancel_check is None."""
     try:
-        stdout, stderr = _run_ollama_communicate(
-            model, optimization_prompt, timeout, use_thinking=use_thinking
-        )
-    except FileNotFoundError as e:
+        data = response.json()
+    except ValueError as err:
         raise APIError(
-            "Ollama command not found. Please ensure Ollama is installed and in your PATH."
-        ) from e
-    optimized = _strip_ollama_thinking(stdout.strip())
-    if not optimized:
-        raise APIError("Ollama returned an empty response")
-    cache.set(
-        prompt,
-        model,
-        optimized,
-        reference_hash,
-        description_key=description_key,
-        use_thinking=use_thinking,
-    )
-    return optimized
+            f"Ollama returned invalid JSON: {response.text[:500]}",
+            response=response.text,
+        ) from err
+
+    text = data.get("response")
+    if text is None:
+        raise APIError("Ollama returned no response field", response=str(data)[:500])
+    if not isinstance(text, str):
+        raise APIError("Ollama response field has unexpected type", response=str(data)[:500])
+    return text
 
 
 def optimize_prompt(

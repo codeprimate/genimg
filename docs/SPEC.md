@@ -777,26 +777,27 @@ Error:
 
 ### 7.2 Ollama
 
-**Purpose:** (1) Local prompt optimization (always via Ollama subprocess). (2) Image generation when provider is **ollama** (HTTP API).
+**Purpose:** (1) Local prompt optimization via Ollama **HTTP API**. (2) Image generation when provider is **ollama** (same HTTP server, different request shape for image models).
 
-**Optimization (subprocess):**
-- Text generation via `ollama run {model}` (subprocess, stdin/stdout)
-- Threading for cancellation support; no authentication
+**Optimization (HTTP):**
+- `GET {ollama_base_url}/api/tags` for availability checks and installed model names (`list_ollama_models()`)
+- `POST {ollama_base_url}/api/generate` with `stream: false`, JSON body including `model`, `prompt`, and `think` (optimization thinking on/off)
+- Threading for cooperative cancellation (`cancel_check`); no API key
 - Template loaded from package `prompts.yaml` (bundled with genimg; contains `optimization.template` with `{reference_image_instruction}` placeholder, and `character.template` for the `genimg character` turnaround prompt)
 - Format: `{template}\n\nOriginal prompt: {user_prompt}\n\nImproved prompt:`
-- Output processing: strips "Thinking..." blocks and markdown code fences
+- Response: JSON `response` field; post-processing strips "Thinking..." blocks, markdown code fences, and stray ANSI sequences
 
 **Image generation (when provider is ollama):**
-- HTTP API: `POST {ollama_base_url}/api/generate` (or equivalent) with image-capable models (e.g. x/z-image-turbo, x/flux2-klein)
+- HTTP API: `POST {ollama_base_url}/api/generate` with image-capable models (e.g. x/z-image-turbo, x/flux2-klein)
 - No reference image support
 - No API key; uses `GENIMG_OLLAMA_BASE_URL` or `OLLAMA_BASE_URL` (default `http://127.0.0.1:11434`)
 
-**Model management (optimization):**
-- `ollama list` / `ollama pull {model}` for installing optimization models
+**Model management:**
+- Install weights with `ollama pull {model}` (CLI or any Ollama UI); discovery for optimization/UI lists uses `/api/tags` over HTTP
 
-**Error scenarios:** Model not found, Ollama not installed, timeout (>120s optimization), process killed (cancellation).
+**Error scenarios:** Model not found, Ollama HTTP server unreachable, timeout (configurable optimization timeout), cooperative cancel (in-flight HTTP may still complete on a worker thread).
 
-**Assumptions:** Ollama installed and available (PATH for optimization; base URL for image generation). At least one compatible model installed for the chosen use (optimization and/or image generation).
+**Assumptions:** Ollama daemon reachable at the configured base URL. The `ollama` CLI need not be on `PATH` for optimization or `list_ollama_models()`. At least one compatible model installed for the chosen use (optimization and/or image generation).
 
 ### 7.3 Draw Things (local gRPC)
 
@@ -828,14 +829,14 @@ Error:
 **Requirement:** Users must be able to interrupt long-running operations
 
 **Criteria:**
-- Cancellation request acknowledged within 100ms
-- Optimization cancelled within 2 seconds of request
-- Generation cancelled within 1 second of request (network-dependent)
+- Cancellation request acknowledged within 100ms (poll interval 250ms worst-case)
+- Optimization: cooperative cancel raises `CancellationError` promptly; in-flight Ollama HTTP may continue on a daemon worker until timeout or completion
+- Generation cancelled within 1 second of request (network-dependent; same cooperative pattern for HTTP providers)
 - UI remains responsive during operations
 - Status updates appear within 500ms of state changes
 
 **Failure Modes:**
-- Cancellation fails to terminate process: User must force-quit application
+- Cancellation cannot hard-abort in-flight HTTP: user sees cancel immediately but background work may still run until timeout (daemon threads)
 - UI freezes during operation: User cannot cancel
 
 ### 8.2 Reliability
@@ -848,7 +849,7 @@ Error:
 - Invalid inputs rejected with specific guidance
 - System recovers to ready state after any error
 - No data loss on errors (inputs preserved)
-- No resource leaks (files, processes cleaned up)
+- No resource leaks (temporary files cleaned up; HTTP workers use daemon threads so process exit is not blocked)
 
 **Error Recovery:**
 - Automatic retry not implemented (user must retry manually)
@@ -923,7 +924,7 @@ Error:
 - **Mitigation:** User can switch to **ollama** or **draw_things** for local image generation without internet
 
 #### 9.1.3 Local Service Dependency
-- **Constraint:** Prompt optimization requires Ollama (subprocess). Image generation when provider is **ollama** requires Ollama service (HTTP). Image generation when provider is **draw_things** requires the Draw Things app with gRPC enabled.
+- **Constraint:** Prompt optimization requires the Ollama **HTTP** service (same base URL as Ollama image generation). Image generation when provider is **ollama** requires that service. Image generation when provider is **draw_things** requires the Draw Things app with gRPC enabled.
 - **Impact:** Optimization unavailable without Ollama; Ollama-provider image generation unavailable without Ollama; Draw Things provider unavailable without the Draw Things server process
 - **Mitigation:** Optimization is optional; user can use **openrouter** for cloud image generation; user can choose **ollama** or **draw_things** for local image generation depending on installed software
 

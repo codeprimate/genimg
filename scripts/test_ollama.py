@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 """
-Test Ollama installation and availability.
+Test Ollama CLI installation and basic commands (PATH, version, list).
+
+genimg **prompt optimization** talks to Ollama over **HTTP** (`/api/tags`, `/api/generate`)
+and does not require the `ollama` binary on PATH; use `curl …/api/tags` or the app to
+verify the daemon if optimization fails while this script passes.
 
 Usage:
     python scripts/test_ollama.py

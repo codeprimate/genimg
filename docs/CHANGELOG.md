@@ -11,7 +11,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (none)
 
 ### Changed
+- (none)
+
+### Fixed
+- (none)
+
+## [0.14.0] - 2026-04-29
+
+### Changed
+- **Prompt optimization** (`genimg.core.prompt`): calls the Ollama **HTTP API** (`POST /api/generate` with `stream: false`, and `GET /api/tags` for availability and `list_ollama_models()`), replacing the **`ollama run`** subprocess. Uses the same base URL as image generation (`OLLAMA_BASE_URL` / `GENIMG_OLLAMA_BASE_URL`, default `http://127.0.0.1:11434`).
+
+### Fixed
+- **Prompt optimization:** CLI-driven `ollama run` could inject terminal escape sequences into captured stdout, corrupting optimized prompt text in logs and the UI; the HTTP response body avoids that path.
+
+## [0.13.5] - 2026-04-29
+
+### Added
+- **`list_ollama_image_models()`** in `genimg.core.prompt` (re-exported from `genimg`): returns installed Ollama models whose capabilities include image generation; unit tests cover filtering and edge cases.
+
+### Changed
+- **Gradio:** Ollama image **model** dropdown is populated from `list_ollama_image_models()` instead of hardcoded ids.
+
+## [0.13.4] - 2026-04-29
+
+### Added
+- **Gradio:** **Ollama** appears in the image **provider** choices alongside OpenRouter and Draw Things.
+
+### Changed
 - **`genimg character` turnaround prompt** now lives in bundled `prompts.yaml` as `character.template` and is loaded via `get_character_turnaround_prompt()` (removed `cli/character_prompt.py`).
+
+## [0.13.3] - 2026-04-24
+
+### Added
+- **Draw Things presets:** optional **`default_loras`** on `DrawThingsPreset` (`(checkpoint_filename, weight), …` → `GenerationConfiguration.loras`); **FLUX.2 [klein]** preset ships default LoRA stack and `CHARACTER_COMMAND_DRAW_THINGS_PRESET_ID` constant for the pinned `genimg character --provider draw_things` preset.
+
+### Changed
+- **CLI (`genimg character` with Draw Things):** uses the pinned **flux2-klein** preset; **`--model` is ignored** for that path so the preset checkpoint (and LoRAs) stay consistent. Preset help documents default LoRA stacks.
+
+## [0.13.2] - 2026-04-24
+
+### Changed
+- **Gradio:** image provider wiring refactored (`_GRADIO_IMAGE_PROVIDER_CHOICES` replaces `KNOWN_IMAGE_PROVIDER_IDS`); **Ollama** is hidden when unavailable, with **OpenRouter** as the safe default.
 
 ## [0.13.1] - 2026-04-24
 
@@ -87,7 +127,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.10.5] - 2026-04-05
 
 ### Changed
-- Prompt optimization: strip **ANSI escape sequences** from Ollama subprocess output so the terminal UI stays readable.
+- Prompt optimization: strip **ANSI escape sequences** from raw optimizer text so the terminal UI stays readable.
 
 ## [0.10.4] - 2026-03-18
 

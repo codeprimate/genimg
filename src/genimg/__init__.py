@@ -2,7 +2,7 @@
 genimg - AI Image Generation Tool
 
 A Python package for generating AI images with prompt optimization.
-Supports multiple models via OpenRouter and local prompt optimization via Ollama.
+Supports multiple models via OpenRouter and local prompt optimization via the Ollama HTTP API.
 
 Library usage:
 - Configuration can be passed per operation (e.g. generate_image(..., config=my_config))

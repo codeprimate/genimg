@@ -117,7 +117,7 @@ The library is the single source of truth for all product behavior (see [SPEC.md
 - **Configuration**: Pass `config` per operation (e.g. `generate_image(..., config=my_config)`) or use the shared config via `get_config()` / `set_config()`. When passing config explicitly, the caller may call `config.validate()` before use if the operation depends on credentials.
 - **Cache**: The prompt optimization cache is process-scoped. Use `clear_cache()` and `get_cached_prompt()` for cache management; `get_cache()` gives direct access to the cache instance.
 - **API keys**: The library does not log or expose API keys in error messages, return values, or config repr.
-- **Testability**: Backends (HTTP client, Ollama subprocess) are not yet injectable; a future improvement for unit tests would be dependency injection of the HTTP client and optimizer so tests do not require network or Ollama.
+- **Testability**: HTTP clients are not yet injectable end-to-end; unit tests mock `requests` for OpenRouter, Ollama image generation, and Ollama prompt optimization. A future improvement would be dependency injection so tests do not patch at import sites.
 
 ## Common Development Tasks
 
@@ -267,8 +267,8 @@ except CancellationError:
 **How it works:**
 - Library polls `cancel_check()` every 250ms
 - When it returns True, library raises `CancellationError`
-- For Ollama: subprocess is terminated
-- For OpenRouter: HTTP request may complete in background (no sync abort)
+- For Ollama (prompt optimization and image generation): blocking `requests` calls run on a daemon worker; cancellation stops waiting and raises; the HTTP request may still complete in the background (no synchronous abort)
+- For OpenRouter: same pattern (HTTP request may complete in background)
 
 ### Using the Cache
 
@@ -413,12 +413,16 @@ def test_api_call(mock_openrouter_success):
     result = generate_image("test prompt")
     assert result.image_data
 
-@patch('subprocess.Popen')
-def test_ollama_call(mock_popen):
-    """Mock subprocess calls."""
-    mock_popen.return_value.communicate.return_value = ("output", "")
+@patch("genimg.core.prompt.requests.post")
+@patch("genimg.core.prompt.check_ollama_available", return_value=True)
+def test_ollama_optimize(_mock_avail, mock_post):
+    """Mock Ollama HTTP optimization (also patch check_ollama_available or the GET to /api/tags)."""
+    mock_resp = Mock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"response": "output"}
+    mock_post.return_value = mock_resp
     result = optimize_prompt("test")
-    assert result
+    assert result == "output"
 ```
 
 ## Code Quality
@@ -518,22 +522,21 @@ python scripts/inspect_cache.py
 - Check for error responses before parsing
 - Include model name in requests for proper routing
 
-### Ollama Subprocess Management
+### Ollama HTTP (prompt optimization and image generation)
 
 **Implementation:**
-- Uses `subprocess.Popen` for subprocess control
-- Calls `communicate(timeout=...)` for timeout support
-- Always handle `TimeoutExpired` exception
-- Check `returncode` for subprocess errors
+- **Optimization** (`core/prompt.py`): `GET {base}/api/tags` for availability and model listing; `POST {base}/api/generate` with `stream: false` and JSON body (`model`, `prompt`, `think`, …)
+- **Image generation** (`core/providers/ollama.py`): `POST {base}/api/generate` for image-capable models
+- Base URL: `OLLAMA_BASE_URL` / `GENIMG_OLLAMA_BASE_URL` (default `http://127.0.0.1:11434`)
+- Use `requests` timeouts; map `requests.exceptions.Timeout` to `RequestTimeoutError` where applicable
 
-**On Cancellation:**
-- Call `process.terminate()` to stop subprocess
-- Subprocess is actually killed (not just abandoned)
-- Join worker thread with timeout to ensure cleanup
+**On cancellation (`cancel_check` set):**
+- Blocking work runs on a **daemon** thread; main thread polls `cancel_check` and raises `CancellationError`
+- There is no subprocess to terminate; an in-flight HTTP request may finish on the worker thread after cancel (same idea as OpenRouter)
 
 **Limitations:**
-- No streaming support (reads full response)
-- Blocking operation (runs in worker thread for cancellation)
+- Optimization uses non-streaming generate (single JSON `response` string)
+- No synchronous HTTP abort from the polling thread
 
 ### Image Processing
 
@@ -600,8 +603,7 @@ python scripts/inspect_cache.py
 - Default `pytest` excludes via `-m "not integration"` in `pyproject.toml`
 
 **Mocking External Dependencies:**
-- Mock `subprocess.Popen` for Ollama tests
-- Mock `requests.post` for OpenRouter tests
+- Mock `requests.post` / `requests.get` for Ollama optimization, Ollama image generation, and OpenRouter tests
 - Use `pytest-mock` for simple mocking
 - Use `responses` library for detailed HTTP mocking
 
@@ -625,9 +627,8 @@ EXIT_CANCELLED = 130             # CancellationError (standard SIGINT code)
 - Library catches and ignores exceptions from `cancel_check` (buggy callback won't abort operation)
 
 **Platform Differences:**
-- OpenRouter: HTTP request may complete in background after cancel (requests has no sync abort from another thread)
-- Ollama: Subprocess actually terminated via `process.terminate()`
-- Thread accumulation: Repeated cancel-and-retry leaves worker threads until requests finish (acceptable for CLI; consider thread pool for long-lived servers)
+- OpenRouter and Ollama (HTTP): after `CancellationError`, the worker thread may still be waiting on `requests` until timeout or completion; threads are daemon so process exit is not blocked
+- Thread accumulation: Repeated cancel-and-retry can leave short-lived worker threads until their requests finish (acceptable for CLI; consider documenting for long-lived servers)
 
 ### Trace Image Processing
 
@@ -642,9 +643,9 @@ print(f"Format: {image.format}")
 ### Common Error Patterns
 
 **"Ollama is not available"**:
-- Check: `which ollama`
-- Check: `ollama list`
-- Install if missing
+- Ensure the Ollama daemon is running and reachable at your configured base URL (default `http://127.0.0.1:11434`; try `curl -sS http://127.0.0.1:11434/api/tags`)
+- Set `OLLAMA_BASE_URL` / `GENIMG_OLLAMA_BASE_URL` if Ollama listens elsewhere
+- Install Ollama and pull models with `ollama pull <model>` if needed
 
 **"OpenRouter API key is required"**:
 - Check: `echo $OPENROUTER_API_KEY`
@@ -703,7 +704,7 @@ python -m memory_profiler script.py
 ### Bottlenecks
 
 Typical bottlenecks:
-1. **Ollama calls**: 5-30s depending on model and hardware
+1. **Ollama (optimization or image)**: 5-30s depending on model and hardware
 2. **OpenRouter API**: 3-60s depending on model and complexity
 3. **Image processing**: Usually <1s even for large images
 4. **Cache lookups**: Negligible (~1ms)

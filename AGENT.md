@@ -11,9 +11,9 @@ This document provides essential context for AI agents working on the genimg pro
 ```
 User Input (prompt + optional reference image)
     ↓
-Prompt Optimization (optional, via Ollama subprocess)
+Prompt Optimization (optional, via Ollama HTTP API)
     ↓
-Image Generation (OpenRouter API)
+Image Generation (provider registry: OpenRouter, Ollama HTTP, Draw Things gRPC)
     ↓
 Image Output (saved file or displayed in UI)
 ```
@@ -34,7 +34,7 @@ src/genimg/
 ├── __main__.py          # Entry point for `python -m genimg`
 ├── core/                # Business logic (INTERNAL - do not import in CLI/UI)
 │   ├── config.py        # Configuration management
-│   ├── image_gen.py     # OpenRouter API integration
+│   ├── image_gen.py     # Multi-provider image generation (registry)
 │   ├── prompt.py        # Ollama prompt optimization
 │   ├── prompts_loader.py # YAML prompt template loader
 │   └── reference.py     # Reference image processing
@@ -50,7 +50,7 @@ src/genimg/
 ### Module Responsibilities
 
 - **core/config.py**: Load/validate API keys, manage model selection, global config instance
-- **core/image_gen.py**: Call OpenRouter API, handle multimodal requests, parse responses
+- **core/image_gen.py**: Route to image providers (OpenRouter, Ollama HTTP, Draw Things), multimodal where supported, parse responses
 - **core/prompt.py**: Validate prompts, call Ollama for optimization, cache results
 - **core/reference.py**: Load/resize/encode reference images to base64
 - **core/prompts_loader.py**: Load prompt templates from bundled YAML files
@@ -182,7 +182,7 @@ result = generate_image(
 )
 ```
 
-Library polls `cancel_check()` every 250ms; raises `CancellationError` when True. For Ollama, subprocess is terminated.
+Library polls `cancel_check()` every 250ms; raises `CancellationError` when True. For Ollama (optimization and image generation), blocking HTTP work runs on a daemon thread; cancellation stops waiting and raises (an in-flight request may still complete in the background, same pattern as OpenRouter).
 
 ## Configuration
 
@@ -194,7 +194,8 @@ Library polls `cancel_check()` every 250ms; raises `CancellationError` when True
 
 **Optional:**
 - `GENIMG_DEFAULT_MODEL` - Default image model (default: `bytedance-seed/seedream-4.5`)
-- `GENIMG_OPTIMIZATION_MODEL` - Ollama model (default: `huihui_ai/qwen3.5-abliterated:4b`)
+- `GENIMG_OPTIMIZATION_MODEL` - Ollama model for optimization (default: `huihui_ai/qwen3.5-abliterated:4b`)
+- `OLLAMA_BASE_URL` / `GENIMG_OLLAMA_BASE_URL` - Ollama HTTP server (default `http://127.0.0.1:11434`; used for prompt optimization and Ollama image generation)
 - `GENIMG_UI_PORT`, `GENIMG_UI_HOST`, `GENIMG_UI_SHARE` - UI launch options
 - `GENIMG_VERBOSITY` - Logging verbosity: `0` (default: activity/performance), `1` (also prompts), `2` (verbose: API/cache). CLI `-v`/`-vv` override.
 - `GENIMG_RUN_INTEGRATION_TESTS` - Enable integration tests (set to `1`)
@@ -218,9 +219,9 @@ See `EXAMPLES.md` for detailed code examples. Key patterns:
 - Always check content-type header first
 
 ### Ollama Integration
-- Runs as subprocess via `Popen`
-- Handles timeout with `communicate(timeout=...)`
-- Terminated on cancellation
+- **Prompt optimization** and **`list_ollama_models()`**: `requests` to `GET /api/tags` and `POST /api/generate` (`stream: false`) on the configured base URL
+- **Image generation** (provider `ollama`): `POST /api/generate` as implemented in `core/providers/ollama.py`
+- Timeouts use the `requests` timeout parameter; cooperative cancellation uses a daemon worker thread (no `ollama` CLI subprocess)
 
 ### Image Processing
 - Reference images resized to 2MP (maintains aspect ratio)
