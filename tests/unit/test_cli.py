@@ -12,8 +12,8 @@ from PIL import Image
 
 from genimg import DEFAULT_IMAGE_MODEL
 from genimg.cli import cli
-from genimg.cli.character_prompt import CHARACTER_TURNAROUND_PROMPT
 from genimg.core.image_gen import GENIMG_PNG_JSON_KEYWORD, GenerationResult
+from genimg.core.prompts_loader import get_character_turnaround_prompt
 from genimg.core.providers.draw_things.presets import CHARACTER_COMMAND_DRAW_THINGS_PRESET_ID
 from genimg.core.reference import merge_jpeg_base64_references_horizontally
 from genimg.utils.exceptions import (
@@ -1054,7 +1054,7 @@ class TestCharacterCommand:
 
         b64_j = base64.b64encode(_CLI_MINIMAL_JPEG).decode("ascii")
         mock_process_ref.side_effect = [(b64_j, "h1"), (b64_j, "h2")]
-        composed = CHARACTER_TURNAROUND_PROMPT + (
+        composed = get_character_turnaround_prompt() + (
             "\n\nadd a hat\n\nThe attached reference is a horizontal strip of multiple photos of "
             "the same person; use every segment for consistent likeness."
         )
@@ -1085,7 +1085,7 @@ class TestCharacterCommand:
         assert result.exit_code == 0
         mock_print_success.assert_not_called()
         sent_prompt = mock_generate.call_args[0][0]
-        assert sent_prompt.startswith(CHARACTER_TURNAROUND_PROMPT)
+        assert sent_prompt.startswith(get_character_turnaround_prompt())
         assert "add a hat" in sent_prompt
         assert "horizontal strip" in sent_prompt
         mock_validate.assert_called_once_with(sent_prompt)

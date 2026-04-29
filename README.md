@@ -9,7 +9,7 @@ A Python package for generating AI images with intelligent prompt optimization. 
 - 🎨 **Multiple AI Models & Providers**: Generate images via **OpenRouter** (cloud), **Ollama** (local), or **Draw Things** (local gRPC on macOS). Choose provider and model in the UI or config.
 - ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama models; optional in both CLI and web UI
 - 🖼️ **Reference Images**: Use reference images to guide style/generation (OpenRouter); process refs for optimization context (both providers). CLI and web UI.
-- 📑 **Character turnaround (CLI)**: `genimg character` builds a turnaround-style sheet from one or more reference images (built-in prompt plus optional `--prompt` / `-p`).
+- 📑 **Character turnaround (CLI)**: `genimg character` builds a turnaround-style sheet from one or more reference images (base prompt in bundled `prompts.yaml` under `character.template`, plus optional `--prompt` / `-p`).
 - 📷 **Reference Image Description**: In the web UI, describe a reference image (prose or tags via Florence/JoyTag) and optionally feed that into prompt optimization
 - 💻 **Dual Interface**: Both CLI and web UI (Gradio) interfaces
 - 🔔 **Browser Notifications**: Web UI can notify when generation or optimization completes (optional; permission on first load)

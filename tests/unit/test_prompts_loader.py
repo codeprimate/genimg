@@ -7,6 +7,7 @@ import yaml
 
 from genimg.core.prompts_loader import (
     _load_prompts,
+    get_character_turnaround_prompt,
     get_optimization_template,
     get_prompt,
 )
@@ -30,6 +31,12 @@ class TestPromptsLoader:
         assert get_prompt("nonexistent_key") is None
         assert get_prompt("optimization", "nonexistent_subkey") is None
 
+    def test_get_character_turnaround_prompt_returns_non_empty_string(self):
+        text = get_character_turnaround_prompt()
+        assert isinstance(text, str)
+        assert len(text.strip()) >= 3
+        assert "Turnaround reference sheet" in text
+
 
 @pytest.mark.unit
 class TestYAMLValidation:
@@ -47,6 +54,9 @@ class TestYAMLValidation:
         data = _load_prompts()
         assert "optimization" in data
         assert "template" in data["optimization"]
+        assert "character" in data
+        assert "template" in data["character"]
+        assert "Turnaround" in data["character"]["template"]
 
     def test_malformed_yaml_raises_configuration_error(self):
         """Malformed YAML should raise ConfigurationError with helpful message."""
@@ -99,6 +109,7 @@ class TestYAMLValidation:
             error_msg = str(exc_info.value)
             assert "Invalid prompts.yaml structure" in error_msg
             assert "optimization" in error_msg
+            assert "character" in error_msg
 
     def test_file_not_found_raises_configuration_error(self):
         """Missing prompts.yaml file should raise ConfigurationError."""

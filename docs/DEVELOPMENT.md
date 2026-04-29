@@ -135,7 +135,7 @@ The library is the single source of truth for all product behavior (see [SPEC.md
 
 ### Changing the Prompt Optimization Template
 
-Edit the `optimization.template` section in `src/genimg/prompts.yaml`. The template must include the placeholder `{original_prompt}`. Other prompt templates can be added there and loaded via `genimg.core.prompts_loader.get_prompt(key, subkey)`. Run tests to verify after changes.
+Edit the `optimization.template` section in `src/genimg/prompts.yaml`. The template must include the placeholder `{reference_image_instruction}`. The `genimg character` turnaround text lives under `character.template` in the same file (`get_character_turnaround_prompt()`). Other keys can follow the same pattern and be read via `genimg.core.prompts_loader.get_prompt(key, subkey)`. Run tests to verify after changes.
 
 ### Adding a New CLI Command
 

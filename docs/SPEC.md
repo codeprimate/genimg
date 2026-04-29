@@ -782,7 +782,7 @@ Error:
 **Optimization (subprocess):**
 - Text generation via `ollama run {model}` (subprocess, stdin/stdout)
 - Threading for cancellation support; no authentication
-- Template loaded from package `prompts.yaml` (bundled with genimg; contains `optimization.template` with `{reference_image_instruction}` placeholder)
+- Template loaded from package `prompts.yaml` (bundled with genimg; contains `optimization.template` with `{reference_image_instruction}` placeholder, and `character.template` for the `genimg character` turnaround prompt)
 - Format: `{template}\n\nOriginal prompt: {user_prompt}\n\nImproved prompt:`
 - Output processing: strips "Thinking..." blocks and markdown code fences
 

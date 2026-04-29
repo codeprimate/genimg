@@ -27,12 +27,23 @@ class OptimizationPrompt(BaseModel):
     )
 
 
+class CharacterPrompt(BaseModel):
+    """Schema for ``genimg character`` turnaround prompt."""
+
+    template: str = Field(
+        ...,
+        min_length=3,
+        description="Static turnaround prompt (must pass validate_prompt when stripped)",
+    )
+
+
 class PromptsSchema(BaseModel):
     """Schema for prompts.yaml configuration file."""
 
     model_config = {"extra": "allow"}  # Allow additional keys for future expansion
 
     optimization: OptimizationPrompt
+    character: CharacterPrompt
 
 
 def _load_prompts() -> dict[str, Any]:
@@ -68,7 +79,7 @@ def _load_prompts() -> dict[str, Any]:
 
     if data is None:
         raise ConfigurationError(
-            "prompts.yaml is empty. Expected configuration with 'optimization' section."
+            "prompts.yaml is empty. Expected configuration with 'optimization' and 'character' sections."
         )
 
     # Validate structure with Pydantic
@@ -78,7 +89,7 @@ def _load_prompts() -> dict[str, Any]:
         errors = "\n".join([f"  - {err['loc'][0]}: {err['msg']}" for err in e.errors()])
         raise ConfigurationError(
             f"Invalid prompts.yaml structure:\n{errors}\n"
-            "Expected 'optimization' section with 'template' key."
+            "Expected 'optimization' (with 'template') and 'character' (with 'template') keys."
         ) from e
 
     _prompts_data = data
@@ -126,6 +137,24 @@ def get_optimization_template() -> str:
             "optimization.template must contain {reference_image_instruction} placeholder."
         )
     return template
+
+
+def get_character_turnaround_prompt() -> str:
+    """
+    Return the static character turnaround prompt for ``genimg character``.
+
+    Returns:
+        ``character.template`` from prompts.yaml, stripped of leading/trailing whitespace.
+
+    Raises:
+        ConfigurationError: If the template is missing or empty after strip.
+    """
+    raw = get_prompt("character", "template")
+    if not raw or not raw.strip():
+        raise ConfigurationError(
+            "character.template not found in prompts.yaml or empty after strip. This key is required."
+        )
+    return raw.strip()
 
 
 def get_optimization_template_with_description() -> str:

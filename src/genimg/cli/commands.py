@@ -23,7 +23,6 @@ from genimg import (
     validate_prompt,
 )
 from genimg.cli import progress
-from genimg.cli.character_prompt import CHARACTER_TURNAROUND_PROMPT
 from genimg.cli.handlers import (
     cancel_check,
     install_sigint_handler,
@@ -44,6 +43,7 @@ from genimg.core.image_gen import (
     build_png_info_for_generation,
     save_generation_cli,
 )
+from genimg.core.prompts_loader import get_character_turnaround_prompt
 from genimg.core.provider_ids import KNOWN_IMAGE_PROVIDER_IDS, PROVIDER_DRAW_THINGS
 from genimg.core.providers import get_registry
 from genimg.core.providers.draw_things.presets import (
@@ -494,9 +494,8 @@ def character(
             )
 
         user_prompt = (prompt or "").strip()
-        effective_prompt = CHARACTER_TURNAROUND_PROMPT + (
-            f"\n\n{user_prompt}" if user_prompt else ""
-        )
+        turnaround_base = get_character_turnaround_prompt()
+        effective_prompt = turnaround_base + (f"\n\n{user_prompt}" if user_prompt else "")
 
         if not quiet:
             _, used_fallback = character_stem_from_title(title)

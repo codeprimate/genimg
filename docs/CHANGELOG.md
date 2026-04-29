@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (none)
 
 ### Changed
-- (none)
+- **`genimg character` turnaround prompt** now lives in bundled `prompts.yaml` as `character.template` and is loaded via `get_character_turnaround_prompt()` (removed `cli/character_prompt.py`).
 
 ## [0.13.1] - 2026-04-24
 

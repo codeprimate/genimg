@@ -1,5 +1,5 @@
 # genimg prompt templates
-# Add new prompt keys here; code loads them via genimg.core.prompts_loader.
+# Add new prompt keys here; code loads them via genimg.core.prompts_loader (e.g. optimization, character).
 # Optimization template: system message only. Code appends "Original prompt: <prompt>\n\nImproved prompt:".
 
 optimization:
@@ -82,3 +82,23 @@ optimization:
 
     Output ONLY the improved prompt. Do not include explanations, prefixes, or markdown formatting.
     Just output the optimized prompt text directly, following the framework outlined above.
+
+# Base prompt for `genimg character` (character turnaround sheet). Loaded via prompts_loader.
+character:
+  template: |
+    High resolution turnaround reference sheet of the person shown in the reference image.
+    Use exact facial and hair likeness of the person in the reference image.
+
+    Three seamless panels arranged horizontally on a plain white background.
+    All panels at identical scale, height alignment, and lighting.
+
+    Maintain exact likeness across all panels.
+    Left panel: front view, facing directly forward.
+    Middle panel: profile view, facing directly right.
+    Right panel: rear view, facing directly away.
+
+    Relaxed standing pose, arms slightly away from body.
+    View to thigh in all panels.
+
+    Flat, even studio lighting, no cast shadows.
+    No background, no text, no labels in any panel. Clear, sharp, and clean image
