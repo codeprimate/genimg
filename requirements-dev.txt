@@ -17,3 +17,7 @@ types-PyYAML>=6.0.0
 
 # Optional: Pre-commit hooks
 pre-commit>=3.5.0
+
+# Build and publish
+build>=1.2.0
+twine>=6.0.0
