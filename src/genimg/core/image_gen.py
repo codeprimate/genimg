@@ -20,7 +20,7 @@ from PIL.ExifTags import Base
 from PIL.PngImagePlugin import PngInfo
 
 from genimg.core.config import Config, get_config
-from genimg.core.provider_ids import PROVIDER_DRAW_THINGS
+from genimg.core.provider_ids import PROVIDER_DRAW_THINGS, PROVIDER_OLLAMA
 from genimg.core.providers import get_registry
 from genimg.logging_config import get_logger
 from genimg.utils.exceptions import ValidationError
@@ -437,12 +437,25 @@ def generate_image(
     return result
 
 
+def resolve_default_image_model(*, provider_id: str, config: Config) -> str:
+    """Provider default model id for progress labels and UI (placeholders allowed)."""
+    if provider_id == PROVIDER_OLLAMA:
+        return config.default_ollama_image_model
+    if provider_id == PROVIDER_DRAW_THINGS:
+        fallback = (config.default_draw_things_image_model or "").strip()
+        return fallback if fallback else "draw_things"
+    return config.default_image_model
+
+
 def _effective_image_model(*, provider_id: str, model: str | None, config: Config) -> str:
     """Resolve model fallback rules by provider."""
     if model is not None:
         stripped = model.strip()
         if stripped:
             return stripped
+
+    if provider_id == PROVIDER_OLLAMA:
+        return config.default_ollama_image_model
 
     if provider_id == PROVIDER_DRAW_THINGS:
         fallback = (config.default_draw_things_image_model or "").strip()

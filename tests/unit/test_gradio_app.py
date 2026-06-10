@@ -613,6 +613,100 @@ class TestStopAndPromptHandlers:
 
 
 @pytest.mark.unit
+class TestDrawThingsLoraHelpers:
+    """Draw Things LoRA slot parsing for the Gradio UI."""
+
+    def test_parse_lora_slots_all_empty_returns_none(self) -> None:
+        assert gradio_app._parse_lora_slots(["", "", ""], [0.8, 0.8, 0.8]) is None
+
+    def test_parse_lora_slots_partial_fill(self) -> None:
+        stack = gradio_app._parse_lora_slots(["a.ckpt", "", "b.ckpt"], [0.6, 0.8, 0.4])
+        assert stack == (("a.ckpt", 0.6), ("b.ckpt", 0.4))
+
+    def test_apply_draw_things_loras_only_for_draw_things(self) -> None:
+        from genimg.core.config import Config
+
+        config = Config()
+        gradio_app._apply_draw_things_loras(
+            config,
+            "openrouter",
+            ["a.ckpt", "", ""],
+            [0.8, 0.8, 0.8],
+        )
+        assert config.draw_things_loras is None
+
+    def test_apply_draw_things_loras_sets_stack(self) -> None:
+        from genimg.core.config import Config
+
+        config = Config()
+        gradio_app._apply_draw_things_loras(
+            config,
+            "draw_things",
+            ["a.ckpt", "", ""],
+            [0.7, 0.8, 0.8],
+        )
+        assert config.draw_things_loras == (("a.ckpt", 0.7),)
+
+    def test_empty_lora_slots(self) -> None:
+        files, weights = gradio_app._empty_lora_slots()
+        assert files == [gradio_app._LORA_NONE] * gradio_app.DRAW_THINGS_LORA_SLOT_COUNT
+        assert weights == [0.8] * gradio_app.DRAW_THINGS_LORA_SLOT_COUNT
+
+    def test_lora_catalog_hint_no_override(self) -> None:
+        from genimg.core.providers.draw_things.lora_choices import (
+            LoraCatalogResult,
+            lora_catalog_hint,
+        )
+
+        hint = lora_catalog_hint(
+            LoraCatalogResult(loras=(), reachable=True, catalog_published=False),
+            host="127.0.0.1",
+            port=7859,
+        )
+        assert "Model Browser" in hint
+
+    def test_draw_things_checkpoint_for_generate_uses_ui_selection(self) -> None:
+        from genimg.core.config import Config
+
+        config = Config(default_draw_things_image_model="other.ckpt")
+        resolved = gradio_app._draw_things_checkpoint_for_generate(
+            provider_eff="draw_things",
+            model="flux_2_klein_9b_i8x.ckpt",
+            config=config,
+        )
+        assert resolved == "flux_2_klein_9b_i8x.ckpt"
+
+    def test_draw_things_checkpoint_for_generate_empty_without_ui_selection(self) -> None:
+        from genimg.core.config import Config
+
+        config = Config(default_draw_things_image_model="fallback.ckpt")
+        assert (
+            gradio_app._draw_things_checkpoint_for_generate(
+                provider_eff="draw_things",
+                model=None,
+                config=config,
+            )
+            is None
+        )
+        assert (
+            gradio_app._draw_things_checkpoint_for_generate(
+                provider_eff="draw_things",
+                model=gradio_app._CHECKPOINT_NONE,
+                config=config,
+            )
+            is None
+        )
+
+    def test_checkpoint_ui_choices_includes_select_placeholder(self) -> None:
+        choices = gradio_app._checkpoint_ui_choices(
+            ["a.ckpt"],
+            [("a.ckpt", "Alpha")],
+        )
+        assert choices[0] == ("— select checkpoint —", gradio_app._CHECKPOINT_NONE)
+        assert ("Alpha", "a.ckpt") in choices
+
+
+@pytest.mark.unit
 class TestBuildBlocksAndLaunch:
     """Test _build_blocks and launch (build UI, no server)."""
 

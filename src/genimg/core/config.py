@@ -10,6 +10,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from genimg.core.models import (
+    default_image_model as _yaml_default_image_model,
+    default_ollama_image_model as _yaml_default_ollama_image_model,
+    default_optimization_model as _yaml_default_optimization_model,
+)
 from genimg.core.provider_ids import KNOWN_IMAGE_PROVIDER_IDS, PROVIDER_DRAW_THINGS
 from genimg.logging_config import get_logger
 from genimg.utils.exceptions import ConfigurationError
@@ -23,8 +28,9 @@ load_dotenv()
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_IMAGE_PROVIDER = "ollama"
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
-DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
-DEFAULT_OPTIMIZATION_MODEL = "huihui_ai/qwen3.5-abliterated:4b"
+DEFAULT_IMAGE_MODEL = _yaml_default_image_model()
+DEFAULT_OPTIMIZATION_MODEL = _yaml_default_optimization_model()
+DEFAULT_OLLAMA_IMAGE_MODEL = _yaml_default_ollama_image_model()
 DEFAULT_DRAW_THINGS_HOST = "127.0.0.1"
 DEFAULT_DRAW_THINGS_PORT = 7859
 DEFAULT_DRAW_THINGS_PRESET = "z-image"
@@ -45,6 +51,7 @@ class Config:
     default_image_provider: str = DEFAULT_IMAGE_PROVIDER
     default_image_model: str = DEFAULT_IMAGE_MODEL
     default_optimization_model: str = DEFAULT_OPTIMIZATION_MODEL
+    default_ollama_image_model: str = DEFAULT_OLLAMA_IMAGE_MODEL
 
     # Ollama (image generation when default_image_provider == "ollama")
     ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL
@@ -67,6 +74,7 @@ class Config:
     draw_things_hires_fix: bool | None = None
     draw_things_upscaler: str | None = None
     draw_things_upscaler_scale_factor: int | None = None
+    draw_things_loras: tuple[tuple[str, float], ...] | None = None
 
     # Image Processing Configuration
     min_image_pixels: int = 2500  # minimum total pixels for reference images
@@ -99,6 +107,7 @@ class Config:
         Environment variables:
             OPENROUTER_API_KEY: Required for image generation
             GENIMG_DEFAULT_MODEL: Optional default image generation model
+            GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL: Optional default Ollama image model
             GENIMG_OPTIMIZATION_MODEL: Optional default optimization model
             GENIMG_OPTIMIZE_THINKING: Optional enable LLM thinking during optimization (1/true/yes; default off)
             GENIMG_MIN_IMAGE_PIXELS: Optional minimum total pixels for reference images (default 2500)
@@ -167,6 +176,9 @@ class Config:
             default_image_model=os.getenv("GENIMG_DEFAULT_MODEL", cls.default_image_model),
             default_optimization_model=os.getenv(
                 "GENIMG_OPTIMIZATION_MODEL", cls.default_optimization_model
+            ),
+            default_ollama_image_model=os.getenv(
+                "GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL", cls.default_ollama_image_model
             ),
             ollama_base_url=ollama_base_url,
             draw_things_host=(

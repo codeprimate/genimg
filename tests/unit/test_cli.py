@@ -14,7 +14,6 @@ from genimg import DEFAULT_IMAGE_MODEL
 from genimg.cli import cli
 from genimg.core.image_gen import GENIMG_PNG_JSON_KEYWORD, GenerationResult
 from genimg.core.prompts_loader import get_character_turnaround_prompt
-from genimg.core.providers.draw_things.presets import CHARACTER_COMMAND_DRAW_THINGS_PRESET_ID
 from genimg.core.reference import merge_jpeg_base64_references_horizontally
 from genimg.utils.exceptions import (
     APIError,
@@ -1107,7 +1106,7 @@ class TestCharacterCommand:
     @patch("genimg.cli.commands.process_reference_image")
     @patch("genimg.cli.commands.validate_prompt")
     @patch("genimg.cli.commands.Config")
-    def test_draw_things_uses_klein_preset_and_ignores_model(
+    def test_draw_things_character_uses_env_preset_and_model(
         self,
         mock_config_cls: MagicMock,
         _mock_validate: MagicMock,
@@ -1118,13 +1117,15 @@ class TestCharacterCommand:
     ) -> None:
         config = MagicMock()
         config.default_image_provider = "openrouter"
+        config.draw_things_preset = "z-image"
+        config.default_draw_things_image_model = "my_model.ckpt"
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
         mock_process_ref.return_value = ("b64x", "h1")
         mock_generate.return_value = _png_generation_result(
             prompt_used="x",
             generation_time=1.0,
-            model_used="flux_2_klein_9b_i8x.ckpt",
+            model_used="my_model.ckpt",
             had_reference=True,
         )
         ref = tmp_path / "a.png"
@@ -1137,18 +1138,16 @@ class TestCharacterCommand:
             "--provider",
             "draw_things",
             "--model",
-            "user-should-be-ignored",
+            "cli_override.ckpt",
             "--quiet",
             "--out",
             str(out),
         )
         assert result.exit_code == 0
         mock_print_success.assert_not_called()
-        assert config.draw_things_preset == CHARACTER_COMMAND_DRAW_THINGS_PRESET_ID
-        assert config.default_draw_things_image_model == "flux_2_klein_9b_i8x.ckpt"
         kw = mock_generate.call_args[1]
         assert kw["provider"] == "draw_things"
-        assert kw["model"] is None
+        assert kw["model"] == "cli_override.ckpt"
         assert kw["reference_images_b64"] == ["b64x"]
 
     @patch("genimg.cli.commands.Config")

@@ -25,6 +25,7 @@ __author__ = "codeprimate"
 
 from genimg.core.config import (
     DEFAULT_IMAGE_MODEL,
+    DEFAULT_OLLAMA_IMAGE_MODEL,
     DEFAULT_OPENROUTER_BASE_URL,
     DEFAULT_OPTIMIZATION_MODEL,
     Config,
@@ -59,6 +60,7 @@ __all__ = [
     "Config",
     "ConfigurationError",
     "DEFAULT_IMAGE_MODEL",
+    "DEFAULT_OLLAMA_IMAGE_MODEL",
     "DEFAULT_OPENROUTER_BASE_URL",
     "DEFAULT_OPTIMIZATION_MODEL",
     "GenerationResult",

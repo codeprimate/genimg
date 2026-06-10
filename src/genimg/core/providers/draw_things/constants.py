@@ -14,6 +14,8 @@ GRPC_MAX_SEND_MESSAGE_LENGTH: int = 256 * 1024 * 1024
 GRPC_MAX_RECEIVE_MESSAGE_LENGTH: int = 256 * 1024 * 1024
 # Allow slower local generations (hires/upscale) to complete before gRPC deadline.
 MIN_GENERATION_TIMEOUT_SECONDS: int = 5 * 60
+# Echo / catalog probes (keep short so UI provider switches stay responsive).
+ECHO_RPC_TIMEOUT_SECONDS: float = 5.0
 
 # --- TLS ---
 VENDOR_ROOT_CA_FILENAME: str = "draw_things_root_ca.pem"

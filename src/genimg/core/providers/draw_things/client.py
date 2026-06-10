@@ -22,6 +22,7 @@ from genimg.core.providers.draw_things.constants import (
     DEFAULT_DRAW_THINGS_PORT,
     DEFAULT_NEGATIVE_PROMPT,
     DEFAULT_STRENGTH,
+    ECHO_RPC_TIMEOUT_SECONDS,
     GRPC_MAX_RECEIVE_MESSAGE_LENGTH,
     GRPC_MAX_SEND_MESSAGE_LENGTH,
     SCALE_FACTOR_DEFAULT,
@@ -141,13 +142,42 @@ class DrawThingsClient:
         self._request_id += 1
         return self._request_id
 
-    def echo_raw(self) -> EchoReply:
+    def wait_for_ready(self, timeout_seconds: float = 10.0) -> None:
+        """Block until the gRPC channel is ready (no-op when using an injected stub)."""
+        channel = self._ensure_channel()
+        if isinstance(channel, _NoopGrpcChannel):
+            return
+        try:
+            grpc.channel_ready_future(channel).result(timeout=timeout_seconds)
+        except grpc.FutureTimeoutError as e:
+            raise NetworkError(
+                f"Draw Things gRPC channel not ready at {self._target()} within {timeout_seconds}s."
+            ) from e
+
+    def echo_raw(self, *, timeout_seconds: float = ECHO_RPC_TIMEOUT_SECONDS) -> EchoReply:
         self._ensure_channel()
         assert self._stub is not None
-        req = EchoRequest(name="")
+        req = EchoRequest(name="no-name")
         if self._shared_secret:
             req.sharedSecret = self._shared_secret
-        return self._stub.Echo(req)
+        return self._stub.Echo(req, timeout=timeout_seconds)
+
+    def echo_catalog_loras(
+        self,
+        *,
+        timeout_seconds: float = ECHO_RPC_TIMEOUT_SECONDS,
+    ) -> tuple[tuple[LoraInfo, ...], bool]:
+        """Call ``Echo`` once; return ``(loras, override_was_present)``."""
+        reply = self.echo_raw(timeout_seconds=timeout_seconds)
+        if reply.sharedSecretMissing:
+            raise NetworkError(
+                "Draw Things requires a shared secret. Set GENIMG_DRAW_THINGS_SHARED_SECRET.",
+            )
+        if not reply.HasField("override"):
+            return (), False
+        catalog = decode_metadata_override(reply.override)
+        self._catalog_cache = catalog
+        return catalog.loras, True
 
     def fetch_zoo_catalog(self, *, use_cache: bool = True) -> ZooCatalog:
         """Call ``Echo`` and decode ``MetadataOverride`` into a :class:`ZooCatalog`."""
@@ -155,9 +185,8 @@ class DrawThingsClient:
             return self._catalog_cache
         reply = self.echo_raw()
         if not reply.HasField("override"):
-            catalog = empty_zoo_catalog()
-        else:
-            catalog = decode_metadata_override(reply.override)
+            return empty_zoo_catalog()
+        catalog = decode_metadata_override(reply.override)
         self._catalog_cache = catalog
         return catalog
 

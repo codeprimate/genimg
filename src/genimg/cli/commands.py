@@ -12,7 +12,6 @@ from typing import cast
 import click
 
 from genimg import (
-    DEFAULT_IMAGE_MODEL,
     Config,
     GenerationResult,
     ValidationError,
@@ -22,7 +21,9 @@ from genimg import (
     process_reference_image,
     validate_prompt,
 )
+from genimg.core.image_gen import resolve_default_image_model
 from genimg.cli import progress
+from genimg.cli.draw_things_cmds import draw_things_group
 from genimg.cli.handlers import (
     cancel_check,
     install_sigint_handler,
@@ -46,12 +47,32 @@ from genimg.core.image_gen import (
 from genimg.core.prompts_loader import get_character_turnaround_prompt
 from genimg.core.provider_ids import KNOWN_IMAGE_PROVIDER_IDS, PROVIDER_DRAW_THINGS
 from genimg.core.providers import get_registry
-from genimg.core.providers.draw_things.presets import (
-    CHARACTER_COMMAND_DRAW_THINGS_PRESET_ID,
-    resolve_draw_things_preset,
-)
+from genimg.core.providers.draw_things.lora_choices import parse_lora_stack
 from genimg.core.reference import merge_jpeg_base64_references_horizontally
 from genimg.logging_config import configure_logging, get_verbosity_from_env
+
+
+def _apply_cli_loras(*, config: Config, provider_eff: str, lora: tuple[str, ...]) -> None:
+    """Set ``config.draw_things_loras`` when ``--lora`` is passed (Draw Things only)."""
+    if not lora:
+        return
+    if provider_eff != PROVIDER_DRAW_THINGS:
+        raise ValidationError(
+            "--lora is only supported with --provider draw_things.",
+            field="lora",
+        )
+    config.draw_things_loras = parse_lora_stack(lora)
+
+
+lora_option = click.option(
+    "--lora",
+    multiple=True,
+    help=(
+        "Draw Things LoRA stack (repeatable). FILE or FILE:WEIGHT (weight defaults to 0.8). "
+        "Only applied when --lora is passed; omit for no LoRAs. "
+        "List LoRAs: genimg draw-things list-loras."
+    ),
+)
 
 
 @click.group(
@@ -72,6 +93,9 @@ Report issues: https://github.com/codeprimate/genimg/issues
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     ctx.color = True
+
+
+cli.add_command(draw_things_group)
 
 
 @cli.command()
@@ -160,6 +184,7 @@ def cli(ctx: click.Context) -> None:
     default="detailed",
     help="Prose description verbosity (only for --reference-description-model prose). Default: detailed.",
 )
+@lora_option
 def generate(
     prompt: str,
     model: str | None,
@@ -178,6 +203,7 @@ def generate(
     use_reference_description: bool,
     reference_description_model: str,
     reference_description_verbosity: str,
+    lora: tuple[str, ...],
 ) -> None:
     """Generate an image from a text prompt (optionally with optimization and reference)."""
     # Reset cancel event for this run (in case CLI is invoked again in same process)
@@ -202,6 +228,7 @@ def generate(
 
         # 2. Effective provider (CLI override or config default)
         provider_eff = provider if provider is not None else config.default_image_provider
+        _apply_cli_loras(config=config, provider_eff=provider_eff, lora=lora)
         if reference is not None and not use_reference_description:
             impl = get_registry().get(provider_eff)
             if impl is not None and not getattr(impl, "supports_reference_image", True):
@@ -297,7 +324,9 @@ def generate(
         result: GenerationResult
         if not quiet:
             with progress.generation_progress(
-                model=model or config.default_image_model,
+                model=model or resolve_default_image_model(
+                    provider_id=provider_eff, config=config
+                ),
                 reference_used=reference is not None,
                 optimized=not no_optimize,
             ):
@@ -359,7 +388,7 @@ def generate(
 
 
 @cli.command(
-    help="""Character turnaround sheet from one or more reference images (OpenRouter by default).
+    help="""Character turnaround sheet from one or more reference images.
 
 \b
 Positionals: TITLE (output basename hint) then one or more REF_IMAGE paths.
@@ -372,13 +401,13 @@ Output: on success, stdout is exactly one line (the saved image path). Human-rea
 run context (banner, refs, timing) is printed to stderr unless --quiet.
 
 \b
-Defaults: when --provider or --model is omitted, this command pins provider=openrouter
-and model to DEFAULT_IMAGE_MODEL so GENIMG_DEFAULT_IMAGE_PROVIDER / GENIMG_DEFAULT_MODEL
-do not apply (unlike ``genimg generate``).
+Defaults: when --provider or --model is omitted, uses ``GENIMG_DEFAULT_IMAGE_PROVIDER``
+and provider-specific defaults from config / ``models.yaml`` (same as ``genimg generate``).
+Reference images require a provider that supports them (OpenRouter or Draw Things).
 
 \b
-Draw Things: ``--provider draw_things`` forces the ``flux2-klein`` preset and the preset's
-default checkpoint; ``--model`` is ignored (use ``genimg generate`` for other Draw Things models).
+Draw Things: uses ``GENIMG_DRAW_THINGS_PRESET`` (tuning) and ``GENIMG_DRAW_THINGS_DEFAULT_MODEL``
+or ``--model`` (checkpoint). LoRAs only when ``--lora`` is passed.
 
 \b
 With -v / -vv: stderr shows full reference paths on the refs line and a longer --prompt preview.
@@ -397,8 +426,8 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
     "-m",
     default=None,
     help=(
-        "Image model (default: pinned Seedream for OpenRouter). "
-        "Ignored with --provider draw_things (character uses the flux2-klein preset)."
+        "Image model checkpoint (Draw Things) or model ID (OpenRouter/Ollama). "
+        "Draw Things default from GENIMG_DRAW_THINGS_DEFAULT_MODEL when omitted."
     ),
 )
 @click.option(
@@ -406,8 +435,8 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
     type=click.Choice(list(KNOWN_IMAGE_PROVIDER_IDS), case_sensitive=False),
     default=None,
     help=(
-        "Image provider (default: openrouter for this command). "
-        "draw_things pins the flux2-klein preset for this command; --model is ignored."
+        "Image provider (default from config). "
+        "draw_things uses GENIMG_DRAW_THINGS_PRESET for tuning."
     ),
 )
 @click.option(
@@ -453,6 +482,7 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
     is_flag=True,
     help="Log raw API request/response (image data truncated) for debugging.",
 )
+@lora_option
 def character(
     title: str,
     paths: tuple[Path, ...],
@@ -466,6 +496,7 @@ def character(
     quiet: bool,
     verbose_count: int,
     debug_api: bool,
+    lora: tuple[str, ...],
 ) -> None:
     """Generate a character turnaround sheet using reference images (Variation C output)."""
     reset_cancellation()
@@ -484,7 +515,8 @@ def character(
             config.debug_api = True
         config.validate()
 
-        provider_eff = provider if provider is not None else "openrouter"
+        provider_eff = provider if provider is not None else config.default_image_provider
+        _apply_cli_loras(config=config, provider_eff=provider_eff, lora=lora)
         impl = get_registry().get(provider_eff)
         if impl is not None and not getattr(impl, "supports_reference_image", True):
             raise ValidationError(
@@ -504,23 +536,10 @@ def character(
                     "TITLE sanitizes to an empty filename stem; using 'character' as the basename."
                 )
 
-        if provider_eff == PROVIDER_DRAW_THINGS:
-            dt_preset = resolve_draw_things_preset(CHARACTER_COMMAND_DRAW_THINGS_PRESET_ID)
-            if dt_preset is None:
-                raise ValidationError(
-                    f"Draw Things character preset {CHARACTER_COMMAND_DRAW_THINGS_PRESET_ID!r} "
-                    "is not registered.",
-                    field="draw_things_preset",
-                )
-            config.draw_things_preset = dt_preset.id
-            ckpt = (dt_preset.default_model or "").strip()
-            if ckpt:
-                config.default_draw_things_image_model = ckpt
-            model_for_generate: str | None = None
-            model_for_ui = f"{dt_preset.id} · {ckpt}" if ckpt else dt_preset.id
-        else:
-            model_for_generate = model if model is not None else DEFAULT_IMAGE_MODEL
-            model_for_ui = model_for_generate
+        model_for_generate = model
+        model_for_ui = model or resolve_default_image_model(
+            provider_id=provider_eff, config=config
+        )
 
         path_list = list(paths)
         ref_b64_list: list[str] = []
@@ -643,6 +662,13 @@ def character(
     help="OpenRouter API key (overrides OPENROUTER_API_KEY environment variable).",
 )
 @click.option(
+    "--verbose",
+    "-v",
+    "verbose_count",
+    count=True,
+    help="Increase verbosity: -v activity/prompts, -vv API/cache/gRPC detail.",
+)
+@click.option(
     "--debug-api",
     is_flag=True,
     help="Log raw API request/response (image data truncated) when generating from the UI.",
@@ -652,13 +678,14 @@ def ui(
     host: str | None,
     share: bool | None,
     api_key: str | None,
+    verbose_count: int,
     debug_api: bool,
 ) -> None:
     """Launch the Gradio web UI for image generation."""
     from genimg.ui.gradio_app import launch as launch_ui
 
-    # Apply logging verbosity from env so UI logs respect GENIMG_VERBOSITY
-    configure_logging(verbose_level=get_verbosity_from_env(), quiet=False)
+    verbose_level = min(verbose_count, 2) if verbose_count > 0 else get_verbosity_from_env()
+    configure_logging(verbose_level=verbose_level, quiet=False)
 
     # Set API key in environment if provided via CLI so the UI can pick it up
     if api_key is not None:

@@ -57,6 +57,63 @@ def _format_from_content_type(content_type: str) -> str:
     return content_type.split("/", 1)[1].lower().split(";")[0].strip() or "png"
 
 
+def _image_url_from_part(part: Any) -> str:
+    """Extract a base64 or data URL string from one OpenRouter image part."""
+    if isinstance(part, str):
+        return part.strip()
+    if not isinstance(part, dict):
+        return ""
+    for key in ("image_url", "imageUrl"):
+        nested = part.get(key)
+        if isinstance(nested, str):
+            return nested.strip()
+        if isinstance(nested, dict):
+            url = nested.get("url")
+            if isinstance(url, str):
+                return url.strip()
+    url = part.get("url")
+    if isinstance(url, str):
+        return url.strip()
+    return ""
+
+
+def _image_parts_from_message(message: Any) -> list[Any]:
+    """Collect image-bearing parts from an assistant message object."""
+    if not isinstance(message, dict):
+        return []
+    parts: list[Any] = []
+    images = message.get("images")
+    if isinstance(images, list):
+        parts.extend(images)
+    content = message.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            if item_type in ("image_url", "image"):
+                parts.append(item)
+    return parts
+
+
+def _extract_image_url_from_result(result: Any) -> str:
+    """Return the first image URL/base64 payload from an OpenRouter JSON body."""
+    if not isinstance(result, dict):
+        return ""
+    choices = result.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    first = choices[0]
+    if not isinstance(first, dict):
+        return ""
+    message = first.get("message")
+    for part in _image_parts_from_message(message):
+        url = _image_url_from_part(part)
+        if url:
+            return url
+    return ""
+
+
 class OpenRouterProvider:
     """Image generation provider for the OpenRouter API."""
 
@@ -119,15 +176,12 @@ class OpenRouterProvider:
                 response=response.text,
             ) from e
         try:
-            images = result.get("choices", [{}])[0].get("message", {}).get("images", [])
-            if not images:
+            image_url = _extract_image_url_from_result(result)
+            if not image_url:
                 raise APIError(
                     "No images in API response. The model may not support image generation.",
                     response=str(result),
                 )
-            image_url = images[0].get("image_url", {}).get("url", "")
-            if not image_url:
-                raise APIError("No image URL in response", response=str(result))
             if image_url.startswith("data:"):
                 base64_data = image_url.split(",", 1)[1]
                 image_data = base64.b64decode(base64_data)
@@ -142,7 +196,7 @@ class OpenRouterProvider:
                 prompt_used=prompt,
                 had_reference=had_ref,
             )
-        except (KeyError, IndexError, ValueError) as e:
+        except (KeyError, IndexError, ValueError, AttributeError) as e:
             raise APIError(
                 f"Failed to extract image from API response: {str(e)}",
                 response=str(result),

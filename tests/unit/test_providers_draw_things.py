@@ -17,7 +17,7 @@ class _CaptureClient:
     def __init__(self, **_: object) -> None:
         return None
 
-    def __enter__(self) -> "_CaptureClient":
+    def __enter__(self) -> _CaptureClient:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -91,3 +91,46 @@ def test_provider_invalid_preset_raises_validation_error() -> None:
         provider.generate("prompt", "m.ckpt", None, 15, cfg, None)
 
     assert exc.value.field == "draw_things_preset"
+
+
+@pytest.mark.unit
+def test_provider_config_loras_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "genimg.core.providers.draw_things.provider.DrawThingsClient",
+        _CaptureClient,
+    )
+    monkeypatch.setattr(
+        "genimg.core.providers.draw_things.provider.dt_tensor_bytes_to_pil",
+        lambda _: Image.new("RGB", (1, 1)),
+    )
+
+    cfg = Config()
+    cfg.draw_things_preset = "flux2-klein"  # type: ignore[attr-defined]
+    cfg.draw_things_loras = (("override.ckpt", 0.5),)  # type: ignore[attr-defined]
+
+    provider = DrawThingsProvider()
+    provider.generate("prompt", "m.ckpt", None, 15, cfg, None)
+
+    assert _CaptureClient.last_kwargs is not None
+    assert _CaptureClient.last_kwargs["loras"] == (("override.ckpt", 0.5),)
+
+
+@pytest.mark.unit
+def test_provider_does_not_apply_preset_loras(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "genimg.core.providers.draw_things.provider.DrawThingsClient",
+        _CaptureClient,
+    )
+    monkeypatch.setattr(
+        "genimg.core.providers.draw_things.provider.dt_tensor_bytes_to_pil",
+        lambda _: Image.new("RGB", (1, 1)),
+    )
+
+    cfg = Config()
+    cfg.draw_things_preset = "flux2-klein"  # type: ignore[attr-defined]
+
+    provider = DrawThingsProvider()
+    provider.generate("prompt", "m.ckpt", None, 15, cfg, None)
+
+    assert _CaptureClient.last_kwargs is not None
+    assert _CaptureClient.last_kwargs["loras"] is None

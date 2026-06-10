@@ -3,7 +3,7 @@ include requirements.txt
 include requirements-dev.txt
 include .env.example
 recursive-include src/genimg *.py *.yaml
-include src/genimg/ui_models.yaml
+include src/genimg/models.yaml
 recursive-include src/genimg/assets *
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]

@@ -10,17 +10,17 @@ import argparse
 import atexit
 import base64
 import contextlib
+import json
 import importlib.resources
 import os
 import tempfile
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from pathlib import Path
 from typing import Any, cast
 
 import gradio as gr
-import yaml
 
 from genimg import (
     APIError,
@@ -52,9 +52,14 @@ from genimg.core.provider_ids import (
     PROVIDER_OPENROUTER,
 )
 from genimg.core.providers import get_registry
-from genimg.core.providers.draw_things.presets import (
-    draw_things_preset_ids,
-    resolve_draw_things_preset,
+from genimg.core.providers.draw_things.lora_choices import (
+    DEFAULT_LORA_WEIGHT,
+    LoraCatalogResult,
+    fetch_draw_things_catalog,
+    lora_catalog_hint,
+    lora_dropdown_choices,
+    model_catalog_hint,
+    model_dropdown_choices,
 )
 from genimg.logging_config import get_logger, log_prompts
 
@@ -129,6 +134,23 @@ atexit.register(_cleanup_temp_paths)
 def _initial_optimized_for_state() -> dict[str, Any]:
     """Initial value for optimized_for_state (JSON-serializable for Gradio)."""
     return {OPTIMIZED_FOR_PROMPT: "", OPTIMIZED_FOR_REF_HASH: None}
+
+
+def _coerce_optimized_for_state(value: Any) -> dict[str, Any]:
+    """Normalize Gradio State to a dict (handles None, JSON string, or legacy shapes)."""
+    if isinstance(value, dict):
+        return {
+            OPTIMIZED_FOR_PROMPT: _normalize_prompt(value.get(OPTIMIZED_FOR_PROMPT)),
+            OPTIMIZED_FOR_REF_HASH: value.get(OPTIMIZED_FOR_REF_HASH),
+        }
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return _initial_optimized_for_state()
+        if isinstance(parsed, dict):
+            return _coerce_optimized_for_state(parsed)
+    return _initial_optimized_for_state()
 
 
 def _normalize_prompt(s: str | None) -> str:
@@ -223,34 +245,127 @@ def _effective_provider_for_ui(provider: str | None, config: Config) -> str:
     return default_provider
 
 
-def _resolve_draw_things_selection(
+def _draw_things_checkpoint_for_generate(
     *,
     provider_eff: str,
     model: str | None,
     config: Config,
 ) -> str | None:
-    """Map Draw Things UI model selection to preset + checkpoint defaults."""
+    """Return the Draw Things checkpoint filename chosen in the UI."""
     if provider_eff != PROVIDER_DRAW_THINGS:
         return model
     selected = (model or "").strip()
-    if not selected:
-        selected = (config.draw_things_preset or "").strip()
-    preset = resolve_draw_things_preset(selected)
-    if preset is None:
-        return model
-    config.draw_things_preset = preset.id
-    if preset.default_model:
-        config.default_draw_things_image_model = preset.default_model
-        return preset.default_model
-    return model
+    if not selected or selected == _CHECKPOINT_NONE:
+        return None
+    return selected
 
 
-def _load_ui_models() -> tuple[list[str], list[str], list[str], str, str, str, str, list[str], str]:
+def _checkpoint_ui_choices(
+    filenames: list[str],
+    catalog_pairs: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """Gradio dropdown choices as ``(display_label, checkpoint_filename)``."""
+    label_by_file = {file_name: label for file_name, label in catalog_pairs}
+    choices: list[tuple[str, str]] = [("— select checkpoint —", _CHECKPOINT_NONE)]
+    for file_name in filenames:
+        label = label_by_file.get(file_name, file_name)
+        choices.append((label, file_name))
+    return choices
+
+
+_CHECKPOINT_NONE = ""
+_LORA_NONE = ""
+DRAW_THINGS_LORA_SLOT_COUNT = 3
+
+
+def _lora_ui_dropdown_choices(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Gradio dropdown choices as ``(label, value)`` with a leading none option."""
+    return [("— none —", _LORA_NONE)] + [(label, file_name) for file_name, label in pairs]
+
+
+def _fetch_draw_things_ui_catalog() -> tuple[
+    list[str], list[tuple[str, str]], list[tuple[str, str]], str
+]:
+    """Fetch Draw Things checkpoints + LoRAs from the live app catalog."""
+    config = Config.from_env()
+    result = fetch_draw_things_catalog(config)
+    catalog_model_pairs = model_dropdown_choices(result.models)
+    catalog_files = [file_name for file_name, _ in catalog_model_pairs]
+    lora_pairs = lora_dropdown_choices(result.loras)
+    model_hint = model_catalog_hint(
+        result,
+        host=config.draw_things_host,
+        port=config.draw_things_port,
+    )
+    lora_hint = lora_catalog_hint(
+        LoraCatalogResult(
+            loras=result.loras,
+            reachable=result.reachable,
+            catalog_published=result.catalog_published,
+        ),
+        host=config.draw_things_host,
+        port=config.draw_things_port,
+    )
+    combined_hint = "\n\n".join(h for h in (model_hint, lora_hint) if h)
+    return catalog_files, catalog_model_pairs, lora_pairs, combined_hint
+
+
+def _parse_lora_slots(
+    files: Sequence[str | None],
+    weights: Sequence[float],
+) -> tuple[tuple[str, float], ...] | None:
+    """Return explicit LoRA stack, or ``None`` when all slots are empty (use preset defaults)."""
+    out: list[tuple[str, float]] = []
+    seen: set[str] = set()
+    for file_name, weight in zip(files, weights, strict=True):
+        f = (file_name or "").strip()
+        if not f or f == _LORA_NONE:
+            continue
+        if f in seen:
+            continue
+        seen.add(f)
+        out.append((f, float(weight)))
+    return tuple(out) if out else None
+
+
+def _apply_draw_things_loras(
+    config: Config,
+    provider: str | None,
+    files: Sequence[str | None],
+    weights: Sequence[float],
+) -> None:
+    """Set ``config.draw_things_loras`` from UI slot values when provider is Draw Things."""
+    config.draw_things_loras = None
+    provider_eff = _effective_provider_for_ui(provider, config)
+    if provider_eff != PROVIDER_DRAW_THINGS:
+        return
+    parsed = _parse_lora_slots(files, weights)
+    if parsed is not None:
+        config.draw_things_loras = parsed
+
+
+def _empty_lora_slots() -> tuple[list[str], list[float]]:
+    """Return cleared LoRA slot values (empty selection, default weight)."""
+    return (
+        [_LORA_NONE] * DRAW_THINGS_LORA_SLOT_COUNT,
+        [DEFAULT_LORA_WEIGHT] * DRAW_THINGS_LORA_SLOT_COUNT,
+    )
+
+
+def _load_ui_models() -> tuple[
+    list[str],
+    list[str],
+    str,
+    str,
+    str,
+    list[str],
+    str,
+]:
     """
     Load image and optimization model lists from ui_models.yaml in the package.
-    Returns (image_models, ollama_image_models, draw_things_image_models,
-             default_image_provider, default_image_model, default_ollama_model,
-             default_draw_things_model, optimization_models, default_optimization_model).
+    Returns (image_models, ollama_image_models, default_image_provider,
+             default_image_model, default_ollama_model, optimization_models,
+             default_optimization_model).
     """
     try:
         with (
@@ -281,34 +396,15 @@ def _load_ui_models() -> tuple[list[str], list[str], list[str], str, str, str, s
             m for m in ollama_image_models if m != default_ollama
         ]
 
-    # Draw Things model dropdown shows preset ids, not checkpoint filenames.
-    draw_things_image_models: list[str] = list(draw_things_preset_ids())
-    yaml_draw_things_default = (data.get("default_draw_things_image_model") or "").strip()
-    yaml_default_preset = ""
-    if yaml_draw_things_default:
-        for preset_id in draw_things_image_models:
-            preset = resolve_draw_things_preset(preset_id)
-            if preset and preset.default_model == yaml_draw_things_default:
-                yaml_default_preset = preset_id
-                break
-    default_draw_things = yaml_default_preset or (
-        draw_things_image_models[0] if draw_things_image_models else ""
-    )
+    config = Config.from_env()
 
     # Config: default provider and model for that provider
-    config = Config.from_env()
     default_image_provider: str = config.default_image_provider
-    config_draw_things_preset = (config.draw_things_preset or "").strip()
-    if (
-        config_draw_things_preset
-        and resolve_draw_things_preset(config_draw_things_preset) is not None
-    ):
-        default_draw_things = config_draw_things_preset
 
     if default_image_provider == PROVIDER_OPENROUTER:
         default_image_model: str = config.default_image_model
     elif default_image_provider == PROVIDER_DRAW_THINGS:
-        default_image_model = default_draw_things
+        default_image_model = _CHECKPOINT_NONE
     else:
         default_image_model = default_ollama
 
@@ -325,11 +421,9 @@ def _load_ui_models() -> tuple[list[str], list[str], list[str], str, str, str, s
     return (
         image_models,
         ollama_image_models,
-        draw_things_image_models,
         default_image_provider,
         default_image_model,
         default_ollama,
-        default_draw_things,
         opt_models,
         default_opt,
     )
@@ -459,6 +553,8 @@ def _run_generate(
     model: str | None,
     optimization_model: str | None = None,
     cancel_check: Any | None = None,
+    lora_files: Sequence[str | None] | None = None,
+    lora_weights: Sequence[float] | None = None,
 ) -> tuple[str | None, Any | None, str]:
     """
     Run the generate flow: validate, optional optimize, generate, return (status, image, status_msg).
@@ -508,10 +604,16 @@ def _run_generate(
 
     try:
         ref_b64_to_send = _reference_b64_for_generate(provider_eff, ref_b64)
-        resolved_model = _resolve_draw_things_selection(
+        resolved_model = _draw_things_checkpoint_for_generate(
             provider_eff=provider_eff,
             model=model,
             config=config,
+        )
+        _apply_draw_things_loras(
+            config,
+            provider,
+            lora_files or (),
+            lora_weights or (),
         )
         result = generate_image(
             effective_prompt,
@@ -553,13 +655,15 @@ def _run_generate_stream(
     description_method: str = "prose",
     description_verbosity: str = "detailed",
     optimize_thinking: bool = False,
+    lora_files: Sequence[str | None] | None = None,
+    lora_weights: Sequence[float] | None = None,
 ) -> Generator[tuple[str, str | None, bool, bool, str, dict[str, Any], str, str], None, None]:
     """
     Generate flow: use Optimized prompt box only when it was produced for the current
     (prompt, ref_hash); otherwise run optimize when checkbox on, else use Prompt.
     Yields (status, img_path, gen_on, stop_on, optimized_box_value, optimized_for_state, page_title, notify_msg).
     """
-    state = optimized_for_state or _initial_optimized_for_state()
+    state = _coerce_optimized_for_state(optimized_for_state)
     # Preserve exact box content (user may have edited); only overwrite when we run optimize
     box_value = optimized_prompt_value if optimized_prompt_value is not None else ""
     has_box_content = bool((box_value or "").strip())
@@ -757,10 +861,16 @@ def _run_generate_stream(
         "",
     )
     try:
-        resolved_model = _resolve_draw_things_selection(
+        resolved_model = _draw_things_checkpoint_for_generate(
             provider_eff=provider_eff,
             model=model,
             config=config,
+        )
+        _apply_draw_things_loras(
+            config,
+            provider,
+            lora_files or (),
+            lora_weights or (),
         )
         result = generate_image(
             effective_prompt,
@@ -818,12 +928,18 @@ def _generate_click_handler(
     desc_method_ui: str = "Prose (Florence)",
     desc_verbosity: str = "detailed",
     optimize_thinking: bool = False,
+    lora_file_0: str | None = None,
+    lora_file_1: str | None = None,
+    lora_file_2: str | None = None,
+    lora_weight_0: float = DEFAULT_LORA_WEIGHT,
+    lora_weight_1: float = DEFAULT_LORA_WEIGHT,
+    lora_weight_2: float = DEFAULT_LORA_WEIGHT,
 ) -> Generator[tuple[Any, ...], None, None]:
     """Generate button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     logger.debug("Generate clicked")
     _cleanup_temp_images()
     _cancel_event.clear()
-    state = optimized_for_state or _initial_optimized_for_state()
+    state = _coerce_optimized_for_state(optimized_for_state)
     ui_to_method = {"Prose (Florence)": "prose", "Tags (JoyTag)": "tags"}
     description_method = ui_to_method.get(desc_method_ui, "prose")
     try:
@@ -850,6 +966,8 @@ def _generate_click_handler(
             description_method=description_method,
             description_verbosity=desc_verbosity or "detailed",
             optimize_thinking=optimize_thinking,
+            lora_files=(lora_file_0, lora_file_1, lora_file_2),
+            lora_weights=(lora_weight_0, lora_weight_1, lora_weight_2),
         ):
             state = new_state
             yield (
@@ -900,7 +1018,7 @@ def _optimize_click_handler(
     """Optimize button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     logger.debug("Optimize clicked")
     _cancel_event.clear()
-    state = optimized_for_state or _initial_optimized_for_state()
+    state = _coerce_optimized_for_state(optimized_for_state)
     ui_to_method = {"Prose (Florence)": "prose", "Tags (JoyTag)": "tags"}
     description_method = ui_to_method.get(desc_method_ui, "prose")
     try:
@@ -1145,14 +1263,18 @@ def _build_blocks() -> gr.Blocks:
     (
         image_models,
         ollama_image_models,
-        draw_things_image_models,
         default_image_provider,
         default_image_model,
         default_ollama,
-        default_draw_things_image_model,
         opt_models,
         default_opt,
     ) = _load_ui_models()
+
+    # LoRA catalog is fetched when Draw Things is selected (not at UI build time).
+    lora_dd_choices = _lora_ui_dropdown_choices([])
+    lora_catalog_info = ""
+    initial_lora_files, initial_lora_weights = _empty_lora_slots()
+    initial_lora_visible = default_image_provider == PROVIDER_DRAW_THINGS
 
     logo_img = ""
     logo_url = _logo_data_url(64)
@@ -1279,21 +1401,102 @@ def _build_blocks() -> gr.Blocks:
                         image_models
                         if default_image_provider == PROVIDER_OPENROUTER
                         else (
-                            draw_things_image_models
+                            _checkpoint_ui_choices([], [])
                             if default_image_provider == PROVIDER_DRAW_THINGS
                             else ollama_image_models
                         )
                     ),
                     allow_custom_value=True,
                     visible=True,
-                    info="Model for the selected provider. Type a model ID for another.",
+                    info=(
+                        "Draw Things checkpoint (.ckpt). Choices refresh from the app when you "
+                        "select this provider; type another filename if needed."
+                        if default_image_provider == PROVIDER_DRAW_THINGS
+                        else "Model for the selected provider. Type a model ID for another."
+                    ),
                 )
                 ref_message = gr.HTML(
                     value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
                     visible=(not _provider_supports_reference(default_image_provider)),
                 )
 
-        def _on_provider_change(provider: str) -> tuple[Any, Any]:
+                with gr.Column(visible=initial_lora_visible) as lora_section:
+                    lora_info = gr.Markdown(
+                        lora_catalog_info,
+                        visible=bool(lora_catalog_info.strip()),
+                    )
+                    lora_dd_0 = gr.Dropdown(
+                        label="LoRA 1",
+                        choices=lora_dd_choices,
+                        value=initial_lora_files[0],
+                        allow_custom_value=True,
+                    )
+                    lora_sl_0 = gr.Slider(
+                        label="Weight 1",
+                        minimum=0.0,
+                        maximum=1.0,
+                        step=0.05,
+                        value=initial_lora_weights[0],
+                    )
+                    lora_dd_1 = gr.Dropdown(
+                        label="LoRA 2",
+                        choices=lora_dd_choices,
+                        value=initial_lora_files[1],
+                        allow_custom_value=True,
+                    )
+                    lora_sl_1 = gr.Slider(
+                        label="Weight 2",
+                        minimum=0.0,
+                        maximum=1.0,
+                        step=0.05,
+                        value=initial_lora_weights[1],
+                    )
+                    lora_dd_2 = gr.Dropdown(
+                        label="LoRA 3",
+                        choices=lora_dd_choices,
+                        value=initial_lora_files[2],
+                        allow_custom_value=True,
+                    )
+                    lora_sl_2 = gr.Slider(
+                        label="Weight 3",
+                        minimum=0.0,
+                        maximum=1.0,
+                        step=0.05,
+                        value=initial_lora_weights[2],
+                    )
+
+        lora_slot_components: tuple[Any, ...] = (
+            lora_dd_0,
+            lora_sl_0,
+            lora_dd_1,
+            lora_sl_1,
+            lora_dd_2,
+            lora_sl_2,
+        )
+
+        def _lora_slot_updates(
+            *,
+            visible: bool,
+            pairs: list[tuple[str, str]],
+            hint: str = "",
+        ) -> tuple[Any, ...]:
+            choices = _lora_ui_dropdown_choices(pairs)
+            files, weights = _empty_lora_slots()
+            return (
+                gr.update(visible=visible),
+                gr.update(
+                    visible=visible and bool(hint),
+                    value=hint,
+                ),
+                gr.update(value=files[0], choices=choices),
+                gr.update(value=weights[0]),
+                gr.update(value=files[1], choices=choices),
+                gr.update(value=weights[1]),
+                gr.update(value=files[2], choices=choices),
+                gr.update(value=weights[2]),
+            )
+
+        def _on_provider_change(provider: str) -> tuple[Any, ...]:
             if provider == PROVIDER_OLLAMA:
                 return (
                     gr.update(choices=ollama_image_models, value=default_ollama),
@@ -1301,14 +1504,15 @@ def _build_blocks() -> gr.Blocks:
                         visible=True,
                         value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
                     ),
+                    *_lora_slot_updates(visible=False, pairs=[]),
                 )
             if provider == PROVIDER_DRAW_THINGS:
+                models, catalog_pairs, lora_pairs, hint = _fetch_draw_things_ui_catalog()
+                model_choices = _checkpoint_ui_choices(models, catalog_pairs)
                 return (
-                    gr.update(
-                        choices=draw_things_image_models,
-                        value=default_draw_things_image_model,
-                    ),
+                    gr.update(choices=model_choices, value=_CHECKPOINT_NONE),
                     gr.update(visible=False),
+                    *_lora_slot_updates(visible=True, pairs=lora_pairs, hint=hint),
                 )
             config = Config.from_env()
             openrouter_default = config.default_image_model or (
@@ -1317,12 +1521,38 @@ def _build_blocks() -> gr.Blocks:
             return (
                 gr.update(choices=image_models, value=openrouter_default),
                 gr.update(visible=False),
+                *_lora_slot_updates(visible=False, pairs=[]),
             )
 
         provider_dd.change(
             fn=_on_provider_change,
             inputs=[provider_dd],
-            outputs=[model_dd, ref_message],
+            outputs=[
+                model_dd,
+                ref_message,
+                lora_section,
+                lora_info,
+                *lora_slot_components,
+            ],
+        )
+
+        def _load_draw_things_catalog_if_selected(provider: str) -> tuple[Any, ...]:
+            """Populate checkpoint + LoRA lists from Draw Things when that provider is active."""
+            if provider != PROVIDER_DRAW_THINGS:
+                return (gr.update(),) + tuple(gr.update() for _ in range(8))
+            models, catalog_pairs, lora_pairs, hint = _fetch_draw_things_ui_catalog()
+            return (
+                gr.update(
+                    choices=_checkpoint_ui_choices(models, catalog_pairs),
+                    value=_CHECKPOINT_NONE,
+                ),
+                *_lora_slot_updates(visible=True, pairs=lora_pairs, hint=hint),
+            )
+
+        app.load(
+            fn=_load_draw_things_catalog_if_selected,
+            inputs=[provider_dd],
+            outputs=[model_dd, lora_section, lora_info, *lora_slot_components],
         )
 
         def _on_desc_method_change(method: str) -> Any:
@@ -1428,6 +1658,12 @@ def _build_blocks() -> gr.Blocks:
                 desc_method_dd,
                 desc_verbosity_dd,
                 think_cb,
+                lora_dd_0,
+                lora_dd_1,
+                lora_dd_2,
+                lora_sl_0,
+                lora_sl_1,
+                lora_sl_2,
             ],
             outputs=_gen_outputs,
             concurrency_id=_UI_CONCURRENCY_ID,

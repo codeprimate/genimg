@@ -97,7 +97,7 @@ class DrawThingsProvider:
                 hires_fix=bool(preset.default_hires_fix),
                 upscaler=preset.default_upscaler,
                 upscaler_scale_factor=preset.default_upscaler_scale_factor,
-                loras=tuple(preset.default_loras),
+                loras=(),
             )
         else:
             resolved = _ResolvedTuning(
@@ -128,6 +128,9 @@ class DrawThingsProvider:
             value = getattr(config, config_field, None)
             if value is not None:
                 setattr(resolved, target_field, value)
+
+        if config.draw_things_loras is not None:
+            resolved.loras = config.draw_things_loras
 
         return resolved
 

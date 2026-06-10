@@ -1,4 +1,5 @@
-# UI model lists for genimg Gradio UI.
+# Default model IDs and suggestion lists for genimg.
+# Runtime defaults are loaded by config.py via models.py; env vars override.
 # OpenRouter image-generation models (output_modalities includes "image").
 # From https://openrouter.ai/collections/image-models — no repeats.
 # allow_custom_value in the UI lets users type any model ID.
@@ -23,15 +24,11 @@ image_models:
 default_image_model: "bytedance-seed/seedream-4.5"
 
 # Ollama image-generation models are enumerated dynamically (x/ and my/ namespaces).
-# Set default_ollama_image_model to pin a preferred model at the top of the dropdown.
+# default_ollama_image_model pins the preferred default when provider is ollama.
 default_ollama_image_model: "x/z-image-turbo"
 
-# Draw Things (Gradio): dropdown choices are preset ids from `genimg.core.providers.draw_things.presets`
-# (`draw_things_preset_ids()`), not the list below. Keep `default_draw_things_image_model` as a
-# checkpoint filename: on load, the UI picks the preset whose `default_model` equals this value;
-# if none match, the first registered preset id is the default.
-draw_things_image_models: []
-default_draw_things_image_model: "moodymix_zitv10dpo_f16.ckpt"
+# Draw Things: checkpoint choices come from the Draw Things app catalog.
+# No static list or default here (use GENIMG_DRAW_THINGS_DEFAULT_MODEL).
 
 # Ollama models for prompt optimization (dropdown suggestions; user can type another).
 default_optimization_model: "huihui_ai/qwen3.5-abliterated:4b"
