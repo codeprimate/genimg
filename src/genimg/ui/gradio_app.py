@@ -638,6 +638,7 @@ def _run_generate_stream(
     description_method: str = "prose",
     description_verbosity: str = "detailed",
     optimize_thinking: bool = False,
+    optimize_format: str = "prose",
     lora_files: Sequence[str | None] | None = None,
     lora_weights: Sequence[float] | None = None,
 ) -> Generator[tuple[str, str | None, bool, bool, str, dict[str, Any], str, str], None, None]:
@@ -672,6 +673,7 @@ def _run_generate_stream(
     config = Config.from_env()
     provider_eff = _effective_provider_for_ui(provider, config)
     config.optimize_thinking = optimize_thinking
+    config.optimize_format = optimize_format
     try:
         config.validate()
     except ConfigurationError as e:
@@ -911,6 +913,7 @@ def _generate_click_handler(
     desc_method_ui: str = "Prose (Florence)",
     desc_verbosity: str = "detailed",
     optimize_thinking: bool = False,
+    optimize_format_ui: str = "Prose",
     lora_file_0: str | None = None,
     lora_file_1: str | None = None,
     lora_file_2: str | None = None,
@@ -925,6 +928,7 @@ def _generate_click_handler(
     state = _coerce_optimized_for_state(optimized_for_state)
     ui_to_method = {"Prose (Florence)": "prose", "Tags (JoyTag)": "tags"}
     description_method = ui_to_method.get(desc_method_ui, "prose")
+    optimize_format = "json" if optimize_format_ui == "JSON" else "prose"
     try:
         for (
             status_msg,
@@ -949,6 +953,7 @@ def _generate_click_handler(
             description_method=description_method,
             description_verbosity=desc_verbosity or "detailed",
             optimize_thinking=optimize_thinking,
+            optimize_format=optimize_format,
             lora_files=(lora_file_0, lora_file_1, lora_file_2),
             lora_weights=(lora_weight_0, lora_weight_1, lora_weight_2),
         ):
@@ -997,6 +1002,7 @@ def _optimize_click_handler(
     desc_verbosity: str = "detailed",
     provider: str | None = None,
     optimize_thinking: bool = False,
+    optimize_format_ui: str = "Prose",
 ) -> Generator[tuple[Any, ...], None, None]:
     """Optimize button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     logger.debug("Optimize clicked")
@@ -1004,6 +1010,7 @@ def _optimize_click_handler(
     state = _coerce_optimized_for_state(optimized_for_state)
     ui_to_method = {"Prose (Florence)": "prose", "Tags (JoyTag)": "tags"}
     description_method = ui_to_method.get(desc_method_ui, "prose")
+    optimize_format = "json" if optimize_format_ui == "JSON" else "prose"
     try:
         for (
             status_msg,
@@ -1024,6 +1031,7 @@ def _optimize_click_handler(
             description_verbosity=desc_verbosity or "detailed",
             provider=provider,
             optimize_thinking=optimize_thinking,
+            optimize_format=optimize_format,
         ):
             if state_update is not None:
                 state = state_update
@@ -1094,6 +1102,7 @@ def _run_optimize_only_stream(
     description_verbosity: str = "detailed",
     provider: str | None = None,
     optimize_thinking: bool = False,
+    optimize_format: str = "prose",
 ) -> Generator[tuple[str, str, bool, bool, bool, dict[str, Any] | None, str, str], None, None]:
     """
     Run optimization only; yields (status_msg, optimized_text, optimize_btn_on, stop_btn_on, generate_btn_on, state_update, page_title, notify_msg).
@@ -1121,6 +1130,7 @@ def _run_optimize_only_stream(
     config = Config.from_env()
     provider_eff = _effective_provider_for_ui(provider, config)
     config.optimize_thinking = optimize_thinking
+    config.optimize_format = optimize_format
     try:
         config.validate()
     except ConfigurationError as e:
@@ -1325,6 +1335,12 @@ def _build_blocks() -> gr.Blocks:
                             label="Think",
                             value=False,
                             info="Enable LLM thinking during optimization (slower).",
+                        )
+                        optimize_format_dd = gr.Dropdown(
+                            label="Output format",
+                            choices=["Prose", "JSON"],
+                            value="Prose",
+                            info="Prose: structured labeled sections. JSON: Ideogram 4 schema, assembled to prose for the image model.",
                         )
                         optimize_btn = gr.Button(
                             "Enhance Prompt", variant="secondary", interactive=False
@@ -1664,6 +1680,7 @@ def _build_blocks() -> gr.Blocks:
                 desc_method_dd,
                 desc_verbosity_dd,
                 think_cb,
+                optimize_format_dd,
                 lora_dd_0,
                 lora_dd_1,
                 lora_dd_2,
@@ -1688,6 +1705,7 @@ def _build_blocks() -> gr.Blocks:
                 desc_verbosity_dd,
                 provider_dd,
                 think_cb,
+                optimize_format_dd,
             ],
             outputs=_opt_outputs,
             concurrency_id=_UI_CONCURRENCY_ID,

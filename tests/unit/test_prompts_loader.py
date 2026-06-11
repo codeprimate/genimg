@@ -9,6 +9,8 @@ from genimg.core.prompts_loader import (
     _load_prompts,
     get_character_turnaround_prompt,
     get_optimization_template,
+    get_optimization_template_json,
+    get_optimization_template_with_description_json,
     get_prompt,
 )
 from genimg.utils.exceptions import ConfigurationError
@@ -21,6 +23,19 @@ class TestPromptsLoader:
         assert isinstance(template, str)
         assert "{reference_image_instruction}" in template
         assert "scene" in template.lower()
+
+    def test_prose_template_contains_output_skeleton_section_labels(self):
+        """Prose template must contain all six output skeleton section labels."""
+        template = get_optimization_template()
+        for label in (
+            "Scene Setup:",
+            "Viewpoint and Framing:",
+            "Subject Positions:",
+            "Key Props:",
+            "Action/Context:",
+            "Visual style and aesthetic:",
+        ):
+            assert label in template, f"Missing section label: {label!r}"
 
     def test_get_prompt_optimization_template(self):
         template = get_prompt("optimization", "template")
@@ -36,6 +51,25 @@ class TestPromptsLoader:
         assert isinstance(text, str)
         assert len(text.strip()) >= 3
         assert "turnaround reference sheet" in text.lower()
+
+    def test_get_optimization_template_json_returns_string_with_placeholder(self):
+        template = get_optimization_template_json()
+        assert isinstance(template, str)
+        assert "{reference_image_instruction}" in template
+        assert "json" in template.lower()
+        assert "high_level_description" in template
+
+    def test_get_optimization_template_with_description_json_returns_string_with_placeholder(self):
+        template = get_optimization_template_with_description_json()
+        assert isinstance(template, str)
+        assert "{reference_description}" in template
+        assert "high_level_description" in template
+
+    def test_json_templates_present_in_yaml(self):
+        """Both JSON template keys must exist in the loaded YAML."""
+        data = _load_prompts()
+        assert "template_json" in data["optimization"]
+        assert "template_with_description_json" in data["optimization"]
 
 
 @pytest.mark.unit

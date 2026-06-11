@@ -64,3 +64,19 @@ class TestGetCachedPrompt:
         cache.set("p", "m", "opt_with_think", use_thinking=True)
         assert cache.get("p", "m", use_thinking=False) == "opt_no_think"
         assert cache.get("p", "m", use_thinking=True) == "opt_with_think"
+
+    def test_optimize_format_separate_keys(self):
+        """Cache entries for prose and json optimize_format are distinct."""
+        cache = PromptCache()
+        cache.set("p", "m", "prose_result", optimize_format="prose")
+        cache.set("p", "m", "json_result", optimize_format="json")
+        assert cache.get("p", "m", optimize_format="prose") == "prose_result"
+        assert cache.get("p", "m", optimize_format="json") == "json_result"
+
+    def test_optimize_format_defaults_to_prose(self):
+        """Default optimize_format is prose; explicit prose matches default."""
+        cache = PromptCache()
+        cache.set("p", "m", "result")
+        assert cache.get("p", "m") == "result"
+        assert cache.get("p", "m", optimize_format="prose") == "result"
+        assert cache.get("p", "m", optimize_format="json") is None

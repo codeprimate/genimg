@@ -8,6 +8,7 @@ import pytest
 from genimg.core.config import Config
 from genimg.core.prompt import (
     OPTIMIZATION_TEMPLATE,
+    _assemble_ideogram_json,
     _strip_ollama_thinking,
     check_ollama_available,
     list_ollama_image_models,
@@ -518,3 +519,213 @@ class TestCancelCheckExceptionHandling:
                         "test", config=config, cancel_check=cancel_with_keyboard_interrupt
                     )
         cache.clear()
+
+
+@pytest.mark.unit
+class TestAssembleIdeogramJson:
+    """Tests for _assemble_ideogram_json()."""
+
+    def _full_caption(self) -> dict:
+        return {
+            "high_level_description": "A barista pouring latte art.",
+            "style_description": {
+                "aesthetics": "warm, cozy",
+                "lighting": "soft morning light",
+                "photo": "shallow depth of field",
+                "medium": "photograph",
+            },
+            "compositional_deconstruction": {
+                "background": "A cozy cafe interior.",
+                "elements": [
+                    {"type": "obj", "desc": "A barista in a white apron."},
+                    {"type": "obj", "desc": "A ceramic mug with latte art."},
+                ],
+            },
+        }
+
+    def test_full_caption_includes_all_sections(self):
+        result = _assemble_ideogram_json(self._full_caption())
+        assert "A barista pouring latte art." in result
+        assert "warm, cozy" in result
+        assert "A cozy cafe interior." in result
+        assert "A barista in a white apron." in result
+        assert "A ceramic mug with latte art." in result
+
+    def test_text_element_formatted_with_prefix(self):
+        data = {
+            "high_level_description": "A poster.",
+            "compositional_deconstruction": {
+                "background": "Plain white.",
+                "elements": [
+                    {"type": "text", "text": "HELLO", "desc": "bold serif at top"},
+                ],
+            },
+        }
+        result = _assemble_ideogram_json(data)
+        assert 'Text reading "HELLO": bold serif at top' in result
+
+    def test_text_element_no_desc(self):
+        data = {
+            "compositional_deconstruction": {
+                "background": "bg",
+                "elements": [{"type": "text", "text": "SIGN"}],
+            }
+        }
+        result = _assemble_ideogram_json(data)
+        assert 'Text reading "SIGN"' in result
+
+    def test_art_style_included(self):
+        data = {
+            "style_description": {
+                "aesthetics": "minimal",
+                "lighting": "even",
+                "art_style": "flat vector illustration",
+                "medium": "graphic_design",
+            },
+            "compositional_deconstruction": {"background": "white", "elements": []},
+        }
+        result = _assemble_ideogram_json(data)
+        assert "flat vector illustration" in result
+
+    def test_missing_top_level_fields_handled_gracefully(self):
+        result = _assemble_ideogram_json({})
+        assert result == ""
+
+    def test_sections_joined_with_double_newline(self):
+        result = _assemble_ideogram_json(self._full_caption())
+        assert "\n\n" in result
+
+    def test_empty_elements_list(self):
+        data = {
+            "high_level_description": "Minimal scene.",
+            "compositional_deconstruction": {"background": "Plain.", "elements": []},
+        }
+        result = _assemble_ideogram_json(data)
+        assert "Minimal scene." in result
+        assert "Plain." in result
+
+
+@pytest.mark.unit
+class TestJsonOptimizationFormat:
+    """Tests for JSON optimization format path in optimize_prompt_with_ollama."""
+
+    def setup_method(self):
+        get_cache().clear()
+
+    def teardown_method(self):
+        get_cache().clear()
+
+    def _valid_caption_json(self) -> str:
+        import json
+
+        return json.dumps(
+            {
+                "high_level_description": "A golden retriever on a skateboard.",
+                "style_description": {
+                    "aesthetics": "playful, vibrant",
+                    "lighting": "bright afternoon",
+                    "photo": "eye-level, shallow depth",
+                    "medium": "photograph",
+                },
+                "compositional_deconstruction": {
+                    "background": "A sunny sidewalk.",
+                    "elements": [{"type": "obj", "desc": "A golden retriever on a red skateboard."}],
+                },
+            }
+        )
+
+    def test_json_format_adds_format_key_to_payload(self):
+        """When optimize_format is 'json', Ollama payload includes format='json'."""
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json")
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.requests.post") as post:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = {"response": self._valid_caption_json()}
+                post.return_value = resp
+                optimize_prompt_with_ollama("a dog on a skateboard", config=config)
+        payload = post.call_args[1]["json"]
+        assert payload.get("format") == "json"
+
+    def test_prose_format_omits_format_key_from_payload(self):
+        """When optimize_format is 'prose' (default), Ollama payload has no 'format' key."""
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True)
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.requests.post") as post:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = {"response": "optimized prose"}
+                post.return_value = resp
+                optimize_prompt_with_ollama("a red car", config=config)
+        payload = post.call_args[1]["json"]
+        assert "format" not in payload
+
+    def test_json_format_response_assembled_to_prose(self):
+        """Valid JSON response is parsed and assembled; returned string is plain prose."""
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json")
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.requests.post") as post:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = {"response": self._valid_caption_json()}
+                post.return_value = resp
+                result = optimize_prompt_with_ollama("a dog on a skateboard", config=config)
+        assert "golden retriever" in result
+        assert "sunny sidewalk" in result
+        # Result must be plain text, not raw JSON
+        assert result.strip()[0] != "{"
+
+    def test_json_format_invalid_json_falls_back_to_raw_text(self):
+        """When JSON parse fails, raw Ollama text is returned (no exception raised)."""
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json")
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.requests.post") as post:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = {"response": "not valid json output"}
+                post.return_value = resp
+                result = optimize_prompt_with_ollama("a cat", config=config)
+        assert result == "not valid json output"
+
+    def test_json_format_uses_json_template(self):
+        """optimize_format='json' uses the JSON template, not the prose template."""
+        config = Config(openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json")
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.get_optimization_template_json") as mock_json_tpl:
+                mock_json_tpl.return_value = "json tpl {reference_image_instruction}"
+                with patch("genimg.core.prompt.get_optimization_template") as mock_prose_tpl:
+                    with patch("genimg.core.prompt.requests.post") as post:
+                        resp = MagicMock(status_code=200)
+                        resp.json.return_value = {"response": self._valid_caption_json()}
+                        post.return_value = resp
+                        optimize_prompt_with_ollama("a red car", config=config)
+            mock_json_tpl.assert_called()
+            mock_prose_tpl.assert_not_called()
+
+    def test_json_format_cache_key_is_separate_from_prose(self):
+        """prose and json format produce distinct cache entries for the same input."""
+        cache = get_cache()
+
+        config_prose = Config(
+            openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="prose"
+        )
+        config_json = Config(
+            openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json"
+        )
+        model = config_prose.default_optimization_model
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.requests.post") as post:
+                resp_prose = MagicMock(status_code=200)
+                resp_prose.json.return_value = {"response": "prose result"}
+                post.return_value = resp_prose
+                optimize_prompt_with_ollama("a red car", config=config_prose)
+
+        with patch("genimg.core.prompt.check_ollama_available", return_value=True):
+            with patch("genimg.core.prompt.requests.post") as post:
+                resp_json = MagicMock(status_code=200)
+                resp_json.json.return_value = {"response": self._valid_caption_json()}
+                post.return_value = resp_json
+                optimize_prompt_with_ollama("a red car", config=config_json)
+
+        prose_cached = cache.get("a red car", model, optimize_format="prose")
+        json_cached = cache.get("a red car", model, optimize_format="json")
+        assert prose_cached is not None
+        assert json_cached is not None
+        assert prose_cached != json_cached

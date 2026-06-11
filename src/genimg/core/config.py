@@ -38,6 +38,8 @@ DEFAULT_OLLAMA_IMAGE_MODEL = _yaml_default_ollama_image_model()
 DEFAULT_DRAW_THINGS_HOST = "127.0.0.1"
 DEFAULT_DRAW_THINGS_PORT = 7859
 DEFAULT_DRAW_THINGS_PRESET = "z-image"
+DEFAULT_OPTIMIZE_FORMAT = "prose"
+KNOWN_OPTIMIZE_FORMATS = ("prose", "json")
 
 # Provider ids accepted by validate(); sourced from neutral provider_ids module.
 KNOWN_IMAGE_PROVIDERS = KNOWN_IMAGE_PROVIDER_IDS
@@ -96,6 +98,9 @@ class Config:
     # Ollama thinking: when True, optimization uses LLM thinking (slower); when False (default), pass think=false for speed
     optimize_thinking: bool = False
 
+    # Optimization output format: "prose" (default, structured labeled sections) or "json" (Ideogram 4 schema, assembled to prose for image model)
+    optimize_format: str = DEFAULT_OPTIMIZE_FORMAT
+
     # Debug: log raw API payload/response with image data truncated
     debug_api: bool = False
 
@@ -114,6 +119,7 @@ class Config:
             GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL: Optional default Ollama image model
             GENIMG_OPTIMIZATION_MODEL: Optional default optimization model
             GENIMG_OPTIMIZE_THINKING: Optional enable LLM thinking during optimization (1/true/yes; default off)
+            GENIMG_OPTIMIZE_FORMAT: Optional optimization output format ("prose" or "json"; default "prose")
             GENIMG_MIN_IMAGE_PIXELS: Optional minimum total pixels for reference images (default 2500)
 
         Returns:
@@ -167,6 +173,8 @@ class Config:
             "GENIMG_OPTIMIZE_THINKING",
             _bool_env("OLLAMA_OPTIMIZE_THINKING", False),
         )
+        optimize_format_env = os.getenv("GENIMG_OPTIMIZE_FORMAT", DEFAULT_OPTIMIZE_FORMAT).strip().lower()
+        optimize_format = optimize_format_env if optimize_format_env in KNOWN_OPTIMIZE_FORMATS else DEFAULT_OPTIMIZE_FORMAT
         default_image_provider = os.getenv("GENIMG_DEFAULT_IMAGE_PROVIDER", DEFAULT_IMAGE_PROVIDER)
         ollama_base_url = (
             os.getenv("OLLAMA_BASE_URL")
@@ -221,6 +229,7 @@ class Config:
             ),
             min_image_pixels=_int_env("GENIMG_MIN_IMAGE_PIXELS", 2500),
             optimize_thinking=optimize_thinking,
+            optimize_format=optimize_format,
             debug_api=debug_api,
         )
 

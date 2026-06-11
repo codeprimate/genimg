@@ -4,6 +4,7 @@ Prompt management and optimization for genimg.
 This module handles prompt validation, optimization via the Ollama HTTP API, and caching.
 """
 
+import json
 import re
 import threading
 import time
@@ -15,7 +16,9 @@ import requests
 from genimg.core.config import DEFAULT_OLLAMA_BASE_URL, Config, get_config
 from genimg.core.prompts_loader import (
     get_optimization_template,
+    get_optimization_template_json,
     get_optimization_template_with_description,
+    get_optimization_template_with_description_json,
 )
 from genimg.logging_config import get_logger, log_prompts
 from genimg.utils.cache import get_cache
@@ -45,6 +48,52 @@ _ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 def _strip_ansi_terminal_sequences(text: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
+
+
+def _assemble_ideogram_json(data: dict) -> str:
+    """
+    Assemble an Ideogram 4 JSON caption dict into a prose string for image models.
+
+    Joins high_level_description, style cues, background, and element descriptions
+    with double newlines. Returns the assembled string, or an empty string if no
+    content could be extracted.
+    """
+    parts: list[str] = []
+
+    if hld := data.get("high_level_description"):
+        parts.append(str(hld).strip())
+
+    sd = data.get("style_description")
+    if isinstance(sd, dict):
+        style_cues: list[str] = []
+        for field in ("aesthetics", "lighting", "photo", "art_style", "medium"):
+            val = sd.get(field)
+            if val and isinstance(val, str):
+                style_cues.append(val.strip())
+        if style_cues:
+            parts.append(", ".join(style_cues))
+
+    cd = data.get("compositional_deconstruction")
+    if isinstance(cd, dict):
+        if bg := cd.get("background"):
+            parts.append(str(bg).strip())
+        for el in cd.get("elements") or []:
+            if not isinstance(el, dict):
+                continue
+            desc = (el.get("desc") or "").strip()
+            if el.get("type") == "text":
+                text_val = (el.get("text") or "").strip()
+                if text_val and desc:
+                    parts.append(f'Text reading "{text_val}": {desc}')
+                elif text_val:
+                    parts.append(f'Text reading "{text_val}"')
+                elif desc:
+                    parts.append(desc)
+            elif desc:
+                parts.append(desc)
+
+    return "\n\n".join(p for p in parts if p)
+
 
 # Injected into the optimization template when a reference image is present (reference_hash is set).
 REFERENCE_IMAGE_INSTRUCTION = """
@@ -238,6 +287,7 @@ def optimize_prompt_with_ollama(
 
     cache = get_cache()
     use_thinking = config.optimize_thinking
+    optimize_format = config.optimize_format
     # REQ-014: description-based path uses description_key (reference_hash or description id)
     description_key = reference_hash if reference_description else None
     if not force_refresh:
@@ -247,6 +297,7 @@ def optimize_prompt_with_ollama(
             reference_hash,
             description_key=description_key,
             use_thinking=use_thinking,
+            optimize_format=optimize_format,
         )
         if cached:
             logger.debug("Cache hit for model=%s", model)
@@ -267,8 +318,18 @@ def optimize_prompt_with_ollama(
             f"(default {DEFAULT_OLLAMA_BASE_URL}). Visit https://ollama.ai for installation."
         )
 
-    # Prepare the optimization prompt: use description-based or standard template
-    if reference_description is not None:
+    # Prepare the optimization prompt: select template based on format and description presence
+    if optimize_format == "json":
+        if reference_description is not None:
+            system_part = get_optimization_template_with_description_json().format(
+                reference_description=reference_description
+            )
+        else:
+            reference_instruction = REFERENCE_IMAGE_INSTRUCTION if reference_hash else ""
+            system_part = get_optimization_template_json().format(
+                reference_image_instruction=reference_instruction
+            )
+    elif reference_description is not None:
         system_part = get_optimization_template_with_description().format(
             reference_description=reference_description
         )
@@ -281,8 +342,10 @@ def optimize_prompt_with_ollama(
 
     start_time = time.time()
     if cancel_check is None:
-        raw = _call_ollama_generate_api(config, model, optimization_prompt, timeout, use_thinking)
-        optimized = _strip_ollama_thinking(raw.strip())
+        raw = _call_ollama_generate_api(
+            config, model, optimization_prompt, timeout, use_thinking, optimize_format
+        )
+        optimized = _post_process_ollama_response(raw, optimize_format)
         if not optimized:
             raise APIError("Ollama returned an empty response")
         cache.set(
@@ -292,6 +355,7 @@ def optimize_prompt_with_ollama(
             reference_hash,
             description_key=description_key,
             use_thinking=use_thinking,
+            optimize_format=optimize_format,
         )
         elapsed = time.time() - start_time
         logger.info("Optimized in %.1fs model=%s", elapsed, model)
@@ -309,7 +373,7 @@ def optimize_prompt_with_ollama(
     def worker_http() -> None:
         try:
             result_holder[0] = _call_ollama_generate_api(
-                config, model, optimization_prompt, timeout, use_thinking
+                config, model, optimization_prompt, timeout, use_thinking, optimize_format
             )
         except BaseException as e:
             exc_holder[0] = e
@@ -345,7 +409,7 @@ def optimize_prompt_with_ollama(
         raise exc_holder[0]
 
     raw = result_holder[0] or ""
-    optimized = _strip_ollama_thinking(raw.strip())
+    optimized = _post_process_ollama_response(raw, optimize_format)
     if not optimized:
         raise APIError("Ollama returned an empty response")
     cache.set(
@@ -355,6 +419,7 @@ def optimize_prompt_with_ollama(
         reference_hash,
         description_key=description_key,
         use_thinking=use_thinking,
+        optimize_format=optimize_format,
     )
     elapsed = time.time() - start_time
     logger.info("Optimized in %.1fs model=%s", elapsed, model)
@@ -366,15 +431,47 @@ def optimize_prompt_with_ollama(
     return optimized
 
 
+def _post_process_ollama_response(raw: str, optimize_format: str) -> str:
+    """
+    Post-process the raw Ollama response based on optimize_format.
+
+    For "prose": strip thinking blocks and ANSI sequences, return cleaned text.
+    For "json": strip thinking blocks, parse JSON, assemble to prose via _assemble_ideogram_json.
+               Falls back to raw stripped text with a warning if JSON parsing fails.
+    """
+    cleaned = _strip_ollama_thinking(raw.strip())
+    if optimize_format != "json":
+        return cleaned
+
+    # JSON path: attempt parse and assembly
+    try:
+        data = json.loads(cleaned)
+        assembled = _assemble_ideogram_json(data)
+        if assembled:
+            return assembled
+        logger.warning("JSON optimization produced empty assembly; falling back to raw text")
+        return cleaned
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        logger.warning(
+            "JSON optimization response could not be parsed (%s); falling back to raw text",
+            exc,
+        )
+        return cleaned
+
+
 def _call_ollama_generate_api(
     config: Config,
     model: str,
     optimization_prompt: str,
     timeout: int,
     use_thinking: bool,
+    optimize_format: str = "prose",
 ) -> str:
     """
     POST ``/api/generate`` with ``stream: false``; return the ``response`` text field.
+
+    When optimize_format is "json", adds ``format: "json"`` to enforce structured output
+    at the API level.
 
     Raises:
         RequestTimeoutError: HTTP timeout
@@ -388,6 +485,8 @@ def _call_ollama_generate_api(
         "stream": False,
         "think": use_thinking,
     }
+    if optimize_format == "json":
+        payload["format"] = "json"
     try:
         response = requests.post(
             url,
@@ -476,7 +575,13 @@ def optimize_prompt(
         cache = get_cache()
         if model is None:
             model = config.default_optimization_model
-        cached = cache.get(prompt, model, reference_hash, description_key=description_key)
+        cached = cache.get(
+            prompt,
+            model,
+            reference_hash,
+            description_key=description_key,
+            optimize_format=config.optimize_format,
+        )
         if cached:
             logger.debug("Cache hit for model=%s", model)
             logger.info("Optimized (from cache) model=%s", model)

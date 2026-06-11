@@ -130,6 +130,16 @@ cli.add_command(draw_things_group)
     help="Ollama model for optimization (default from config).",
 )
 @click.option(
+    "--optimize-format",
+    type=click.Choice(["prose", "json"], case_sensitive=False),
+    default=None,
+    help=(
+        "Optimization output format (default: prose). "
+        "'prose' outputs structured labeled sections. "
+        "'json' uses Ideogram 4 schema and is assembled to prose for the image model."
+    ),
+)
+@click.option(
     "--save-prompt",
     type=click.Path(path_type=Path),
     help="Save optimized prompt to file (relative to CWD or absolute path).",
@@ -194,6 +204,7 @@ def generate(
     out: Path | None,
     output_format: str,
     optimization_model: str | None,
+    optimize_format: str | None,
     save_prompt: Path | None,
     api_key: str | None,
     provider: str | None,
@@ -223,6 +234,8 @@ def generate(
         if debug_api:
             config.debug_api = True
         config.optimize_thinking = optimize_thinking
+        if optimize_format is not None:
+            config.optimize_format = optimize_format.lower()
 
         config.validate()
 

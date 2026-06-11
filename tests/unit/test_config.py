@@ -11,6 +11,7 @@ from genimg.core.config import (
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_IMAGE_MODEL,
     DEFAULT_OPTIMIZATION_MODEL,
+    DEFAULT_OPTIMIZE_FORMAT,
     KNOWN_IMAGE_PROVIDERS,
     Config,
     get_config,
@@ -304,6 +305,34 @@ class TestConfigProviderAwareValidation:
         assert c.draw_things_steps == 6
         assert c.draw_things_guidance_scale == pytest.approx(1.25)
         assert c.draw_things_hires_fix is True
+
+
+@pytest.mark.unit
+class TestOptimizeFormat:
+    def test_default_optimize_format_is_prose(self):
+        c = Config()
+        assert c.optimize_format == "prose"
+        assert DEFAULT_OPTIMIZE_FORMAT == "prose"
+
+    def test_from_env_reads_genimg_optimize_format_json(self):
+        with patch.dict(os.environ, {"GENIMG_OPTIMIZE_FORMAT": "json"}, clear=False):
+            c = Config.from_env()
+        assert c.optimize_format == "json"
+
+    def test_from_env_reads_genimg_optimize_format_prose(self):
+        with patch.dict(os.environ, {"GENIMG_OPTIMIZE_FORMAT": "prose"}, clear=False):
+            c = Config.from_env()
+        assert c.optimize_format == "prose"
+
+    def test_from_env_invalid_optimize_format_falls_back_to_prose(self):
+        with patch.dict(os.environ, {"GENIMG_OPTIMIZE_FORMAT": "xml"}, clear=False):
+            c = Config.from_env()
+        assert c.optimize_format == "prose"
+
+    def test_from_env_uppercase_optimize_format_normalised(self):
+        with patch.dict(os.environ, {"GENIMG_OPTIMIZE_FORMAT": "JSON"}, clear=False):
+            c = Config.from_env()
+        assert c.optimize_format == "json"
 
 
 @pytest.mark.unit

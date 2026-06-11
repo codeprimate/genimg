@@ -25,6 +25,14 @@ class OptimizationPrompt(BaseModel):
         default=None,
         description="Template when reference image description is used; must contain {reference_description}",
     )
+    template_json: str | None = Field(
+        default=None,
+        description="JSON optimization template; must contain {reference_image_instruction}",
+    )
+    template_with_description_json: str | None = Field(
+        default=None,
+        description="JSON template when reference image description is used; must contain {reference_description}",
+    )
 
 
 class CharacterPrompt(BaseModel):
@@ -177,5 +185,53 @@ def get_optimization_template_with_description() -> str:
     if "{reference_description}" not in template:
         raise ConfigurationError(
             "optimization.template_with_description must contain {reference_description} placeholder."
+        )
+    return template
+
+
+def get_optimization_template_json() -> str:
+    """
+    Return the JSON optimization system prompt template.
+    Must contain {reference_image_instruction} placeholder.
+
+    Returns:
+        The template string from prompts.yaml (optimization.template_json).
+
+    Raises:
+        ConfigurationError: If template is missing or does not contain the placeholder.
+    """
+    template = get_prompt("optimization", "template_json")
+    if not template:
+        raise ConfigurationError(
+            "optimization.template_json not found in prompts.yaml. "
+            "Required when optimize_format is 'json'."
+        )
+    if "{reference_image_instruction}" not in template:
+        raise ConfigurationError(
+            "optimization.template_json must contain {reference_image_instruction} placeholder."
+        )
+    return template
+
+
+def get_optimization_template_with_description_json() -> str:
+    """
+    Return the JSON optimization template used when a reference image description is provided.
+    Must contain {reference_description} placeholder.
+
+    Returns:
+        The template string from prompts.yaml (optimization.template_with_description_json).
+
+    Raises:
+        ConfigurationError: If template is missing or does not contain the placeholder.
+    """
+    template = get_prompt("optimization", "template_with_description_json")
+    if not template:
+        raise ConfigurationError(
+            "optimization.template_with_description_json not found in prompts.yaml. "
+            "Required when optimize_format is 'json' and using description-based optimization."
+        )
+    if "{reference_description}" not in template:
+        raise ConfigurationError(
+            "optimization.template_with_description_json must contain {reference_description} placeholder."
         )
     return template
