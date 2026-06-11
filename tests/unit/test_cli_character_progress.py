@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from genimg import DEFAULT_IMAGE_MODEL
 from genimg.cli import progress
 
 
@@ -15,7 +16,7 @@ def test_print_character_banner_calls_console() -> None:
             title="Test │Name",
             ref_count=2,
             provider_id="openrouter",
-            model_id="bytedance-seed/seedream-4.5",
+            model_id=DEFAULT_IMAGE_MODEL,
         )
     assert m_print.call_count == 3
     joined = " ".join(str(c.args[0]) for c in m_print.call_args_list)

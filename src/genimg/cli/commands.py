@@ -21,7 +21,6 @@ from genimg import (
     process_reference_image,
     validate_prompt,
 )
-from genimg.core.image_gen import resolve_default_image_model
 from genimg.cli import progress
 from genimg.cli.draw_things_cmds import draw_things_group
 from genimg.cli.handlers import (
@@ -42,6 +41,7 @@ from genimg.core.image_gen import (
     CliImageFormat,
     apply_format_wins_extension,
     build_png_info_for_generation,
+    resolve_default_image_model,
     save_generation_cli,
 )
 from genimg.core.prompts_loader import get_character_turnaround_prompt

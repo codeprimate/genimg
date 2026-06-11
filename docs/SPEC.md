@@ -425,8 +425,8 @@ flowchart TD
 - System shall support multiple image generation **providers** (openrouter, ollama, draw_things) via a provider registry
 - System shall allow user to select provider via CLI `--provider` or config default (default provider: ollama)
 - System shall allow user to select image generation model per provider (OpenRouter model IDs, Ollama model names, or Draw Things checkpoint strings / preset-driven defaults)
-- System shall provide a default model per provider (from config and/or `ui_models.yaml`)
-- System shall maintain recommended model lists: OpenRouter models in `ui_models.yaml` (`image_models`), Ollama image models in `ui_models.yaml` (`ollama_image_models`); Draw Things **preset ids** for the Gradio dropdown are derived from the built-in preset registry (YAML may map a default checkpoint to a preset for startup default)
+- System shall provide a default model per provider (from `models.yaml` and config; env overrides)
+- System shall maintain recommended model lists: OpenRouter models in `models.yaml` (`image_models`); Ollama image models enumerated at runtime (`list_ollama_image_models`); Draw Things **preset ids** for the Gradio dropdown are derived from the built-in preset registry
 - System shall support custom model IDs for flexibility (provider-specific format)
 
 #### 5.2.2 Generation Execution
@@ -530,7 +530,7 @@ flowchart TD
 #### 5.6.2 Model and Provider Configuration
 - System shall allow selection of image generation **provider** (openrouter | ollama | draw_things) and **model** (provider-specific ID)
 - System shall allow selection of prompt optimization model (Ollama)
-- System shall maintain model lists via `ui_models.yaml`: `image_models` (OpenRouter), `ollama_image_models` (Ollama), `optimization_models` (Ollama); Draw Things Gradio choices come from the preset registry; UI loads YAML and package data from the package
+- System shall maintain model lists via `models.yaml`: `image_models` (OpenRouter suggestions); Ollama image and optimization models are discovered at runtime; Draw Things Gradio choices come from the app catalog; UI loads YAML via `models.py`
 - System shall provide reasonable defaults: default provider **ollama**, default image model and optimization model from config / YAML
 - System shall allow custom model IDs for flexibility
 - System shall support configuration via environment variables:

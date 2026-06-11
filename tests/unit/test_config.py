@@ -6,12 +6,24 @@ from unittest.mock import patch
 import pytest
 
 from genimg.core.config import (
+    DEFAULT_IMAGE_MODEL,
     DEFAULT_IMAGE_PROVIDER,
     DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_OLLAMA_IMAGE_MODEL,
+    DEFAULT_OPTIMIZATION_MODEL,
     KNOWN_IMAGE_PROVIDERS,
     Config,
     get_config,
     set_config,
+)
+from genimg.core.models import (
+    default_image_model as yaml_default_image_model,
+)
+from genimg.core.models import (
+    default_ollama_image_model as yaml_default_ollama_image_model,
+)
+from genimg.core.models import (
+    default_optimization_model as yaml_default_optimization_model,
 )
 from genimg.utils.exceptions import ConfigurationError
 
@@ -64,6 +76,20 @@ class TestConfig:
         assert c.default_optimization_model == "custom-ollama"
         assert c.ollama_base_url == "http://localhost:11435"
         assert c.min_image_pixels == 5000
+
+    def test_from_env_uses_default_ollama_image_model_override(self):
+        with patch.dict(
+            os.environ,
+            {"GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL": "x/custom-turbo"},
+            clear=False,
+        ):
+            c = Config.from_env()
+        assert c.default_ollama_image_model == "x/custom-turbo"
+
+    def test_module_defaults_match_models_yaml(self):
+        assert yaml_default_image_model() == DEFAULT_IMAGE_MODEL
+        assert yaml_default_ollama_image_model() == DEFAULT_OLLAMA_IMAGE_MODEL
+        assert yaml_default_optimization_model() == DEFAULT_OPTIMIZATION_MODEL
 
     def test_from_env_defaults_when_env_empty(self):
         with patch.dict(

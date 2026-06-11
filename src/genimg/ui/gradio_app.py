@@ -10,8 +10,8 @@ import argparse
 import atexit
 import base64
 import contextlib
-import json
 import importlib.resources
+import json
 import os
 import tempfile
 import threading
@@ -40,11 +40,15 @@ from genimg import (
     process_reference_image,
     validate_prompt,
 )
-from genimg.core.config import DEFAULT_IMAGE_MODEL
 from genimg.core.image_analysis import (
     describe_image,
     get_description,
     unload_describe_models,
+)
+from genimg.core.image_gen import resolve_default_image_model
+from genimg.core.models import (
+    image_models as yaml_image_models,
+    merge_optimization_model_choices,
 )
 from genimg.core.provider_ids import (
     PROVIDER_DRAW_THINGS,
@@ -352,7 +356,7 @@ def _empty_lora_slots() -> tuple[list[str], list[float]]:
     )
 
 
-def _load_ui_models() -> tuple[
+def _load_model_choices() -> tuple[
     list[str],
     list[str],
     str,
@@ -362,33 +366,19 @@ def _load_ui_models() -> tuple[
     str,
 ]:
     """
-    Load image and optimization model lists from ui_models.yaml in the package.
+    Load model dropdown choices from models.yaml and config.
     Returns (image_models, ollama_image_models, default_image_provider,
-             default_image_model, default_ollama_model, optimization_models,
+             default_image_model, default_ollama_model, optimization_model_choices,
              default_optimization_model).
     """
-    try:
-        with (
-            importlib.resources.files("genimg")
-            .joinpath("ui_models.yaml")
-            .open(encoding="utf-8") as f
-        ):
-            data = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        data = {}
-
-    # OpenRouter image models from YAML
-    image_models: list[str] = data.get("image_models") or []
-    default_image_yaml: str = data.get("default_image_model") or DEFAULT_IMAGE_MODEL
+    image_models: list[str] = list(yaml_image_models())
+    config = Config.from_env()
+    default_image_yaml = config.default_image_model
     if default_image_yaml and default_image_yaml not in image_models:
         image_models = [default_image_yaml] + [m for m in image_models if m != default_image_yaml]
 
-    # Ollama image models: all installed models in the x/ and my/ namespaces
-    # (see https://ollama.com/blog/image-generation)
     ollama_image_models: list[str] = list_ollama_image_models()
-    default_ollama: str = data.get("default_ollama_image_model") or (
-        ollama_image_models[0] if ollama_image_models else ""
-    )
+    default_ollama = config.default_ollama_image_model
     if default_ollama and default_ollama not in ollama_image_models:
         ollama_image_models = [default_ollama] + ollama_image_models
     elif default_ollama and ollama_image_models:
@@ -396,9 +386,6 @@ def _load_ui_models() -> tuple[
             m for m in ollama_image_models if m != default_ollama
         ]
 
-    config = Config.from_env()
-
-    # Config: default provider and model for that provider
     default_image_provider: str = config.default_image_provider
 
     if default_image_provider == PROVIDER_OPENROUTER:
@@ -408,15 +395,11 @@ def _load_ui_models() -> tuple[
     else:
         default_image_model = default_ollama
 
-    # Optimization models from installed Ollama models
     default_opt: str = config.default_optimization_model
-    opt_models: list[str] = list_ollama_models()
-    if default_opt and default_opt not in opt_models:
-        opt_models = [default_opt] + opt_models
-    elif default_opt and opt_models:
-        opt_models = [default_opt] + [m for m in opt_models if m != default_opt]
-    elif not opt_models:
-        opt_models = [default_opt]
+    opt_models = merge_optimization_model_choices(
+        default=default_opt,
+        installed=list_ollama_models(config),
+    )
 
     return (
         image_models,
@@ -1268,7 +1251,7 @@ def _build_blocks() -> gr.Blocks:
         default_ollama,
         opt_models,
         default_opt,
-    ) = _load_ui_models()
+    ) = _load_model_choices()
 
     # LoRA catalog is fetched when Draw Things is selected (not at UI build time).
     lora_dd_choices = _lora_ui_dropdown_choices([])
@@ -1498,8 +1481,12 @@ def _build_blocks() -> gr.Blocks:
 
         def _on_provider_change(provider: str) -> tuple[Any, ...]:
             if provider == PROVIDER_OLLAMA:
+                config = Config.from_env()
                 return (
-                    gr.update(choices=ollama_image_models, value=default_ollama),
+                    gr.update(
+                        choices=ollama_image_models,
+                        value=config.default_ollama_image_model,
+                    ),
                     gr.update(
                         visible=True,
                         value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
@@ -1515,9 +1502,11 @@ def _build_blocks() -> gr.Blocks:
                     *_lora_slot_updates(visible=True, pairs=lora_pairs, hint=hint),
                 )
             config = Config.from_env()
-            openrouter_default = config.default_image_model or (
-                image_models[0] if image_models else "bytedance-seed/seedream-4.5"
+            openrouter_default = resolve_default_image_model(
+                provider_id=PROVIDER_OPENROUTER, config=config
             )
+            if not openrouter_default and image_models:
+                openrouter_default = image_models[0]
             return (
                 gr.update(choices=image_models, value=openrouter_default),
                 gr.update(visible=False),
@@ -1548,6 +1537,23 @@ def _build_blocks() -> gr.Blocks:
                 ),
                 *_lora_slot_updates(visible=True, pairs=lora_pairs, hint=hint),
             )
+
+        def _refresh_optimization_models() -> Any:
+            """Refresh optimization dropdown from live Ollama."""
+            config = Config.from_env()
+            default_opt = config.default_optimization_model
+            choices = merge_optimization_model_choices(
+                default=default_opt,
+                installed=list_ollama_models(config),
+            )
+            value = default_opt if default_opt in choices else (choices[0] if choices else "")
+            return gr.update(choices=choices, value=value)
+
+        app.load(
+            fn=_refresh_optimization_models,
+            inputs=[],
+            outputs=[optimization_dd],
+        )
 
         app.load(
             fn=_load_draw_things_catalog_if_selected,

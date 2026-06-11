@@ -486,6 +486,30 @@ class TestGenerateImageValidation:
 
         assert mock_provider.generate.call_args.kwargs["model"] == "drawthings/default.ckpt"
 
+    def test_ollama_uses_default_ollama_image_model(self):
+        config = Config(
+            ollama_base_url="http://127.0.0.1:11434",
+            default_image_provider="ollama",
+            default_image_model="openrouter/wrong",
+            default_ollama_image_model="x/z-image-turbo",
+        )
+        mock_provider = MagicMock()
+        mock_provider.supports_reference_image = False
+        mock_provider.generate.return_value = GenerationResult(
+            image=Image.open(io.BytesIO(MINIMAL_PNG)).copy(),
+            _format="png",
+            generation_time=0.01,
+            model_used="x/z-image-turbo",
+            prompt_used="a cat",
+            had_reference=False,
+        )
+
+        with patch("genimg.core.image_gen.get_registry") as m_reg:
+            m_reg.return_value.get.return_value = mock_provider
+            generate_image("a cat", config=config, provider="ollama", model=None)
+
+        assert mock_provider.generate.call_args.kwargs["model"] == "x/z-image-turbo"
+
     def test_draw_things_without_default_model_raises(self):
         config = Config(
             default_image_provider="draw_things",

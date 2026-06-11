@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (none)
 
 ### Changed
-- (none)
+- **Model defaults:** `ui_models.yaml` renamed to `models.yaml`; loaded by `genimg.core.models` and wired through `config.py`. Env vars override yaml defaults. `genimg character` now uses the same provider/model defaults as `genimg generate`.
 
 ### Fixed
 - (none)

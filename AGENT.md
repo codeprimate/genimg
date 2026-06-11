@@ -44,7 +44,7 @@ src/genimg/
 │   ├── cache.py         # In-memory prompt cache
 │   └── exceptions.py    # Exception hierarchy
 ├── prompts.yaml         # Bundled prompt templates
-└── ui_models.yaml       # UI model dropdown lists
+└── models.yaml          # Default model IDs and suggestion lists
 ```
 
 ### Module Responsibilities
@@ -193,8 +193,9 @@ Library polls `cancel_check()` every 250ms; raises `CancellationError` when True
   - Can also be provided via CLI: `genimg generate --api-key sk-or-v1-...` or `genimg ui --api-key sk-or-v1-...`
 
 **Optional:**
-- `GENIMG_DEFAULT_MODEL` - Default image model (default: `bytedance-seed/seedream-4.5`)
-- `GENIMG_OPTIMIZATION_MODEL` - Ollama model for optimization (default: `huihui_ai/qwen3.5-abliterated:4b`)
+- `GENIMG_DEFAULT_MODEL` - Default OpenRouter image model (default from `models.yaml`)
+- `GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL` - Default Ollama image model (default from `models.yaml`)
+- `GENIMG_OPTIMIZATION_MODEL` - Ollama model for optimization (default from `models.yaml`)
 - `OLLAMA_BASE_URL` / `GENIMG_OLLAMA_BASE_URL` - Ollama HTTP server (default `http://127.0.0.1:11434`; used for prompt optimization and Ollama image generation)
 - `GENIMG_UI_PORT`, `GENIMG_UI_HOST`, `GENIMG_UI_SHARE` - UI launch options
 - `GENIMG_VERBOSITY` - Logging verbosity: `0` (default: activity/performance), `1` (also prompts), `2` (verbose: API/cache). CLI `-v`/`-vv` override.
@@ -229,7 +230,7 @@ See `EXAMPLES.md` for detailed code examples. Key patterns:
 - RGBA converted to RGB (composite on white background)
 
 ### Package Data
-- `prompts.yaml` and `ui_models.yaml` bundled with package
+- `prompts.yaml` and `models.yaml` bundled with package
 - Accessed via `importlib.resources.files("genimg").joinpath("file.yaml")`
 - Declared in `pyproject.toml` under `[tool.setuptools.package-data]`
 

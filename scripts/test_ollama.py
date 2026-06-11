@@ -13,6 +13,8 @@ Usage:
 import subprocess
 import sys
 
+from genimg import DEFAULT_OPTIMIZATION_MODEL
+
 
 def main() -> None:
     """Test Ollama installation."""
@@ -57,11 +59,11 @@ def main() -> None:
             print(result.stdout)
             
             # Check for recommended model
-            if "huihui_ai/qwen3.5-abliterated:4b" in result.stdout:
-                print("✓ Recommended model (huihui_ai/qwen3.5-abliterated:4b) is installed")
+            if DEFAULT_OPTIMIZATION_MODEL in result.stdout:
+                print(f"✓ Recommended model ({DEFAULT_OPTIMIZATION_MODEL}) is installed")
             else:
-                print("⚠️  Recommended model (huihui_ai/qwen3.5-abliterated:4b) not found")
-                print("   Install with: ollama pull huihui_ai/qwen3.5-abliterated:4b")
+                print(f"⚠️  Recommended model ({DEFAULT_OPTIMIZATION_MODEL}) not found")
+                print(f"   Install with: ollama pull {DEFAULT_OPTIMIZATION_MODEL}")
         else:
             print("❌ Failed to list models")
             sys.exit(1)

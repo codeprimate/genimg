@@ -100,13 +100,18 @@ except NetworkError as e:
 ### Custom Configuration
 
 ```python
-from genimg import Config, generate_image
+from genimg import (
+    DEFAULT_IMAGE_MODEL,
+    DEFAULT_OPTIMIZATION_MODEL,
+    Config,
+    generate_image,
+)
 
-# Create custom config
+# Create custom config (or use Config.from_env() for yaml defaults)
 config = Config(
     openrouter_api_key="sk-or-v1-...",
-    default_image_model="bytedance-seed/seedream-4.5",
-    default_optimization_model="huihui_ai/qwen3.5-abliterated:4b",
+    default_image_model=DEFAULT_IMAGE_MODEL,
+    default_optimization_model=DEFAULT_OPTIMIZATION_MODEL,
     optimization_enabled=True,
     max_image_pixels=1_500_000,  # 1.5MP instead of 2MP
     generation_timeout=180  # 3 minutes instead of 5
@@ -132,8 +137,8 @@ genimg generate "a beautiful sunset over the ocean"
 # With output file
 genimg generate "a red sports car" --output car.png
 
-# With specific model
-genimg generate "a landscape" --model bytedance-seed/seedream-4.5
+# With specific model (or omit to use default from models.yaml)
+genimg generate "a landscape" --model "$GENIMG_DEFAULT_MODEL"
 
 # With API key (overrides environment variable)
 genimg generate "a sunset" --api-key sk-or-v1-your-key-here
@@ -145,8 +150,8 @@ genimg generate "a sunset" --api-key sk-or-v1-your-key-here
 # Enable optimization
 genimg generate "a mountain scene" --optimize
 
-# With specific optimization model
-genimg generate "a forest" --optimize --optimization-model huihui_ai/qwen3.5-abliterated:4b
+# With specific optimization model (or omit to use default from models.yaml)
+genimg generate "a forest" --optimize --optimization-model "$GENIMG_OPTIMIZATION_MODEL"
 ```
 
 ### With Reference Image

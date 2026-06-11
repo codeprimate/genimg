@@ -11,7 +11,8 @@ import importlib.resources
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
+from pydantic import BaseModel, Field
+from pydantic import ValidationError as PydanticValidationError
 
 from genimg.utils.exceptions import ConfigurationError
 
@@ -25,7 +26,6 @@ class ModelsSchema(BaseModel):
     default_ollama_image_model: str = Field(..., min_length=1)
     default_optimization_model: str = Field(..., min_length=1)
     image_models: list[str] = Field(default_factory=list)
-    optimization_models: list[str] = Field(default_factory=list)
 
 
 def _load_models() -> dict[str, Any]:
@@ -90,6 +90,17 @@ def image_models() -> list[str]:
     return list(_load_models().get("image_models") or [])
 
 
-def optimization_models() -> list[str]:
-    """Ollama optimization model suggestion list."""
-    return list(_load_models().get("optimization_models") or [])
+def merge_optimization_model_choices(
+    *,
+    default: str,
+    installed: list[str],
+) -> list[str]:
+    """Merge default and installed Ollama models (default first, deduplicated)."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    for name in (default, *installed):
+        stripped = name.strip() if isinstance(name, str) else ""
+        if stripped and stripped not in seen:
+            merged.append(stripped)
+            seen.add(stripped)
+    return merged

@@ -988,7 +988,7 @@ class TestCharacterCommand:
     @patch("genimg.cli.commands.process_reference_image")
     @patch("genimg.cli.commands.validate_prompt")
     @patch("genimg.cli.commands.Config")
-    def test_pins_openrouter_and_default_model_when_flags_omitted(
+    def test_respects_config_defaults_when_flags_omitted(
         self,
         mock_config_cls: MagicMock,
         _mock_validate: MagicMock,
@@ -998,8 +998,10 @@ class TestCharacterCommand:
         tmp_path: Path,
     ) -> None:
         config = MagicMock()
-        config.default_image_provider = "ollama"
+        config.default_image_provider = "openrouter"
         config.default_image_model = "some/other-model"
+        config.default_ollama_image_model = "x/z-image-turbo"
+        config.default_draw_things_image_model = ""
         mock_config_cls.from_env.return_value = config
         config.validate.return_value = None
 
@@ -1007,7 +1009,7 @@ class TestCharacterCommand:
         result_obj = _png_generation_result(
             prompt_used="x",
             generation_time=1.2,
-            model_used=DEFAULT_IMAGE_MODEL,
+            model_used="some/other-model",
             had_reference=True,
         )
         mock_generate.return_value = result_obj
@@ -1021,7 +1023,7 @@ class TestCharacterCommand:
         mock_print_success.assert_not_called()
         kw = mock_generate.call_args[1]
         assert kw["provider"] == "openrouter"
-        assert kw["model"] == DEFAULT_IMAGE_MODEL
+        assert kw["model"] is None
         assert kw["reference_images_b64"] == ["b64x"]
         _assert_saved_png_cli_metadata(
             out,
@@ -1149,6 +1151,25 @@ class TestCharacterCommand:
         assert kw["provider"] == "draw_things"
         assert kw["model"] == "cli_override.ckpt"
         assert kw["reference_images_b64"] == ["b64x"]
+
+    @patch("genimg.cli.commands.Config")
+    def test_default_provider_ollama_fails_before_generate(
+        self,
+        mock_config_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        config = MagicMock()
+        config.default_image_provider = "ollama"
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+        ref = tmp_path / "r.png"
+        ref.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        result = _run_character(
+            "T", str(ref), "--quiet", "--out", str(tmp_path / "o.png")
+        )
+        assert result.exit_code != 0
+        assert "reference" in result.output.lower()
 
     @patch("genimg.cli.commands.Config")
     def test_provider_ollama_fails_before_generate(

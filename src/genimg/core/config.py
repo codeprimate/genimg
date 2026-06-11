@@ -12,7 +12,11 @@ from dotenv import load_dotenv
 
 from genimg.core.models import (
     default_image_model as _yaml_default_image_model,
+)
+from genimg.core.models import (
     default_ollama_image_model as _yaml_default_ollama_image_model,
+)
+from genimg.core.models import (
     default_optimization_model as _yaml_default_optimization_model,
 )
 from genimg.core.provider_ids import KNOWN_IMAGE_PROVIDER_IDS, PROVIDER_DRAW_THINGS

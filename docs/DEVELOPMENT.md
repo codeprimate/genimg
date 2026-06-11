@@ -43,9 +43,10 @@ cp .env.example .env
 
 **Optional (Image Generation):**
 - `GENIMG_DEFAULT_IMAGE_PROVIDER` — `openrouter`, `ollama`, or `draw_things` (project default in code is `ollama`; README examples often use OpenRouter)
-- `GENIMG_DEFAULT_MODEL` — Default image generation model for the active provider (OpenRouter-style id when provider is openrouter)
+- `GENIMG_DEFAULT_MODEL` — Override default OpenRouter image model (default from `models.yaml`)
+- `GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL` — Override default Ollama image model (default from `models.yaml`)
 - `GENIMG_DRAW_THINGS_HOST`, `GENIMG_DRAW_THINGS_PORT`, `GENIMG_DRAW_THINGS_PRESET`, `GENIMG_DRAW_THINGS_DEFAULT_MODEL` (default checkpoint when using Draw Things), and other `GENIMG_DRAW_THINGS_*` variables — see README for Draw Things local gRPC and preset overrides
-- `GENIMG_OPTIMIZATION_MODEL` — Default Ollama model for prompt optimization (default: `huihui_ai/qwen3.5-abliterated:4b`)
+- `GENIMG_OPTIMIZATION_MODEL` — Override default Ollama optimization model (default from `models.yaml`)
 
 **Optional (Web UI):**
 - `GENIMG_UI_PORT` — Gradio server port (default: 7860)
@@ -329,7 +330,7 @@ cached = get_cached_prompt(prompt, model, reference_hash=image_hash)
 import importlib.resources
 import yaml
 
-# Load bundled YAML files (prompts.yaml, ui_models.yaml)
+# Load bundled YAML files (prompts.yaml, models.yaml)
 with importlib.resources.files("genimg").joinpath("prompts.yaml").open(encoding="utf-8") as f:
     data = yaml.safe_load(f)
 ```
@@ -590,7 +591,7 @@ python scripts/inspect_cache.py
 
 **Bundled YAML Files:**
 - `prompts.yaml` - Prompt templates
-- `ui_models.yaml` - Model dropdown lists for UI
+- `models.yaml` - Default model IDs and suggestion lists for UI/CLI
 - Declared in `pyproject.toml`: `[tool.setuptools.package-data]`
 - Access via `importlib.resources.files("genimg").joinpath("file.yaml")`
 - Cached after first load (module-level cache in `prompts_loader.py`)

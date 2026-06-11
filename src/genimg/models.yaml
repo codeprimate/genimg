@@ -30,7 +30,6 @@ default_ollama_image_model: "x/z-image-turbo"
 # Draw Things: checkpoint choices come from the Draw Things app catalog.
 # No static list or default here (use GENIMG_DRAW_THINGS_DEFAULT_MODEL).
 
-# Ollama models for prompt optimization (dropdown suggestions; user can type another).
-default_optimization_model: "huihui_ai/qwen3.5-abliterated:4b"
-optimization_models:
-  - huihui_ai/qwen3.5-abliterated:4b
+# Ollama prompt optimization models are enumerated dynamically via /api/tags.
+# default_optimization_model pins the preferred default; UI allow_custom_value accepts any ID.
+default_optimization_model: "huihui_ai/gemma-4-abliterated:e4b"

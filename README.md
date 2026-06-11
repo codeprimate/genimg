@@ -71,11 +71,12 @@ Copy `.env.example` to `.env` and configure:
 # Required (for OpenRouter image generation)
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
-# Optional
-GENIMG_DEFAULT_MODEL=bytedance-seed/seedream-4.5
-GENIMG_DEFAULT_IMAGE_PROVIDER=openrouter   # or "ollama"/"draw_things" for local image generation
-GENIMG_DRAW_THINGS_DEFAULT_MODEL=moodymix_zitv10dpo_f16.ckpt
-GENIMG_OPTIMIZATION_MODEL=huihui_ai/qwen3.5-abliterated:4b
+# Optional overrides (defaults live in src/genimg/models.yaml)
+# GENIMG_DEFAULT_MODEL=...
+# GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL=...
+# GENIMG_DEFAULT_IMAGE_PROVIDER=openrouter   # or "ollama"/"draw_things" for local image generation
+# GENIMG_DRAW_THINGS_DEFAULT_MODEL=moodymix_zitv10dpo_f16.ckpt
+# GENIMG_OPTIMIZATION_MODEL=...
 GENIMG_VERBOSITY=0                        # 0=quiet (WARNING+), 1=INFO+prompts, 2=DEBUG (CLI/UI/library)
 ```
 
@@ -231,22 +232,22 @@ genimg character "Rogue Pilot" refs/front.jpg refs/side.jpg -o sheet.png
 genimg character "Rogue Pilot" ref.jpg   # timestamped file in the current directory
 ```
 
-- **Defaults (unlike `generate`):** omitting `--provider` and `--model` pins **OpenRouter** and `bytedance-seed/seedream-4.5`. `GENIMG_DEFAULT_IMAGE_PROVIDER` and `GENIMG_DEFAULT_MODEL` are **not** used. Pass `--provider` / `--model` to override.
+- **Defaults:** same as `genimg generate` — provider and model come from config / `models.yaml` unless you pass `--provider` / `--model`. Reference images require **OpenRouter** or **Draw Things** (not Ollama).
 - **Scripting:** on success, stdout is a single line (saved path). `--quiet` suppresses stderr progress/banner. `--api-key`, `-v` / `-vv`, `GENIMG_VERBOSITY`, and `--debug-api` are supported. Prefer **OpenRouter** unless your image provider accepts the references you pass (see [Reference images with Ollama](#reference-images-with-ollama)). Full detail: `genimg character --help`.
 
 ### As a Python Library
 
 ```python
-from genimg import generate_image, optimize_prompt, Config
+from genimg import DEFAULT_IMAGE_MODEL, generate_image, optimize_prompt, Config
 
 # Configure
 config = Config.from_env()
 config.validate()
 
-# Generate an image (default: OpenRouter)
+# Generate an image (default model from models.yaml / config)
 result = generate_image(
     prompt="a serene mountain landscape at dawn",
-    model="bytedance-seed/seedream-4.5"
+    model=DEFAULT_IMAGE_MODEL,
 )
 
 # Or use Ollama for image generation
@@ -285,8 +286,10 @@ Prompt optimization uses Ollama over **HTTP** (same server as image generation: 
 
 ## Available Models
 
-- **Image generation**: Default is OpenRouter model `bytedance-seed/seedream-4.5`. You can switch the provider to **Ollama** and use local image models (see [Ollama image models](https://ollama.com/blog/image-generation)). Set `GENIMG_DEFAULT_IMAGE_PROVIDER=ollama` or choose in the UI.
-- **Prompt optimization**: Uses Ollama (default `huihui_ai/qwen3.5-abliterated:4b`) via the HTTP API. Pull the model with `ollama pull huihui_ai/qwen3.5-abliterated:4b` (or your chosen tag).
+Default model IDs are defined in [`src/genimg/models.yaml`](src/genimg/models.yaml). Override via `GENIMG_DEFAULT_MODEL`, `GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL`, and `GENIMG_OPTIMIZATION_MODEL`.
+
+- **Image generation**: Default OpenRouter model from `models.yaml`. Switch provider to **Ollama** or **Draw Things** via config or UI.
+- **Prompt optimization**: Uses Ollama via the HTTP API; default from `models.yaml`.
 
 Check [OpenRouter's model list](https://openrouter.ai/models) for more cloud image models.
 
