@@ -98,7 +98,7 @@ class Config:
     # Ollama thinking: when True, optimization uses LLM thinking (slower); when False (default), pass think=false for speed
     optimize_thinking: bool = False
 
-    # Optimization output format: "prose" (default, structured labeled sections) or "json" (Ideogram 4 schema, assembled to prose for image model)
+    # Optimization output format: "prose" (structured labeled sections) or "json" (Ideogram 4 JSON caption, sent verbatim to the image model)
     optimize_format: str = DEFAULT_OPTIMIZE_FORMAT
 
     # Debug: log raw API payload/response with image data truncated

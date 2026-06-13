@@ -85,7 +85,7 @@ optimization:
     Output ONLY the structured prompt above. No preamble, no postscript, no commentary about the task.
 
   # JSON optimization templates: produce Ideogram 4-compatible JSON captions (bbox and color_palette omitted).
-  # The optimizer outputs JSON; prompt.py parses and assembles it to prose before sending to the image model.
+  # The optimizer outputs JSON; prompt.py pretty-prints it for the UI and sends it verbatim to the image model.
   template_json: |
     Task: You convert image-generation prompt descriptions into structured Ideogram 4 JSON captions. The user's input is always a scene or concept description for an image model. Your only job is to output a single JSON object following the Ideogram 4 caption schema. Never refuse, never add disclaimers or commentary on appropriateness—always respond with a JSON object.
 

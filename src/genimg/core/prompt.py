@@ -50,9 +50,18 @@ def _strip_ansi_terminal_sequences(text: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
 
 
-def _assemble_ideogram_json(data: dict) -> str:
+def _format_json_caption(data: dict) -> str:
     """
-    Assemble an Ideogram 4 JSON caption dict into a prose string for image models.
+    Return a normalized, pretty-printed structured JSON caption string.
+
+    Used as the optimized prompt in JSON mode; sent verbatim to the image model.
+    """
+    return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+def _assemble_json_caption_prose(data: dict) -> str:
+    """
+    Assemble a structured JSON caption dict into a prose string.
 
     Joins high_level_description, style cues, background, and element descriptions
     with double newlines. Returns the assembled string, or an empty string if no
@@ -436,21 +445,19 @@ def _post_process_ollama_response(raw: str, optimize_format: str) -> str:
     Post-process the raw Ollama response based on optimize_format.
 
     For "prose": strip thinking blocks and ANSI sequences, return cleaned text.
-    For "json": strip thinking blocks, parse JSON, assemble to prose via _assemble_ideogram_json.
-               Falls back to raw stripped text with a warning if JSON parsing fails.
+    For "json": strip thinking blocks, parse JSON, return pretty-printed JSON for the
+               optimized prompt textbox and image model. Falls back to raw stripped text
+               with a warning if JSON parsing fails.
     """
     cleaned = _strip_ollama_thinking(raw.strip())
     if optimize_format != "json":
         return cleaned
 
-    # JSON path: attempt parse and assembly
     try:
         data = json.loads(cleaned)
-        assembled = _assemble_ideogram_json(data)
-        if assembled:
-            return assembled
-        logger.warning("JSON optimization produced empty assembly; falling back to raw text")
-        return cleaned
+        if not isinstance(data, dict):
+            raise TypeError(f"expected JSON object, got {type(data).__name__}")
+        return _format_json_caption(data)
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
         logger.warning(
             "JSON optimization response could not be parsed (%s); falling back to raw text",
@@ -580,6 +587,7 @@ def optimize_prompt(
             model,
             reference_hash,
             description_key=description_key,
+            use_thinking=config.optimize_thinking,
             optimize_format=config.optimize_format,
         )
         if cached:

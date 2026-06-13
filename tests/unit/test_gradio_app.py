@@ -411,6 +411,56 @@ class TestRunGenerate:
 
     @patch("genimg.ui.gradio_app.generate_image")
     @patch("genimg.ui.gradio_app.optimize_prompt")
+    @patch("genimg.ui.gradio_app.process_reference_image")
+    @patch("genimg.ui.gradio_app.validate_prompt")
+    @patch("genimg.ui.gradio_app.Config")
+    def test_format_changed_reoptimizes_despite_matching_prompt_and_ref(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_validate: MagicMock,
+        _mock_ref: MagicMock,
+        mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+    ) -> None:
+        """When output format changes, Generate re-optimizes even if prompt and ref match."""
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.openrouter_api_key = "sk-test"
+        config.generation_timeout = 60
+        config.max_image_pixels = 2_000_000
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+        mock_optimize.return_value = '{\n  "high_level_description": "a red car"\n}'
+        pil_image = Image.new("RGB", (10, 10), color="red")
+        result = MagicMock()
+        result.image = pil_image
+        result.generation_time = 1.0
+        mock_generate.return_value = result
+
+        prose_state = {
+            "prompt": "a red car",
+            "ref_hash": None,
+            "format": "prose",
+        }
+        stream = gradio_app._run_generate_stream(
+            "a red car",
+            optimize=True,
+            optimized_prompt_value="Scene Setup: prose optimized text",
+            reference_value=None,
+            provider=None,
+            model=None,
+            optimized_for_state=prose_state,
+            optimize_format="json",
+        )
+        items = list(stream)
+        mock_optimize.assert_called_once()
+        assert mock_optimize.call_args.kwargs["config"].optimize_format == "json"
+        mock_generate.assert_called_once()
+        assert mock_generate.call_args[0][0] == '{\n  "high_level_description": "a red car"\n}'
+        assert any("Done" in (item[0] or "") for item in items)
+
+    @patch("genimg.ui.gradio_app.generate_image")
+    @patch("genimg.ui.gradio_app.optimize_prompt")
     @patch("genimg.ui.gradio_app.unload_describe_models")
     @patch("genimg.ui.gradio_app.get_description")
     @patch("genimg.ui.gradio_app.process_reference_image")
@@ -542,6 +592,20 @@ class TestGenerateClickHandler:
 
 
 @pytest.mark.unit
+class TestUiOptimizeFormat:
+    """Test mapping from Gradio Output format dropdown to config optimize_format."""
+
+    def test_json_values_map_to_json(self) -> None:
+        assert gradio_app._ui_optimize_format("JSON") == "json"
+        assert gradio_app._ui_optimize_format("json") == "json"
+
+    def test_prose_and_unknown_values_map_to_prose(self) -> None:
+        assert gradio_app._ui_optimize_format("Prose") == "prose"
+        assert gradio_app._ui_optimize_format("") == "prose"
+        assert gradio_app._ui_optimize_format(None) == "prose"
+
+
+@pytest.mark.unit
 class TestOptimizeClickHandler:
     """Test _optimize_click_handler (UI handler with mocked stream)."""
 
@@ -576,6 +640,27 @@ class TestOptimizeClickHandler:
             out = list(gradio_app._optimize_click_handler("a dog", None, None, state))
         assert len(out) == 2
         assert out[1][1] == "optimized text"
+
+    def test_handler_passes_json_format_to_stream(self) -> None:
+        gradio_app._cancel_event.clear()
+        state = {"prompt": "", "ref_hash": None}
+        with patch("genimg.ui.gradio_app._run_optimize_only_stream") as mock_stream:
+            mock_stream.return_value = iter(
+                [
+                    (
+                        "Optimizing…",
+                        "",
+                        False,
+                        True,
+                        False,
+                        None,
+                        "[Optimizing] genimg – AI image generation",
+                        "",
+                    ),
+                ]
+            )
+            list(gradio_app._optimize_click_handler("a dog", None, None, state, optimize_format_ui="JSON"))
+        assert mock_stream.call_args.kwargs["optimize_format"] == "json"
 
     def test_handler_on_error_yields_message(self) -> None:
         gradio_app._cancel_event.clear()

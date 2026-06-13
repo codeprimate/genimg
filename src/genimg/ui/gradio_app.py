@@ -97,9 +97,11 @@ def _page_title_with_status(status_tag: str) -> str:
 # Shared cancellation event: Generate clears at start, Stop sets it
 _cancel_event = threading.Event()
 
-# State key for "which (prompt, ref_hash) the optimized box content was produced for"
+# State keys for "which inputs the optimized box content was produced for"
 OPTIMIZED_FOR_PROMPT = "prompt"
 OPTIMIZED_FOR_REF_HASH = "ref_hash"
+OPTIMIZED_FOR_FORMAT = "format"
+DEFAULT_OPTIMIZED_FOR_FORMAT = "prose"
 
 # Temp paths we create (favicon, reference images, output JPGs); cleaned on process exit
 _temp_paths: set[str] = set()
@@ -137,15 +139,30 @@ atexit.register(_cleanup_temp_paths)
 
 def _initial_optimized_for_state() -> dict[str, Any]:
     """Initial value for optimized_for_state (JSON-serializable for Gradio)."""
-    return {OPTIMIZED_FOR_PROMPT: "", OPTIMIZED_FOR_REF_HASH: None}
+    return {
+        OPTIMIZED_FOR_PROMPT: "",
+        OPTIMIZED_FOR_REF_HASH: None,
+        OPTIMIZED_FOR_FORMAT: DEFAULT_OPTIMIZED_FOR_FORMAT,
+    }
+
+
+def _ui_optimize_format(optimize_format_ui: str | None) -> str:
+    """Map Gradio Output format dropdown value to config optimize_format."""
+    if (optimize_format_ui or "").strip().lower() == "json":
+        return "json"
+    return DEFAULT_OPTIMIZED_FOR_FORMAT
 
 
 def _coerce_optimized_for_state(value: Any) -> dict[str, Any]:
     """Normalize Gradio State to a dict (handles None, JSON string, or legacy shapes)."""
     if isinstance(value, dict):
+        stored_format = value.get(OPTIMIZED_FOR_FORMAT) or DEFAULT_OPTIMIZED_FOR_FORMAT
+        if stored_format not in ("prose", "json"):
+            stored_format = DEFAULT_OPTIMIZED_FOR_FORMAT
         return {
             OPTIMIZED_FOR_PROMPT: _normalize_prompt(value.get(OPTIMIZED_FOR_PROMPT)),
             OPTIMIZED_FOR_REF_HASH: value.get(OPTIMIZED_FOR_REF_HASH),
+            OPTIMIZED_FOR_FORMAT: stored_format,
         }
     if isinstance(value, str) and value.strip():
         try:
@@ -749,6 +766,7 @@ def _run_generate_stream(
     state_matches = (
         _normalize_prompt(state.get(OPTIMIZED_FOR_PROMPT)) == _normalize_prompt(prompt)
         and state.get(OPTIMIZED_FOR_REF_HASH) == ref_hash
+        and (state.get(OPTIMIZED_FOR_FORMAT) or DEFAULT_OPTIMIZED_FOR_FORMAT) == optimize_format
     )
     if has_box_content and state_matches and optimize:
         # Use current box content (may be user-edited); do not run optimize or overwrite box
@@ -779,6 +797,7 @@ def _run_generate_stream(
             state = {
                 OPTIMIZED_FOR_PROMPT: _normalize_prompt(prompt),
                 OPTIMIZED_FOR_REF_HASH: ref_hash,
+                OPTIMIZED_FOR_FORMAT: optimize_format,
             }
         except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
             yield (
@@ -820,6 +839,7 @@ def _run_generate_stream(
             state = {
                 OPTIMIZED_FOR_PROMPT: _normalize_prompt(prompt),
                 OPTIMIZED_FOR_REF_HASH: ref_hash,
+                OPTIMIZED_FOR_FORMAT: optimize_format,
             }
         except (ValidationError, APIError, RequestTimeoutError, CancellationError) as e:
             yield (
@@ -928,7 +948,7 @@ def _generate_click_handler(
     state = _coerce_optimized_for_state(optimized_for_state)
     ui_to_method = {"Prose (Florence)": "prose", "Tags (JoyTag)": "tags"}
     description_method = ui_to_method.get(desc_method_ui, "prose")
-    optimize_format = "json" if optimize_format_ui == "JSON" else "prose"
+    optimize_format = _ui_optimize_format(optimize_format_ui)
     try:
         for (
             status_msg,
@@ -1010,7 +1030,7 @@ def _optimize_click_handler(
     state = _coerce_optimized_for_state(optimized_for_state)
     ui_to_method = {"Prose (Florence)": "prose", "Tags (JoyTag)": "tags"}
     description_method = ui_to_method.get(desc_method_ui, "prose")
-    optimize_format = "json" if optimize_format_ui == "JSON" else "prose"
+    optimize_format = _ui_optimize_format(optimize_format_ui)
     try:
         for (
             status_msg,
@@ -1223,6 +1243,7 @@ def _run_optimize_only_stream(
         state_update = {
             OPTIMIZED_FOR_PROMPT: _normalize_prompt(prompt),
             OPTIMIZED_FOR_REF_HASH: ref_hash,
+            OPTIMIZED_FOR_FORMAT: optimize_format,
         }
         yield (
             _format_status("Optimized. Edit above if needed, then Generate.", "success"),
@@ -1340,7 +1361,7 @@ def _build_blocks() -> gr.Blocks:
                             label="Output format",
                             choices=["Prose", "JSON"],
                             value="Prose",
-                            info="Prose: structured labeled sections. JSON: Ideogram 4 schema, assembled to prose for the image model.",
+                            info="Prose: structured labeled sections. JSON: Ideogram 4 schema, sent verbatim to the image model.",
                         )
                         optimize_btn = gr.Button(
                             "Enhance Prompt", variant="secondary", interactive=False

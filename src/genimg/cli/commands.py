@@ -136,7 +136,7 @@ cli.add_command(draw_things_group)
     help=(
         "Optimization output format (default: prose). "
         "'prose' outputs structured labeled sections. "
-        "'json' uses Ideogram 4 schema and is assembled to prose for the image model."
+        "'json' uses Ideogram 4 schema; the JSON caption is sent verbatim to the image model."
     ),
 )
 @click.option(

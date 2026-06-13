@@ -8,7 +8,7 @@ import pytest
 from genimg.core.config import Config
 from genimg.core.prompt import (
     OPTIMIZATION_TEMPLATE,
-    _assemble_ideogram_json,
+    _assemble_json_caption_prose,
     _strip_ollama_thinking,
     check_ollama_available,
     list_ollama_image_models,
@@ -522,8 +522,8 @@ class TestCancelCheckExceptionHandling:
 
 
 @pytest.mark.unit
-class TestAssembleIdeogramJson:
-    """Tests for _assemble_ideogram_json()."""
+class TestAssembleJsonCaptionProse:
+    """Tests for _assemble_json_caption_prose()."""
 
     def _full_caption(self) -> dict:
         return {
@@ -544,7 +544,7 @@ class TestAssembleIdeogramJson:
         }
 
     def test_full_caption_includes_all_sections(self):
-        result = _assemble_ideogram_json(self._full_caption())
+        result = _assemble_json_caption_prose(self._full_caption())
         assert "A barista pouring latte art." in result
         assert "warm, cozy" in result
         assert "A cozy cafe interior." in result
@@ -561,7 +561,7 @@ class TestAssembleIdeogramJson:
                 ],
             },
         }
-        result = _assemble_ideogram_json(data)
+        result = _assemble_json_caption_prose(data)
         assert 'Text reading "HELLO": bold serif at top' in result
 
     def test_text_element_no_desc(self):
@@ -571,7 +571,7 @@ class TestAssembleIdeogramJson:
                 "elements": [{"type": "text", "text": "SIGN"}],
             }
         }
-        result = _assemble_ideogram_json(data)
+        result = _assemble_json_caption_prose(data)
         assert 'Text reading "SIGN"' in result
 
     def test_art_style_included(self):
@@ -584,15 +584,15 @@ class TestAssembleIdeogramJson:
             },
             "compositional_deconstruction": {"background": "white", "elements": []},
         }
-        result = _assemble_ideogram_json(data)
+        result = _assemble_json_caption_prose(data)
         assert "flat vector illustration" in result
 
     def test_missing_top_level_fields_handled_gracefully(self):
-        result = _assemble_ideogram_json({})
+        result = _assemble_json_caption_prose({})
         assert result == ""
 
     def test_sections_joined_with_double_newline(self):
-        result = _assemble_ideogram_json(self._full_caption())
+        result = _assemble_json_caption_prose(self._full_caption())
         assert "\n\n" in result
 
     def test_empty_elements_list(self):
@@ -600,7 +600,7 @@ class TestAssembleIdeogramJson:
             "high_level_description": "Minimal scene.",
             "compositional_deconstruction": {"background": "Plain.", "elements": []},
         }
-        result = _assemble_ideogram_json(data)
+        result = _assemble_json_caption_prose(data)
         assert "Minimal scene." in result
         assert "Plain." in result
 
@@ -658,8 +658,10 @@ class TestJsonOptimizationFormat:
         payload = post.call_args[1]["json"]
         assert "format" not in payload
 
-    def test_json_format_response_assembled_to_prose(self):
-        """Valid JSON response is parsed and assembled; returned string is plain prose."""
+    def test_json_format_response_returns_pretty_json(self):
+        """Valid JSON response is parsed and returned as pretty-printed JSON."""
+        import json as json_module
+
         config = Config(openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json")
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
             with patch("genimg.core.prompt.requests.post") as post:
@@ -667,10 +669,11 @@ class TestJsonOptimizationFormat:
                 resp.json.return_value = {"response": self._valid_caption_json()}
                 post.return_value = resp
                 result = optimize_prompt_with_ollama("a dog on a skateboard", config=config)
-        assert "golden retriever" in result
-        assert "sunny sidewalk" in result
-        # Result must be plain text, not raw JSON
-        assert result.strip()[0] != "{"
+        parsed = json_module.loads(result)
+        assert parsed["high_level_description"] == "A golden retriever on a skateboard."
+        assert parsed["compositional_deconstruction"]["background"] == "A sunny sidewalk."
+        assert result.strip().startswith("{")
+        assert "\n" in result
 
     def test_json_format_invalid_json_falls_back_to_raw_text(self):
         """When JSON parse fails, raw Ollama text is returned (no exception raised)."""
