@@ -9,11 +9,13 @@ from typing import Final
 PROVIDER_OPENROUTER: Final[str] = "openrouter"
 PROVIDER_OLLAMA: Final[str] = "ollama"
 PROVIDER_DRAW_THINGS: Final[str] = "draw_things"
+PROVIDER_WIRO: Final[str] = "wiro"
 
 KNOWN_IMAGE_PROVIDER_IDS: Final[tuple[str, ...]] = (
     PROVIDER_OPENROUTER,
     PROVIDER_OLLAMA,
     PROVIDER_DRAW_THINGS,
+    PROVIDER_WIRO,
 )
 
 

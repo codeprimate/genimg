@@ -510,6 +510,33 @@ class TestGenerateImageValidation:
 
         assert mock_provider.generate.call_args.kwargs["model"] == "x/z-image-turbo"
 
+    def test_wiro_uses_default_wiro_image_model(self):
+        config = Config(
+            wiro_api_key="wiro-key",
+            default_image_provider="wiro",
+            default_image_model="openrouter/wrong",
+            default_wiro_image_model="bytedance/seedream-v4-5-uncensored",
+        )
+        mock_provider = MagicMock()
+        mock_provider.supports_reference_image = True
+        mock_provider.generate.return_value = GenerationResult(
+            image=Image.open(io.BytesIO(MINIMAL_PNG)).copy(),
+            _format="png",
+            generation_time=0.01,
+            model_used="bytedance/seedream-v4-5-uncensored",
+            prompt_used="a cat",
+            had_reference=False,
+        )
+
+        with patch("genimg.core.image_gen.get_registry") as m_reg:
+            m_reg.return_value.get.return_value = mock_provider
+            generate_image("a cat", config=config, provider="wiro", model=None)
+
+        assert (
+            mock_provider.generate.call_args.kwargs["model"]
+            == "bytedance/seedream-v4-5-uncensored"
+        )
+
     def test_draw_things_without_default_model_raises(self):
         config = Config(
             default_image_provider="draw_things",

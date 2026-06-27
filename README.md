@@ -2,13 +2,13 @@
 
 A Python package for generating AI images with intelligent prompt optimization. Generate high-quality images from simple text descriptions using multiple AI models via OpenRouter (or local providers), with optional local prompt enhancement via the **Ollama HTTP API**.
 
-**Current version:** 0.10.x (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
+**Current version:** 0.17.0 (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
 
 ## Features
 
-- 🎨 **Multiple AI Models & Providers**: Generate images via **OpenRouter** (cloud), **Ollama** (local), or **Draw Things** (local gRPC on macOS). Choose provider and model in the UI or config.
+- 🎨 **Multiple AI Models & Providers**: Generate images via **OpenRouter** (cloud), **Wiro** (cloud), **Ollama** (local), or **Draw Things** (local gRPC on macOS). Choose provider and model in the UI or config.
 - ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama over **HTTP** (same `OLLAMA_BASE_URL` as Ollama image generation); optional in both CLI and web UI
-- 🖼️ **Reference Images**: Use reference images to guide style/generation (OpenRouter); process refs for optimization context (both providers). CLI and web UI.
+- 🖼️ **Reference Images**: Use reference images to guide style/generation (OpenRouter, Wiro, and Draw Things); process refs for optimization context (all providers). CLI and web UI.
 - 📑 **Character turnaround (CLI)**: `genimg character` builds a turnaround-style sheet from one or more reference images (base prompt in bundled `prompts.yaml` under `character.template`, plus optional `--prompt` / `-p`).
 - 📷 **Reference Image Description**: In the web UI, describe a reference image (prose or tags via Florence/JoyTag) and optionally feed that into prompt optimization
 - 💻 **Dual Interface**: Both CLI and web UI (Gradio) interfaces
@@ -25,7 +25,8 @@ A Python package for generating AI images with intelligent prompt optimization. 
 ### Prerequisites
 
 - Python 3.10 or higher
-- **OpenRouter API key** ([get one here](https://openrouter.ai/keys)) — required for cloud image generation. Not needed if you use only Ollama for image generation.
+- **OpenRouter API key** ([get one here](https://openrouter.ai/keys)) — required for cloud image generation via OpenRouter. Not needed if you use only Ollama, Draw Things, or Wiro.
+- **Wiro API credentials** ([wiro.ai panel](https://wiro.ai/panel/project)) — required when using Wiro as the image provider (`WIRO_API_KEY`, `WIRO_API_SECRET`).
 - **Ollama** ([install here](https://ollama.ai)) — optional for prompt optimization; required if you use Ollama as the image provider.
 
 ### Install from GitHub
@@ -74,8 +75,11 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here
 # Optional overrides (defaults live in src/genimg/models.yaml)
 # GENIMG_DEFAULT_MODEL=...
 # GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL=...
-# GENIMG_DEFAULT_IMAGE_PROVIDER=openrouter   # or "ollama"/"draw_things" for local image generation
+# GENIMG_DEFAULT_IMAGE_PROVIDER=openrouter   # or "ollama", "draw_things", or "wiro"
 # GENIMG_DRAW_THINGS_DEFAULT_MODEL=moodymix_zitv10dpo_f16.ckpt
+# WIRO_API_KEY=...                         # when provider is wiro
+# WIRO_API_SECRET=...                      # signature auth for Wiro Run
+# GENIMG_DEFAULT_WIRO_IMAGE_MODEL=bytedance/seedream-v4-5-uncensored
 # GENIMG_OPTIMIZATION_MODEL=...
 GENIMG_VERBOSITY=0                        # 0=quiet (WARNING+), 1=INFO+prompts, 2=DEBUG (CLI/UI/library)
 ```
@@ -134,8 +138,8 @@ Then open your browser to the displayed URL (default: http://127.0.0.1:7860).
 The web UI supports:
 
 - **Prompt & optimization**: Main prompt, optional enhancement (checkbox), and an editable optimized-prompt box. Use **Enhance Prompt** to run optimization, or **Generate** with optimization on to optimize then generate in one go.
-- **Reference image**: Upload a reference image. It is sent only when the selected provider supports references (for example OpenRouter and Draw Things). With **Ollama** it is used only as optimization context (not sent to the image model). Optional **Describe** (prose or tags) and **Use image description** feed description text into optimization.
-- **Provider & models**: Choose image provider (**OpenRouter**, **Ollama**, or **Draw Things**) and pick image/optimization models from dropdowns.
+- **Reference image**: Upload a reference image. It is sent only when the selected provider supports references (OpenRouter, Wiro, and Draw Things). With **Ollama** it is used only as optimization context (not sent to the image model). Optional **Describe** (prose or tags) and **Use image description** feed description text into optimization.
+- **Provider & models**: Choose image provider (**OpenRouter**, **Wiro**, **Ollama**, or **Draw Things**) and pick image/optimization models from dropdowns.
 - **Generation**: **Generate** with progress, **Stop** to cancel, then view or download the result (JPG, timestamped filename).
 - **Browser notifications**: Optional alerts when generation or optimization completes (permission on first load; useful if the tab is in the background).
 - **Edits preserved**: Changes to the optimized prompt made while generation is running are kept when the run finishes.
@@ -232,7 +236,7 @@ genimg character "Rogue Pilot" refs/front.jpg refs/side.jpg -o sheet.png
 genimg character "Rogue Pilot" ref.jpg   # timestamped file in the current directory
 ```
 
-- **Defaults:** same as `genimg generate` — provider and model come from config / `models.yaml` unless you pass `--provider` / `--model`. Reference images require **OpenRouter** or **Draw Things** (not Ollama).
+- **Defaults:** same as `genimg generate` — provider and model come from config / `models.yaml` unless you pass `--provider` / `--model`. Reference images require **OpenRouter**, **Wiro**, or **Draw Things** (not Ollama).
 - **Scripting:** on success, stdout is a single line (saved path). `--quiet` suppresses stderr progress/banner. `--api-key`, `-v` / `-vv`, `GENIMG_VERBOSITY`, and `--debug-api` are supported. Prefer **OpenRouter** unless your image provider accepts the references you pass (see [Reference images with Ollama](#reference-images-with-ollama)). Full detail: `genimg character --help`.
 
 ### As a Python Library
@@ -249,6 +253,9 @@ result = generate_image(
     prompt="a serene mountain landscape at dawn",
     model=DEFAULT_IMAGE_MODEL,
 )
+
+# Or use Wiro for cloud image generation (owner/model slug)
+result = generate_image("a cat", provider="wiro", model="bytedance/seedream-v4-5-uncensored")
 
 # Or use Ollama for image generation
 result = generate_image("a cat", provider="ollama", model="llama3.2-vision")
@@ -286,9 +293,9 @@ Prompt optimization uses Ollama over **HTTP** (same server as image generation: 
 
 ## Available Models
 
-Default model IDs are defined in [`src/genimg/models.yaml`](src/genimg/models.yaml). Override via `GENIMG_DEFAULT_MODEL`, `GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL`, and `GENIMG_OPTIMIZATION_MODEL`.
+Default model IDs are defined in [`src/genimg/models.yaml`](src/genimg/models.yaml). Override via `GENIMG_DEFAULT_MODEL`, `GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL`, `GENIMG_DEFAULT_WIRO_IMAGE_MODEL`, and `GENIMG_OPTIMIZATION_MODEL`.
 
-- **Image generation**: Default OpenRouter model from `models.yaml`. Switch provider to **Ollama** or **Draw Things** via config or UI.
+- **Image generation**: Default OpenRouter model from `models.yaml`. Switch provider to **Wiro**, **Ollama**, or **Draw Things** via config or UI.
 - **Prompt optimization**: Uses Ollama via the HTTP API; default from `models.yaml`.
 
 Check [OpenRouter's model list](https://openrouter.ai/models) for more cloud image models.
@@ -334,13 +341,15 @@ make test-unit
 make coverage
 ```
 
-**Integration tests** (optional, manual): they call the real OpenRouter API, are slow, and cost money. They are excluded from `make test`. To run them:
+**Integration tests** (optional, manual): they call real external APIs (OpenRouter, Wiro, etc.), are slow, and may cost money. They are excluded from `make test`. To run them:
 
 ```bash
 GENIMG_RUN_INTEGRATION_TESTS=1 make test-integration
+# Wiro only (also requires WIRO_API_KEY and --run-slow):
+GENIMG_RUN_INTEGRATION_TESTS=1 .venv/bin/pytest tests/integration/test_wiro_image_gen.py --run-slow
 ```
 
-Requires `OPENROUTER_API_KEY` in `.env` or the environment. Output images are written to `tmp/` (timestamped filenames). See [Development Guide](docs/DEVELOPMENT.md#integration-tests-manual-slow-costs-money) for details.
+Requires API credentials in `.env` or the environment (`OPENROUTER_API_KEY` and/or `WIRO_API_KEY`). Output images are written to `tmp/`. See [Development Guide](docs/DEVELOPMENT.md#integration-tests-manual-slow-costs-money) for details.
 
 ## Project Structure
 
@@ -365,6 +374,7 @@ genimg/
 - [EXAMPLES.md](docs/EXAMPLES.md) — Usage examples
 - [browser-notifications.md](docs/browser-notifications.md) — Web UI notification flow
 - [CHANGELOG.md](docs/CHANGELOG.md) — Change history
+- [releases/v0.17.0.md](docs/releases/v0.17.0.md) — v0.17.0 release notes (Wiro provider)
 
 ## Troubleshooting
 
@@ -380,11 +390,15 @@ You can generate images without Ollama by skipping optimization.
 
 ### "OpenRouter API key is required"
 
-This appears when using OpenRouter for image generation. Set `OPENROUTER_API_KEY` in your environment or `.env`, or switch the image provider to Ollama (UI dropdown or `GENIMG_DEFAULT_IMAGE_PROVIDER=ollama`) if you want to generate images locally only.
+This appears when using OpenRouter for image generation. Set `OPENROUTER_API_KEY` in your environment or `.env`, or switch the image provider to Ollama, Wiro, or Draw Things (UI dropdown or `GENIMG_DEFAULT_IMAGE_PROVIDER`).
+
+### "Wiro API key is required"
+
+Set `WIRO_API_KEY` (and usually `WIRO_API_SECRET` for Run requests) when using Wiro. See `.env.example`.
 
 ### Reference images with Ollama
 
-Reference images are sent to the image model when using **OpenRouter** or **Draw Things**. With **Ollama**, the reference is used only as context for prompt optimization (e.g. with "Use image description"); the image is not sent to the Ollama image model.
+Reference images are sent to the image model when using **OpenRouter**, **Wiro**, or **Draw Things**. With **Ollama**, the reference is used only as context for prompt optimization (e.g. with "Use image description"); the image is not sent to the Ollama image model.
 
 ### Image Processing Errors
 

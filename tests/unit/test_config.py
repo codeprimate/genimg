@@ -12,6 +12,7 @@ from genimg.core.config import (
     DEFAULT_OLLAMA_IMAGE_MODEL,
     DEFAULT_OPTIMIZATION_MODEL,
     DEFAULT_OPTIMIZE_FORMAT,
+    DEFAULT_WIRO_IMAGE_MODEL,
     KNOWN_IMAGE_PROVIDERS,
     Config,
     get_config,
@@ -25,6 +26,9 @@ from genimg.core.models import (
 )
 from genimg.core.models import (
     default_optimization_model as yaml_default_optimization_model,
+)
+from genimg.core.models import (
+    default_wiro_image_model as yaml_default_wiro_image_model,
 )
 from genimg.utils.exceptions import ConfigurationError
 
@@ -91,6 +95,30 @@ class TestConfig:
         assert yaml_default_image_model() == DEFAULT_IMAGE_MODEL
         assert yaml_default_ollama_image_model() == DEFAULT_OLLAMA_IMAGE_MODEL
         assert yaml_default_optimization_model() == DEFAULT_OPTIMIZATION_MODEL
+        assert yaml_default_wiro_image_model() == DEFAULT_WIRO_IMAGE_MODEL
+
+    def test_from_env_wiro_credentials(self):
+        with patch.dict(
+            os.environ,
+            {
+                "WIRO_API_KEY": "wiro-key",
+                "WIRO_API_SECRET": "wiro-secret",
+                "WIRO_API_BASE_URL": "https://custom.wiro.example/v1",
+                "GENIMG_DEFAULT_WIRO_IMAGE_MODEL": "owner/custom-model",
+            },
+            clear=False,
+        ):
+            c = Config.from_env()
+        assert c.wiro_api_key == "wiro-key"
+        assert c.wiro_api_secret == "wiro-secret"
+        assert c.wiro_base_url == "https://custom.wiro.example/v1"
+        assert c.default_wiro_image_model == "owner/custom-model"
+
+    def test_validate_raises_when_wiro_default_without_api_key(self):
+        c = Config(wiro_api_key="", default_image_provider="wiro")
+        with pytest.raises(ConfigurationError) as exc_info:
+            c.validate()
+        assert "Wiro API key" in str(exc_info.value)
 
     def test_from_env_defaults_when_env_empty(self):
         with patch.dict(

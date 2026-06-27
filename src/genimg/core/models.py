@@ -25,7 +25,9 @@ class ModelsSchema(BaseModel):
     default_image_model: str = Field(..., min_length=1)
     default_ollama_image_model: str = Field(..., min_length=1)
     default_optimization_model: str = Field(..., min_length=1)
+    default_wiro_image_model: str = Field(..., min_length=1)
     image_models: list[str] = Field(default_factory=list)
+    wiro_image_models: list[str] = Field(default_factory=list)
 
 
 def _load_models() -> dict[str, Any]:
@@ -63,7 +65,7 @@ def _load_models() -> dict[str, Any]:
         raise ConfigurationError(
             f"Invalid models.yaml structure:\n{errors}\n"
             "Expected default_image_model, default_ollama_image_model, "
-            "and default_optimization_model keys."
+            "default_optimization_model, and default_wiro_image_model keys."
         ) from e
 
     _models_data = data
@@ -88,6 +90,16 @@ def default_optimization_model() -> str:
 def image_models() -> list[str]:
     """OpenRouter image model suggestion list."""
     return list(_load_models().get("image_models") or [])
+
+
+def default_wiro_image_model() -> str:
+    """Default Wiro image model ID (owner/model slug)."""
+    return str(_load_models()["default_wiro_image_model"])
+
+
+def wiro_image_models() -> list[str]:
+    """Wiro image model suggestion list."""
+    return list(_load_models().get("wiro_image_models") or [])
 
 
 def merge_optimization_model_choices(

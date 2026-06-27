@@ -7,6 +7,7 @@ from genimg.core.providers import (
     PROVIDER_DRAW_THINGS,
     PROVIDER_OLLAMA,
     PROVIDER_OPENROUTER,
+    PROVIDER_WIRO,
     get_registry,
 )
 
@@ -31,6 +32,12 @@ class TestProviderRegistry:
         assert impl is not None
         assert getattr(impl, "supports_reference_image", None) is True
 
+    def test_get_wiro_returns_implementation(self):
+        reg = get_registry()
+        impl = reg.get(PROVIDER_WIRO)
+        assert impl is not None
+        assert getattr(impl, "supports_reference_image", None) is True
+
     def test_get_unknown_returns_none(self):
         reg = get_registry()
         assert reg.get("unknown") is None
@@ -41,9 +48,11 @@ class TestProviderRegistry:
         assert PROVIDER_OPENROUTER in ids
         assert PROVIDER_OLLAMA in ids
         assert PROVIDER_DRAW_THINGS in ids
-        assert len(ids) >= 3
+        assert PROVIDER_WIRO in ids
+        assert len(ids) >= 4
 
     def test_known_image_providers_constant(self):
         assert PROVIDER_OPENROUTER in KNOWN_IMAGE_PROVIDERS
         assert PROVIDER_OLLAMA in KNOWN_IMAGE_PROVIDERS
         assert PROVIDER_DRAW_THINGS in KNOWN_IMAGE_PROVIDERS
+        assert PROVIDER_WIRO in KNOWN_IMAGE_PROVIDERS

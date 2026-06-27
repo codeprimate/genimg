@@ -42,8 +42,10 @@ cp .env.example .env
   - Can also be provided via CLI: `genimg generate --api-key sk-or-v1-...`
 
 **Optional (Image Generation):**
-- `GENIMG_DEFAULT_IMAGE_PROVIDER` — `openrouter`, `ollama`, or `draw_things` (project default in code is `ollama`; README examples often use OpenRouter)
+- `GENIMG_DEFAULT_IMAGE_PROVIDER` — `openrouter`, `ollama`, `draw_things`, or `wiro` (project default in code is `ollama`; README examples often use OpenRouter)
 - `GENIMG_DEFAULT_MODEL` — Override default OpenRouter image model (default from `models.yaml`)
+- `GENIMG_DEFAULT_WIRO_IMAGE_MODEL` — Override default Wiro model slug (default from `models.yaml`)
+- `WIRO_API_KEY`, `WIRO_API_SECRET`, `WIRO_API_BASE_URL` — Wiro provider credentials and API base URL
 - `GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL` — Override default Ollama image model (default from `models.yaml`)
 - `GENIMG_DRAW_THINGS_HOST`, `GENIMG_DRAW_THINGS_PORT`, `GENIMG_DRAW_THINGS_PRESET`, `GENIMG_DRAW_THINGS_DEFAULT_MODEL` (default checkpoint when using Draw Things), and other `GENIMG_DRAW_THINGS_*` variables — see README for Draw Things local gRPC and preset overrides
 - `GENIMG_OPTIMIZATION_MODEL` — Override default Ollama optimization model (default from `models.yaml`)
@@ -96,19 +98,22 @@ make typecheck
 
 ### Integration tests (manual, slow, costs money)
 
-Integration tests call the real OpenRouter API. They are **excluded from the default test run** (`make test` / `pytest`). Run them only when you need to verify the live API:
+Integration tests call real external APIs (OpenRouter, Wiro, etc.). They are **excluded from the default test run** (`make test` / `pytest`). Run them only when you need to verify live providers:
 
 ```bash
 # Opt-in: set env and run integration tests only
 GENIMG_RUN_INTEGRATION_TESTS=1 make test-integration
 # or
 GENIMG_RUN_INTEGRATION_TESTS=1 .venv/bin/pytest -m integration
+
+# Wiro only (slow; also pass --run-slow)
+GENIMG_RUN_INTEGRATION_TESTS=1 .venv/bin/pytest tests/integration/test_wiro_image_gen.py --run-slow
 ```
 
 Requirements:
 
 - `GENIMG_RUN_INTEGRATION_TESTS=1` (opt-in so they never run by accident)
-- `OPENROUTER_API_KEY` set in `.env` or environment
+- Provider credentials in `.env` or environment (`OPENROUTER_API_KEY` for OpenRouter tests; `WIRO_API_KEY` / `WIRO_API_SECRET` for Wiro tests)
 
 ## Library API
 
@@ -118,7 +123,7 @@ The library is the single source of truth for all product behavior (see [SPEC.md
 - **Configuration**: Pass `config` per operation (e.g. `generate_image(..., config=my_config)`) or use the shared config via `get_config()` / `set_config()`. When passing config explicitly, the caller may call `config.validate()` before use if the operation depends on credentials.
 - **Cache**: The prompt optimization cache is process-scoped. Use `clear_cache()` and `get_cached_prompt()` for cache management; `get_cache()` gives direct access to the cache instance.
 - **API keys**: The library does not log or expose API keys in error messages, return values, or config repr.
-- **Testability**: HTTP clients are not yet injectable end-to-end; unit tests mock `requests` for OpenRouter, Ollama image generation, and Ollama prompt optimization. A future improvement would be dependency injection so tests do not patch at import sites.
+- **Testability**: HTTP clients are not yet injectable end-to-end; unit tests mock `requests` for OpenRouter, Wiro, Ollama image generation, and Ollama prompt optimization. A future improvement would be dependency injection so tests do not patch at import sites.
 
 ## Common Development Tasks
 

@@ -49,11 +49,13 @@ from genimg.core.image_gen import resolve_default_image_model
 from genimg.core.models import (
     image_models as yaml_image_models,
     merge_optimization_model_choices,
+    wiro_image_models as yaml_wiro_image_models,
 )
 from genimg.core.provider_ids import (
     PROVIDER_DRAW_THINGS,
     PROVIDER_OLLAMA,
     PROVIDER_OPENROUTER,
+    PROVIDER_WIRO,
 )
 from genimg.core.providers import get_registry
 from genimg.core.providers.draw_things.lora_choices import (
@@ -84,6 +86,7 @@ _GRADIO_IMAGE_PROVIDER_CHOICES: tuple[str, ...] = (
     PROVIDER_OPENROUTER,
     PROVIDER_OLLAMA,
     PROVIDER_DRAW_THINGS,
+    PROVIDER_WIRO,
 )
 
 
@@ -376,6 +379,7 @@ def _empty_lora_slots() -> tuple[list[str], list[float]]:
 def _load_model_choices() -> tuple[
     list[str],
     list[str],
+    list[str],
     str,
     str,
     str,
@@ -384,15 +388,24 @@ def _load_model_choices() -> tuple[
 ]:
     """
     Load model dropdown choices from models.yaml and config.
-    Returns (image_models, ollama_image_models, default_image_provider,
-             default_image_model, default_ollama_model, optimization_model_choices,
-             default_optimization_model).
+    Returns (image_models, ollama_image_models, wiro_image_models,
+             default_image_provider, default_image_model, default_ollama_model,
+             optimization_model_choices, default_optimization_model).
     """
     image_models: list[str] = list(yaml_image_models())
     config = Config.from_env()
     default_image_yaml = config.default_image_model
     if default_image_yaml and default_image_yaml not in image_models:
         image_models = [default_image_yaml] + [m for m in image_models if m != default_image_yaml]
+
+    wiro_image_models: list[str] = list(yaml_wiro_image_models())
+    default_wiro = config.default_wiro_image_model
+    if default_wiro and default_wiro not in wiro_image_models:
+        wiro_image_models = [default_wiro] + wiro_image_models
+    elif default_wiro and wiro_image_models:
+        wiro_image_models = [default_wiro] + [
+            m for m in wiro_image_models if m != default_wiro
+        ]
 
     ollama_image_models: list[str] = list_ollama_image_models()
     default_ollama = config.default_ollama_image_model
@@ -409,6 +422,8 @@ def _load_model_choices() -> tuple[
         default_image_model: str = config.default_image_model
     elif default_image_provider == PROVIDER_DRAW_THINGS:
         default_image_model = _CHECKPOINT_NONE
+    elif default_image_provider == PROVIDER_WIRO:
+        default_image_model = config.default_wiro_image_model
     else:
         default_image_model = default_ollama
 
@@ -421,12 +436,30 @@ def _load_model_choices() -> tuple[
     return (
         image_models,
         ollama_image_models,
+        wiro_image_models,
         default_image_provider,
         default_image_model,
         default_ollama,
         opt_models,
         default_opt,
     )
+
+
+def _image_model_choices_for_provider(
+    provider: str,
+    *,
+    image_models: list[str],
+    ollama_image_models: list[str],
+    wiro_image_models: list[str],
+) -> list[str]:
+    """Return model dropdown choices for the selected image provider."""
+    if provider == PROVIDER_OPENROUTER:
+        return image_models
+    if provider == PROVIDER_DRAW_THINGS:
+        return _checkpoint_ui_choices([], [])
+    if provider == PROVIDER_WIRO:
+        return wiro_image_models
+    return ollama_image_models
 
 
 # Max length for browser notification body (truncate long error messages)
@@ -1277,6 +1310,7 @@ def _build_blocks() -> gr.Blocks:
     (
         image_models,
         ollama_image_models,
+        wiro_image_models,
         default_image_provider,
         default_image_model,
         default_ollama,
@@ -1417,14 +1451,11 @@ def _build_blocks() -> gr.Blocks:
                 model_dd = gr.Dropdown(
                     label="Image model",
                     value=default_image_model,
-                    choices=(
-                        image_models
-                        if default_image_provider == PROVIDER_OPENROUTER
-                        else (
-                            _checkpoint_ui_choices([], [])
-                            if default_image_provider == PROVIDER_DRAW_THINGS
-                            else ollama_image_models
-                        )
+                    choices=_image_model_choices_for_provider(
+                        default_image_provider,
+                        image_models=image_models,
+                        ollama_image_models=ollama_image_models,
+                        wiro_image_models=wiro_image_models,
                     ),
                     allow_custom_value=True,
                     visible=True,
@@ -1528,6 +1559,18 @@ def _build_blocks() -> gr.Blocks:
                         visible=True,
                         value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
                     ),
+                    *_lora_slot_updates(visible=False, pairs=[]),
+                )
+            if provider == PROVIDER_WIRO:
+                config = Config.from_env()
+                wiro_default = resolve_default_image_model(
+                    provider_id=PROVIDER_WIRO, config=config
+                )
+                if not wiro_default and wiro_image_models:
+                    wiro_default = wiro_image_models[0]
+                return (
+                    gr.update(choices=wiro_image_models, value=wiro_default),
+                    gr.update(visible=False),
                     *_lora_slot_updates(visible=False, pairs=[]),
                 )
             if provider == PROVIDER_DRAW_THINGS:

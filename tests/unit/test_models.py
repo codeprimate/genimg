@@ -10,8 +10,10 @@ from genimg.core.models import (
     default_image_model,
     default_ollama_image_model,
     default_optimization_model,
+    default_wiro_image_model,
     image_models,
     merge_optimization_model_choices,
+    wiro_image_models,
 )
 from genimg.utils.exceptions import ConfigurationError
 
@@ -22,6 +24,13 @@ class TestModelsLoader:
         assert default_image_model() == "bytedance-seed/seedream-4.5"
         assert default_ollama_image_model() == "x/z-image-turbo"
         assert default_optimization_model() == "huihui_ai/qwen3.5-abliterated:4b"
+        assert default_wiro_image_model() == "bytedance/seedream-v4-5-uncensored"
+
+    def test_wiro_image_models_is_non_empty_list(self):
+        models = wiro_image_models()
+        assert isinstance(models, list)
+        assert len(models) > 0
+        assert default_wiro_image_model() in models
 
     def test_image_models_is_non_empty_list(self):
         models = image_models()

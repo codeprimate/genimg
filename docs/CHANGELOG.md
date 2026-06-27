@@ -11,10 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (none)
 
 ### Changed
-- **Model defaults:** `ui_models.yaml` renamed to `models.yaml`; loaded by `genimg.core.models` and wired through `config.py`. Env vars override yaml defaults. `genimg character` now uses the same provider/model defaults as `genimg generate`.
+- (none)
 
 ### Fixed
 - (none)
+
+## [0.17.0] - 2026-06-27
+
+### Added
+- **Wiro** image provider (`wiro`): cloud generation via the [wiro.ai](https://wiro.ai) API; schema-aware Run payloads from Tool/Detail (JSON or multipart for file inputs); reference images when the model schema declares file inputs; optional HMAC signature auth when `WIRO_API_SECRET` is set.
+- **`genimg generate --provider wiro`**, Gradio provider dropdown, and bundled defaults in `models.yaml` (`default_wiro_image_model`, `wiro_image_models`). Env vars: `WIRO_API_KEY`, `WIRO_API_SECRET`, `WIRO_API_BASE_URL`, `GENIMG_DEFAULT_WIRO_IMAGE_MODEL`.
+- Wiro integration tests in `tests/integration/test_wiro_image_gen.py` (require `WIRO_API_KEY` and `--run-slow`; optional `GENIMG_WIRO_INTEGRATION_MODEL` / `GENIMG_WIRO_INTEGRATION_REFERENCE_MODEL`).
+- Wiro model suggestion **`bytedance/seedream-v5-lite-uncensored`**.
+
+### Changed
+- **Model defaults:** `ui_models.yaml` renamed to `models.yaml`; loaded by `genimg.core.models` and wired through `config.py`. Env vars override yaml defaults. `genimg character` uses the same provider/model defaults as `genimg generate`.
+
+### Fixed
+- **`generate_image`:** `api_key_override` is passed only when the caller supplies `api_key`; Wiro and other non-OpenRouter providers no longer inherit `OPENROUTER_API_KEY` when `--api-key` is omitted.
+- **Wiro Run payloads:** required non-prompt schema parameters (e.g. `maxImages`, `watermark` on Seedream models) are filled from Tool/Detail schema defaults.
 
 ## [0.14.0] - 2026-04-29
 

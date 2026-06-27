@@ -148,9 +148,10 @@ A **reference image** is an optional visual input provided by the user to guide 
 
 ### 3.4 Image Generation Provider and Model
 
-An **image generation provider** is a backend that can generate images (e.g. **openrouter**, **ollama**, **draw_things**). The system uses a provider registry; the user selects a provider (or uses the default) and a **model** ID that is meaningful for that provider.
+An **image generation provider** is a backend that can generate images (e.g. **openrouter**, **wiro**, **ollama**, **draw_things**). The system uses a provider registry; the user selects a provider (or uses the default) and a **model** ID that is meaningful for that provider.
 
 - **OpenRouter**: Cloud API; supports text and optional reference images; requires an API key; model IDs are OpenRouter-style (e.g. `google/gemini-2.5-flash-image`, `bytedance-seed/seedream-4.5`).
+- **Wiro**: Cloud API ([wiro.ai](https://wiro.ai)); supports text and reference images when the model schema includes file inputs; requires `WIRO_API_KEY` and usually `WIRO_API_SECRET`; model IDs are `owner/project` slugs (e.g. `bytedance/seedream-v4-5-uncensored`).
 - **Ollama**: Local service; text-to-image only (no reference images to the image model); no API key; model IDs are Ollama model names (e.g. `x/z-image-turbo`, `x/flux2-klein`).
 - **Draw Things**: Local gRPC to the Draw Things macOS app; text-to-image and image-to-image (optional reference); no OpenRouter API key; model IDs are Draw Things checkpoint file strings (CLI) or **preset ids** in the Gradio UI that resolve to checkpoints and generation defaults.
 
@@ -422,7 +423,7 @@ flowchart TD
 ### 5.2 Image Generation
 
 #### 5.2.1 Provider and Model Selection
-- System shall support multiple image generation **providers** (openrouter, ollama, draw_things) via a provider registry
+- System shall support multiple image generation **providers** (openrouter, wiro, ollama, draw_things) via a provider registry
 - System shall allow user to select provider via CLI `--provider` or config default (default provider: ollama)
 - System shall allow user to select image generation model per provider (OpenRouter model IDs, Ollama model names, or Draw Things checkpoint strings / preset-driven defaults)
 - System shall provide a default model per provider (from `models.yaml` and config; env overrides)
@@ -430,8 +431,8 @@ flowchart TD
 - System shall support custom model IDs for flexibility (provider-specific format)
 
 #### 5.2.2 Generation Execution
-- System shall delegate to the selected provider (openrouter, ollama, or draw_things); each provider implements the same protocol (prompt, optional reference_image_b64, timeout, cancel_check)
-- System shall send prompt and optional reference image to the selected model when the provider supports reference-conditioned generation (OpenRouter and Draw Things)
+- System shall delegate to the selected provider (openrouter, wiro, ollama, or draw_things); each provider implements the same protocol (prompt, optional reference_image_b64, timeout, cancel_check)
+- System shall send prompt and optional reference image to the selected model when the provider supports reference-conditioned generation (OpenRouter, Wiro, and Draw Things)
 - System shall handle API authentication when provider is OpenRouter (Bearer token); no OpenRouter auth for Ollama or Draw Things
 - System shall track generation time for user feedback
 - System shall retrieve generated image in appropriate format (PIL Image; format from API)
@@ -439,7 +440,7 @@ flowchart TD
 
 #### 5.2.3 Generation Parameters
 - System shall use prompt (original or optimized) as primary input
-- System shall include reference image when provided (providers that support reference to the image model: OpenRouter and Draw Things)
+- System shall include reference image when provided (providers that support reference to the image model: OpenRouter, Wiro, and Draw Things)
 - System shall configure API to return image output
 - System shall handle model-specific parameter requirements
 
@@ -551,8 +552,8 @@ flowchart TD
 #### 5.6.4 CLI Parameters
 - System shall support `--prompt` or `-p` for text description input (required)
 - System shall support `--model` or `-m` for image generation model selection (provider-specific)
-- System shall support `--provider` for image generation provider: `openrouter`, `ollama`, or `draw_things` (default from config)
-- System shall support `--reference` or `-r` for reference image file path when the selected provider sends references to the image model (OpenRouter and Draw Things)
+- System shall support `--provider` for image generation provider: `openrouter`, `wiro`, `ollama`, or `draw_things` (default from config)
+- System shall support `--reference` or `-r` for reference image file path when the selected provider sends references to the image model (OpenRouter, Wiro, and Draw Things)
 - System shall support `--no-optimize` flag to skip prompt optimization
 - System shall support `--out` or `-o` for output image file path
 - System shall support `--optimization-model` for selecting optimization model (Ollama)
@@ -600,11 +601,12 @@ Reference Image:
 ```
 Configuration:
   - openrouter_api_key: string (required when provider is openrouter, sensitive)
-  - default_image_provider: string (e.g. "openrouter" | "ollama" | "draw_things", default: "ollama")
+  - default_image_provider: string (e.g. "openrouter" | "wiro" | "ollama" | "draw_things", default: "ollama")
   - default_image_model: string (provider-specific model ID)
   - default_optimization_model: string (Ollama model name)
   - optimization_enabled: boolean (runtime)
   - ollama_base_url: string (optional; for Ollama provider and optimization)
+  - wiro_api_key, wiro_api_secret, wiro_base_url, default_wiro_image_model: strings (when provider is wiro)
   - draw_things_host, draw_things_port: string/int (when provider is draw_things)
   - draw_things_preset, default_draw_things_image_model: strings (preset id and checkpoint; optional per-field overrides for width, steps, sampler, etc. via env — see code and README)
   - debug_api: boolean (optional)
@@ -717,10 +719,11 @@ Cache Entry:
 Image generation is abstracted behind a **provider registry**. Built-in providers:
 
 - **openrouter** — Cloud API (OpenRouter); supports reference images; requires API key.
+- **wiro** — Cloud API (Wiro.ai); supports reference images when model schema declares file inputs; requires `WIRO_API_KEY` and usually `WIRO_API_SECRET`; models are `owner/project` slugs.
 - **ollama** — Local Ollama service; text-to-image only (no reference to the image model); no API key; uses `ollama_base_url` (default `http://127.0.0.1:11434`).
 - **draw_things** — Local gRPC to the Draw Things app; text- and image-conditioned generation; optional Python extras for wire types and tensor decode; configurable host, port, TLS, and preset/checkpoint (see §7.3).
 
-The default provider is **ollama**. Users select provider via `--provider` (CLI) or config (`GENIMG_DEFAULT_IMAGE_PROVIDER`). Reference images are sent to the image model for **openrouter** and **draw_things**; the CLI and library validate and guide the user when a reference is supplied with **ollama** as the image provider.
+The default provider is **ollama**. Users select provider via `--provider` (CLI) or config (`GENIMG_DEFAULT_IMAGE_PROVIDER`). Reference images are sent to the image model for **openrouter**, **wiro**, and **draw_things**; the CLI and library validate and guide the user when a reference is supplied with **ollama** as the image provider.
 
 ### 7.1 OpenRouter API
 

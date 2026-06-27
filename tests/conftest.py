@@ -10,7 +10,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--run-slow",
         action="store_true",
         default=False,
-        help="Run slow tests (Florence describe, Ollama, OpenRouter). Default: skip them.",
+        help="Run slow tests (Florence describe, Ollama, OpenRouter, Wiro). Default: skip them.",
     )
 
 

@@ -13,6 +13,7 @@ def test_known_image_provider_ids_contains_expected_values() -> None:
     assert provider_ids.PROVIDER_OPENROUTER in provider_ids.KNOWN_IMAGE_PROVIDER_IDS
     assert provider_ids.PROVIDER_OLLAMA in provider_ids.KNOWN_IMAGE_PROVIDER_IDS
     assert provider_ids.PROVIDER_DRAW_THINGS in provider_ids.KNOWN_IMAGE_PROVIDER_IDS
+    assert provider_ids.PROVIDER_WIRO in provider_ids.KNOWN_IMAGE_PROVIDER_IDS
 
 
 @pytest.mark.unit

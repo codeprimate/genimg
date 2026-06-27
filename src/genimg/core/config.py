@@ -19,7 +19,10 @@ from genimg.core.models import (
 from genimg.core.models import (
     default_optimization_model as _yaml_default_optimization_model,
 )
-from genimg.core.provider_ids import KNOWN_IMAGE_PROVIDER_IDS, PROVIDER_DRAW_THINGS
+from genimg.core.models import (
+    default_wiro_image_model as _yaml_default_wiro_image_model,
+)
+from genimg.core.provider_ids import KNOWN_IMAGE_PROVIDER_IDS, PROVIDER_DRAW_THINGS, PROVIDER_WIRO
 from genimg.logging_config import get_logger
 from genimg.utils.exceptions import ConfigurationError
 
@@ -38,6 +41,10 @@ DEFAULT_OLLAMA_IMAGE_MODEL = _yaml_default_ollama_image_model()
 DEFAULT_DRAW_THINGS_HOST = "127.0.0.1"
 DEFAULT_DRAW_THINGS_PORT = 7859
 DEFAULT_DRAW_THINGS_PRESET = "z-image"
+DEFAULT_WIRO_BASE_URL = "https://api.wiro.ai/v1"
+DEFAULT_WIRO_IMAGE_MODEL = _yaml_default_wiro_image_model()
+WIRO_POLL_INITIAL_INTERVAL_S = 3
+WIRO_POLL_MAX_INTERVAL_S = 10
 DEFAULT_OPTIMIZE_FORMAT = "prose"
 KNOWN_OPTIMIZE_FORMATS = ("prose", "json")
 
@@ -81,6 +88,12 @@ class Config:
     draw_things_upscaler: str | None = None
     draw_things_upscaler_scale_factor: int | None = None
     draw_things_loras: tuple[tuple[str, float], ...] | None = None
+
+    # Wiro (image generation when provider == "wiro")
+    wiro_api_key: str = field(default="", repr=False)
+    wiro_api_secret: str = field(default="", repr=False)
+    wiro_base_url: str = DEFAULT_WIRO_BASE_URL
+    default_wiro_image_model: str = DEFAULT_WIRO_IMAGE_MODEL
 
     # Image Processing Configuration
     min_image_pixels: int = 2500  # minimum total pixels for reference images
@@ -227,6 +240,16 @@ class Config:
             draw_things_upscaler_scale_factor=_opt_int_env(
                 "GENIMG_DRAW_THINGS_UPSCALER_SCALE_FACTOR"
             ),
+            wiro_api_key=os.getenv("WIRO_API_KEY", ""),
+            wiro_api_secret=os.getenv("WIRO_API_SECRET", ""),
+            wiro_base_url=(
+                os.getenv("WIRO_API_BASE_URL", DEFAULT_WIRO_BASE_URL).strip()
+                or DEFAULT_WIRO_BASE_URL
+            ),
+            default_wiro_image_model=os.getenv(
+                "GENIMG_DEFAULT_WIRO_IMAGE_MODEL",
+                DEFAULT_WIRO_IMAGE_MODEL,
+            ),
             min_image_pixels=_int_env("GENIMG_MIN_IMAGE_PIXELS", 2500),
             optimize_thinking=optimize_thinking,
             optimize_format=optimize_format,
@@ -296,6 +319,12 @@ class Config:
                         "Draw Things root CA PEM path does not exist or is not a file: "
                         f"{self.draw_things_root_ca_pem_path}"
                     )
+        elif provider == PROVIDER_WIRO:
+            if not self.wiro_api_key.strip():
+                raise ConfigurationError(
+                    "Wiro API key is required when default provider is wiro. "
+                    "Set WIRO_API_KEY environment variable."
+                )
         # provider == "ollama": no API key required; ollama_base_url can use default
 
         self._validated = True

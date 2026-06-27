@@ -13,7 +13,7 @@ User Input (prompt + optional reference image)
     ↓
 Prompt Optimization (optional, via Ollama HTTP API)
     ↓
-Image Generation (provider registry: OpenRouter, Ollama HTTP, Draw Things gRPC)
+Image Generation (provider registry: OpenRouter, Wiro, Ollama HTTP, Draw Things gRPC)
     ↓
 Image Output (saved file or displayed in UI)
 ```
@@ -50,7 +50,7 @@ src/genimg/
 ### Module Responsibilities
 
 - **core/config.py**: Load/validate API keys, manage model selection, global config instance
-- **core/image_gen.py**: Route to image providers (OpenRouter, Ollama HTTP, Draw Things), multimodal where supported, parse responses
+- **core/image_gen.py**: Route to image providers (OpenRouter, Wiro, Ollama HTTP, Draw Things), multimodal where supported, parse responses
 - **core/prompt.py**: Validate prompts, call Ollama for optimization, cache results
 - **core/reference.py**: Load/resize/encode reference images to base64
 - **core/prompts_loader.py**: Load prompt templates from bundled YAML files
@@ -188,13 +188,15 @@ Library polls `cancel_check()` every 250ms; raises `CancellationError` when True
 
 ### Environment Variables
 
-**Required:**
-- `OPENROUTER_API_KEY` - OpenRouter API key (format: `sk-or-v1-...`)
+**Required (provider-dependent):**
+- `OPENROUTER_API_KEY` - OpenRouter API key (format: `sk-or-v1-...`) when provider is **openrouter**
   - Can also be provided via CLI: `genimg generate --api-key sk-or-v1-...` or `genimg ui --api-key sk-or-v1-...`
+- `WIRO_API_KEY` / `WIRO_API_SECRET` - Wiro credentials when provider is **wiro** (secret required for signature-based Run)
 
 **Optional:**
 - `GENIMG_DEFAULT_MODEL` - Default OpenRouter image model (default from `models.yaml`)
 - `GENIMG_DEFAULT_OLLAMA_IMAGE_MODEL` - Default Ollama image model (default from `models.yaml`)
+- `GENIMG_DEFAULT_WIRO_IMAGE_MODEL` - Default Wiro image model slug `owner/model` (default from `models.yaml`)
 - `GENIMG_OPTIMIZATION_MODEL` - Ollama model for optimization (default from `models.yaml`)
 - `OLLAMA_BASE_URL` / `GENIMG_OLLAMA_BASE_URL` - Ollama HTTP server (default `http://127.0.0.1:11434`; used for prompt optimization and Ollama image generation)
 - `GENIMG_UI_PORT`, `GENIMG_UI_HOST`, `GENIMG_UI_SHARE` - UI launch options
@@ -218,6 +220,11 @@ See `EXAMPLES.md` for detailed code examples. Key patterns:
 ### OpenRouter API
 - May return JSON (`choices[0].message.images[]`) or direct image (`content-type: image/*`)
 - Always check content-type header first
+
+### Wiro Integration
+- **Image generation** (provider `wiro`): REST API at `WIRO_API_BASE_URL` (default `https://api.wiro.ai/v1`); Tool/Detail for schema, Run for jobs, Task/Detail polling, CDN download
+- Models use `owner/project` slugs; Run payloads built from schema (required params, multipart for file inputs)
+- Auth: `x-api-key`; with `WIRO_API_SECRET`, adds `x-nonce` + HMAC-SHA256 signature
 
 ### Ollama Integration
 - **Prompt optimization** and **`list_ollama_models()`**: `requests` to `GET /api/tags` and `POST /api/generate` (`stream: false`) on the configured base URL
