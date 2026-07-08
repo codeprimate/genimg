@@ -11,6 +11,11 @@ from genimg.utils.exceptions import ValidationError
 
 FILE_PARAM_TYPES = frozenset({"fileinput", "multifileinput", "combinefileinput"})
 
+# When a reference image is sent, Wiro models default aspectRatio to "auto" and inherit
+# the input image ratio — often producing extreme outputs. Force 1:1 to match genimg defaults.
+WIRO_REFERENCE_ASPECT_RATIO = "1:1"
+WIRO_REFERENCE_SQUARE_SIZE = "1024"
+
 
 class ContentMode(str, Enum):
     """How to send the Run request body."""
@@ -163,6 +168,48 @@ def _default_value_for_required_param(item: dict[str, Any]) -> str | None:
     return None
 
 
+def _select_option_values(item: dict[str, Any]) -> frozenset[str]:
+    options = item.get("options")
+    if not isinstance(options, list):
+        return frozenset()
+    values: set[str] = set()
+    for option in options:
+        if isinstance(option, dict) and "value" in option:
+            values.add(str(option["value"]))
+    return frozenset(values)
+
+
+def _apply_reference_output_sizing(
+    items: list[dict[str, Any]],
+    fields: dict[str, str],
+    *,
+    has_reference: bool,
+) -> dict[str, str]:
+    """Pin output to square when reference images would otherwise inherit input ratio."""
+    if not has_reference:
+        return fields
+
+    updated = dict(fields)
+    param_by_id = {
+        item.get("id"): item
+        for item in items
+        if isinstance(item.get("id"), str) and item.get("id")
+    }
+
+    aspect_item = param_by_id.get("aspectRatio")
+    if aspect_item is not None and "aspectRatio" not in updated:
+        if WIRO_REFERENCE_ASPECT_RATIO in _select_option_values(aspect_item):
+            updated["aspectRatio"] = WIRO_REFERENCE_ASPECT_RATIO
+
+    if "width" in param_by_id and "height" in param_by_id:
+        if "width" not in updated:
+            updated["width"] = WIRO_REFERENCE_SQUARE_SIZE
+        if "height" not in updated:
+            updated["height"] = WIRO_REFERENCE_SQUARE_SIZE
+
+    return updated
+
+
 def _static_schema_fields(
     items: list[dict[str, Any]],
     *,
@@ -256,10 +303,14 @@ def build_run_plan(
 
     assignments = _assign_refs_to_slots(file_slots, refs)
     file_slot_ids = frozenset(slot.param_id for slot in file_slots)
-    static_fields = _static_schema_fields(
+    static_fields = _apply_reference_output_sizing(
         items,
-        prompt_field_id=prompt_field_id,
-        file_slot_ids=file_slot_ids,
+        _static_schema_fields(
+            items,
+            prompt_field_id=prompt_field_id,
+            file_slot_ids=file_slot_ids,
+        ),
+        has_reference=bool(refs),
     )
 
     if not assignments:

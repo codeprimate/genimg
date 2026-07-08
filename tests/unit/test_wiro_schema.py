@@ -75,6 +75,48 @@ SCHEMA_WITH_REQUIRED_EXTRAS = {
     ]
 }
 
+SCHEMA_WITH_FILE_AND_ASPECT = {
+    "tool": [
+        {
+            "parameters": [
+                {
+                    "items": [
+                        {"id": "prompt", "type": "textarea", "required": True},
+                        {"id": "inputImage", "type": "fileinput", "required": True},
+                        {
+                            "id": "aspectRatio",
+                            "type": "select",
+                            "required": False,
+                            "options": [
+                                {"value": "", "text": "auto"},
+                                {"value": "1:1", "text": "1:1"},
+                                {"value": "16:9", "text": "16:9"},
+                            ],
+                        },
+                    ]
+                }
+            ]
+        }
+    ]
+}
+
+SCHEMA_WITH_FILE_AND_DIMENSIONS = {
+    "tool": [
+        {
+            "parameters": [
+                {
+                    "items": [
+                        {"id": "prompt", "type": "textarea", "required": True},
+                        {"id": "inputImage", "type": "combinefileinput", "required": False},
+                        {"id": "width", "type": "number", "required": False},
+                        {"id": "height", "type": "number", "required": False},
+                    ]
+                }
+            ]
+        }
+    ]
+}
+
 
 @pytest.mark.unit
 class TestParseModelSlugs:
@@ -135,6 +177,33 @@ class TestBuildRunPlan:
         assert filename == "inputImage.png"
         assert content == MINIMAL_PNG
         assert content_type == "image/png"
+
+    def test_multipart_plan_with_ref_sets_square_aspect_ratio(self):
+        ref_b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
+        plan = build_run_plan(
+            SCHEMA_WITH_FILE_AND_ASPECT,
+            prompt="edit",
+            reference_images_b64=[ref_b64],
+        )
+        assert plan.multipart_text_fields["aspectRatio"] == "1:1"
+
+    def test_multipart_plan_without_ref_leaves_aspect_ratio_unset(self):
+        plan = build_run_plan(
+            SCHEMA_WITH_FILE_AND_ASPECT,
+            prompt="edit",
+            reference_images_b64=None,
+        )
+        assert "aspectRatio" not in plan.json_fields
+
+    def test_multipart_plan_with_ref_sets_square_width_height(self):
+        ref_b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
+        plan = build_run_plan(
+            SCHEMA_WITH_FILE_AND_DIMENSIONS,
+            prompt="edit",
+            reference_images_b64=[ref_b64],
+        )
+        assert plan.multipart_text_fields["width"] == "1024"
+        assert plan.multipart_text_fields["height"] == "1024"
 
     def test_refs_without_file_inputs_raises(self):
         ref_b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
