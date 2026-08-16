@@ -11,9 +11,9 @@ from genimg.utils.exceptions import ValidationError
 
 FILE_PARAM_TYPES = frozenset({"fileinput", "multifileinput", "combinefileinput"})
 
-# When a reference image is sent, Wiro models default aspectRatio to "auto" and inherit
-# the input image ratio — often producing extreme outputs. Force 1:1 to match genimg defaults.
-WIRO_REFERENCE_ASPECT_RATIO = "1:1"
+# Wiro models often default aspectRatio to "auto" (or a landscape preset). Pin 1:1 to
+# match genimg defaults for both t2i and reference runs.
+WIRO_DEFAULT_ASPECT_RATIO = "1:1"
 WIRO_REFERENCE_SQUARE_SIZE = "1024"
 
 
@@ -87,9 +87,7 @@ def flatten_param_items(schema: dict[str, Any]) -> list[dict[str, Any]]:
 
 def model_has_file_inputs(schema: dict[str, Any]) -> bool:
     """Return True if the model schema declares any file input parameters."""
-    return any(
-        (item.get("type") or "") in FILE_PARAM_TYPES for item in flatten_param_items(schema)
-    )
+    return any((item.get("type") or "") in FILE_PARAM_TYPES for item in flatten_param_items(schema))
 
 
 def _resolve_prompt_field_id(items: list[dict[str, Any]]) -> str:
@@ -179,29 +177,27 @@ def _select_option_values(item: dict[str, Any]) -> frozenset[str]:
     return frozenset(values)
 
 
-def _apply_reference_output_sizing(
+def _apply_output_sizing(
     items: list[dict[str, Any]],
     fields: dict[str, str],
     *,
     has_reference: bool,
 ) -> dict[str, str]:
-    """Pin output to square when reference images would otherwise inherit input ratio."""
-    if not has_reference:
-        return fields
+    """Pin output to 1:1 when the schema allows it.
 
+    With a reference image, also pin square width/height so models do not
+    inherit the input image ratio.
+    """
     updated = dict(fields)
     param_by_id = {
-        item.get("id"): item
-        for item in items
-        if isinstance(item.get("id"), str) and item.get("id")
+        item.get("id"): item for item in items if isinstance(item.get("id"), str) and item.get("id")
     }
 
     aspect_item = param_by_id.get("aspectRatio")
-    if aspect_item is not None and "aspectRatio" not in updated:
-        if WIRO_REFERENCE_ASPECT_RATIO in _select_option_values(aspect_item):
-            updated["aspectRatio"] = WIRO_REFERENCE_ASPECT_RATIO
+    if aspect_item is not None and WIRO_DEFAULT_ASPECT_RATIO in _select_option_values(aspect_item):
+        updated["aspectRatio"] = WIRO_DEFAULT_ASPECT_RATIO
 
-    if "width" in param_by_id and "height" in param_by_id:
+    if has_reference and "width" in param_by_id and "height" in param_by_id:
         if "width" not in updated:
             updated["width"] = WIRO_REFERENCE_SQUARE_SIZE
         if "height" not in updated:
@@ -303,7 +299,7 @@ def build_run_plan(
 
     assignments = _assign_refs_to_slots(file_slots, refs)
     file_slot_ids = frozenset(slot.param_id for slot in file_slots)
-    static_fields = _apply_reference_output_sizing(
+    static_fields = _apply_output_sizing(
         items,
         _static_schema_fields(
             items,

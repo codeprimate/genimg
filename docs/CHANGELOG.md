@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (none)
 
 ### Changed
-- (none)
+- **Wiro t2i:** Run payloads default `aspectRatio` to `1:1` when the model schema offers that option (same square default already used for reference runs).
 
 ### Fixed
 - (none)

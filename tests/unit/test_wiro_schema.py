@@ -32,6 +32,31 @@ SCHEMA_TXT2IMG = {
     ]
 }
 
+SCHEMA_TXT2IMG_WITH_ASPECT = {
+    "tool": [
+        {
+            "parameters": [
+                {
+                    "items": [
+                        {"id": "prompt", "type": "textarea", "required": True},
+                        {
+                            "id": "aspectRatio",
+                            "type": "select",
+                            "required": False,
+                            "default": "16:9",
+                            "options": [
+                                {"value": "", "text": "auto"},
+                                {"value": "1:1", "text": "1:1"},
+                                {"value": "16:9", "text": "16:9"},
+                            ],
+                        },
+                    ]
+                }
+            ]
+        }
+    ]
+}
+
 SCHEMA_WITH_FILE = {
     "tool": [
         {
@@ -149,6 +174,15 @@ class TestBuildRunPlan:
         assert plan.json_fields == {"prompt": "hello"}
         assert plan.multipart_files == ()
 
+    def test_json_plan_t2i_sets_square_aspect_ratio(self):
+        plan = build_run_plan(
+            SCHEMA_TXT2IMG_WITH_ASPECT,
+            prompt="hello",
+            reference_images_b64=None,
+        )
+        assert plan.content_mode == ContentMode.JSON
+        assert plan.json_fields["aspectRatio"] == "1:1"
+
     def test_json_plan_includes_required_schema_fields(self):
         plan = build_run_plan(
             SCHEMA_WITH_REQUIRED_EXTRAS,
@@ -187,13 +221,13 @@ class TestBuildRunPlan:
         )
         assert plan.multipart_text_fields["aspectRatio"] == "1:1"
 
-    def test_multipart_plan_without_ref_leaves_aspect_ratio_unset(self):
+    def test_json_plan_without_ref_sets_square_aspect_ratio(self):
         plan = build_run_plan(
             SCHEMA_WITH_FILE_AND_ASPECT,
             prompt="edit",
             reference_images_b64=None,
         )
-        assert "aspectRatio" not in plan.json_fields
+        assert plan.json_fields["aspectRatio"] == "1:1"
 
     def test_multipart_plan_with_ref_sets_square_width_height(self):
         ref_b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
@@ -204,6 +238,15 @@ class TestBuildRunPlan:
         )
         assert plan.multipart_text_fields["width"] == "1024"
         assert plan.multipart_text_fields["height"] == "1024"
+
+    def test_json_plan_without_ref_does_not_set_width_height(self):
+        plan = build_run_plan(
+            SCHEMA_WITH_FILE_AND_DIMENSIONS,
+            prompt="edit",
+            reference_images_b64=None,
+        )
+        assert "width" not in plan.json_fields
+        assert "height" not in plan.json_fields
 
     def test_refs_without_file_inputs_raises(self):
         ref_b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
