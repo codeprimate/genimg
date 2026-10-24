@@ -431,6 +431,37 @@ def test_client_generate_last_tensor_with_init_image_sets_contents_and_hash() ->
     assert hashlib.sha256(req.contents[1]).digest() == bytes(req.mask)
 
 
+def test_provider_size_pair_overrides_one_run_only() -> None:
+    stub = _FakeStub()
+    cfg = Config()
+    prov = DrawThingsPoCProvider(
+        width_px=512,
+        height_px=512,
+        steps=1,
+        guidance_scale=1.0,
+        grpc_stub=stub,
+    )
+    captured: dict[str, object] = {}
+    original = prov._client.generate_image_last_tensor
+
+    def wrapped(**kwargs: object) -> bytes:
+        captured.clear()
+        captured.update(kwargs)
+        return original(**kwargs)
+
+    prov._client.generate_image_last_tensor = wrapped  # type: ignore[method-assign]
+
+    prov.generate("p", "m.ckpt", None, 30, cfg, None, aspect_ratio="1:1", max_extent=1024)
+    assert captured["width_px"] == 1024
+    assert captured["height_px"] == 1024
+
+    prov.generate("p", "m.ckpt", None, 30, cfg, None)
+    assert captured["width_px"] == 512
+    assert captured["height_px"] == 512
+    assert prov._width_px == 512
+    assert prov._height_px == 512
+
+
 def test_provider_generate() -> None:
     cfg = Config()
     prov = DrawThingsPoCProvider(

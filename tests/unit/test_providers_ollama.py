@@ -69,6 +69,36 @@ class TestOllamaProvider:
         # Ollama image gen always sends think: false for speed
         assert m.call_args.kwargs["json"]["think"] is False
 
+    def test_generate_with_size_pair_posts_no_size_fields(self):
+        config = Config(
+            ollama_base_url="http://127.0.0.1:11434",
+            default_image_provider="ollama",
+        )
+        b64 = base64.b64encode(MINIMAL_PNG).decode("ascii")
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers.get.return_value = "application/json"
+        mock_response.json.return_value = {"image": b64}
+        mock_response.text = ""
+        provider = OllamaProvider()
+        with patch(
+            "genimg.core.providers.ollama.requests.post", return_value=mock_response
+        ) as posted:
+            provider.generate(
+                "a cat",
+                model="x/z-image-turbo",
+                reference_images_b64=None,
+                timeout=60,
+                config=config,
+                cancel_check=None,
+                aspect_ratio="16:9",
+                max_extent=1024,
+            )
+        body = posted.call_args.kwargs["json"]
+        assert set(body) == {"model", "prompt", "stream", "think"}
+        forbidden = {"width", "height", "aspect_ratio", "aspectRatio", "resolution", "image_config"}
+        assert forbidden.isdisjoint(body)
+
     def test_generate_success_json_with_response_key(self):
         """Some Ollama image models return base64 in 'response'."""
         config = Config(

@@ -123,9 +123,7 @@ class WiroProvider:
             time.sleep(interval)
             interval = min(interval * 1.5, float(WIRO_POLL_MAX_INTERVAL_S))
 
-        raise RequestTimeoutError(
-            "Wiro task did not complete before the timeout expired."
-        )
+        raise RequestTimeoutError("Wiro task did not complete before the timeout expired.")
 
     def _generate_impl(
         self,
@@ -135,6 +133,9 @@ class WiroProvider:
         timeout: int,
         config: Config,
         cancel_check: Callable[[], bool] | None,
+        *,
+        aspect_ratio: str | None = None,
+        max_extent: int | None = None,
     ) -> GenerationResult:
         self._validate_config(config)
         owner, project = parse_model_slugs(model)
@@ -151,6 +152,8 @@ class WiroProvider:
             prompt=prompt,
             reference_images_b64=reference_images_b64,
             model_label=model,
+            aspect_ratio=aspect_ratio,
+            max_extent=max_extent,
         )
         run = client.run_model(owner, project, plan)
         task = self._poll_until_done(
@@ -198,6 +201,8 @@ class WiroProvider:
         cancel_check: Callable[[], bool] | None,
         *,
         api_key_override: str | None = None,
+        aspect_ratio: str | None = None,
+        max_extent: int | None = None,
     ) -> GenerationResult:
         """Generate an image via Wiro API."""
         effective_config = config
@@ -213,6 +218,8 @@ class WiroProvider:
                     timeout,
                     effective_config,
                     None,
+                    aspect_ratio=aspect_ratio,
+                    max_extent=max_extent,
                 )
             except requests.exceptions.Timeout as e:
                 raise RequestTimeoutError(
@@ -242,6 +249,8 @@ class WiroProvider:
                     timeout,
                     effective_config,
                     cancel_check,
+                    aspect_ratio=aspect_ratio,
+                    max_extent=max_extent,
                 )
             except requests.exceptions.Timeout as e:
                 err = RequestTimeoutError(
@@ -280,3 +289,11 @@ class WiroProvider:
             raise exc_holder[0]
         assert result_holder[0] is not None
         return result_holder[0]
+
+
+def load_cached_model_schema(config: Config, model: str) -> dict[str, Any]:
+    """Load one Tool/Detail schema through the process-wide Wiro cache."""
+    owner, project = parse_model_slugs(model)
+    provider = WiroProvider()
+    client = provider._client(config, request_timeout=min(config.generation_timeout, 60))
+    return provider._cached_schema(client, owner, project)

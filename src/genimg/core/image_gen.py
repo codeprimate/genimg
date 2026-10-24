@@ -20,6 +20,7 @@ from PIL.ExifTags import Base
 from PIL.PngImagePlugin import PngInfo
 
 from genimg.core.config import Config, get_config
+from genimg.core.output_size import fit_image, normalize_size_pair
 from genimg.core.provider_ids import PROVIDER_DRAW_THINGS, PROVIDER_OLLAMA, PROVIDER_WIRO
 from genimg.core.providers import get_registry
 from genimg.logging_config import get_logger
@@ -365,6 +366,9 @@ def generate_image(
     timeout: int | None = None,
     config: Config | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    *,
+    aspect_ratio: str | None = None,
+    max_extent: int | float | str | None = None,
 ) -> GenerationResult:
     """
     Generate an image using the configured provider (default from config).
@@ -381,12 +385,19 @@ def generate_image(
         config: Optional config to use; if None, uses shared config from get_config()
         cancel_check: Optional callable returning True to cancel; polled during the request.
             Should return quickly and not raise (exceptions are caught and ignored).
+        aspect_ratio: Optional ``auto`` or ``W:H`` token. Set it together with
+            ``max_extent``. A blank string is omitted.
+        max_extent: Optional longer side in pixels, from 1024 through 2048.
+            Set it together with ``aspect_ratio``. A blank string is omitted.
 
     Returns:
-        GenerationResult with image data and metadata
+        GenerationResult with image data and metadata. When the size pair is
+        set, ``image`` is fitted to that pair after the provider returns.
 
     Raises:
-        ValidationError: If inputs are invalid (empty prompt, unknown provider, reference with unsupported provider)
+        ValidationError: If inputs are invalid (empty prompt, unknown provider,
+            reference with unsupported provider, a partial size pair, or a bad
+            extent or aspect token)
         APIError: If API call fails
         NetworkError: If network error occurs
         RequestTimeoutError: If request times out
@@ -423,6 +434,12 @@ def generate_image(
             field="reference_image",
         )
 
+    size_pair = normalize_size_pair(aspect_ratio, max_extent)
+    provider_aspect: str | None = None
+    provider_extent: int | None = None
+    if size_pair is not None:
+        provider_aspect, provider_extent = size_pair
+
     result = impl.generate(
         prompt=prompt,
         model=model,
@@ -431,8 +448,13 @@ def generate_image(
         config=config,
         cancel_check=cancel_check,
         api_key_override=api_key,
+        aspect_ratio=provider_aspect,
+        max_extent=provider_extent,
     )
     result.had_reference = bool(refs)
+    if size_pair is not None:
+        aspect_token, extent = size_pair
+        result.image = fit_image(result.image, aspect_token, extent)
     return result
 
 

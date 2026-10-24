@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
+from genimg.core.output_size import FIXED_ASPECT_RATIOS, MODEL_DEFAULT_LABEL
 from genimg.ui import gradio_app
 from genimg.utils.exceptions import (
     APIError,
@@ -133,6 +134,8 @@ class TestRunGenerate:
         mock_generate.assert_called_once()
         call_kw = mock_generate.call_args[1]
         assert call_kw.get("reference_images_b64") is None
+        assert call_kw.get("aspect_ratio") in ("", None)
+        assert call_kw.get("max_extent") is None
         assert "Done" in msg
         assert img_path is not None
         assert img_path.endswith(".jpg")
@@ -659,7 +662,11 @@ class TestOptimizeClickHandler:
                     ),
                 ]
             )
-            list(gradio_app._optimize_click_handler("a dog", None, None, state, optimize_format_ui="JSON"))
+            list(
+                gradio_app._optimize_click_handler(
+                    "a dog", None, None, state, optimize_format_ui="JSON"
+                )
+            )
         assert mock_stream.call_args.kwargs["optimize_format"] == "json"
 
     def test_handler_on_error_yields_message(self) -> None:
@@ -799,8 +806,24 @@ class TestBuildBlocksAndLaunch:
         assert "ollama" in gradio_app._GRADIO_IMAGE_PROVIDER_CHOICES
 
     def test_build_blocks_returns_blocks(self) -> None:
-        app = gradio_app._build_blocks()
+        with patch(
+            "genimg.ui.gradio_app.load_cached_model_schema",
+            side_effect=APIError("offline"),
+        ):
+            app = gradio_app._build_blocks()
         assert app is not None
+        labels: list[str] = []
+        values: list[str] = []
+        for component in getattr(app, "blocks", {}).values():
+            label = getattr(component, "label", None)
+            if isinstance(label, str):
+                labels.append(label)
+            value = getattr(component, "value", None)
+            if isinstance(value, str):
+                values.append(value)
+        assert "Aspect ratio" in labels
+        assert "Max extent" in labels
+        assert "Output size" in values
 
     def test_launch_calls_build_and_launch(self) -> None:
         """launch() builds app and calls app.launch with host/port/share/inbrowser."""
@@ -873,3 +896,136 @@ class TestRunOptimizeOnlyStream:
         assert len(items) >= 2
         assert items[-1][1] == "optimized result"
         assert "Optimized" in (items[-1][0] or "")
+
+
+def _ratio_schema(options: list[dict[str, str]]) -> dict[str, object]:
+    return {
+        "tool": [
+            {
+                "parameters": [
+                    {
+                        "items": [
+                            {
+                                "id": "aspectRatio",
+                                "type": "select",
+                                "options": options,
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+
+
+@pytest.mark.unit
+class TestOutputSizeChoices:
+    def test_openrouter_uses_the_fixed_list(self) -> None:
+        rows, error = gradio_app.output_size_choices("openrouter", "vendor/model")
+        assert error is None
+        assert rows[0] == (MODEL_DEFAULT_LABEL, "")
+        assert rows[1:] == [(ratio, ratio) for ratio in FIXED_ASPECT_RATIOS]
+
+    @patch("genimg.ui.gradio_app.load_cached_model_schema")
+    def test_wiro_schema_rows_use_option_text(self, mock_load: MagicMock) -> None:
+        mock_load.return_value = _ratio_schema([{"value": "16:9", "text": "Landscape"}])
+        rows, error = gradio_app.output_size_choices("wiro", "owner/model")
+        assert error is None
+        assert rows == [(MODEL_DEFAULT_LABEL, ""), ("Landscape", "16:9")]
+
+    @patch("genimg.ui.gradio_app.load_cached_model_schema")
+    def test_blank_auto_value_submits_auto(self, mock_load: MagicMock) -> None:
+        mock_load.return_value = _ratio_schema([{"value": "", "text": "auto"}])
+        rows, error = gradio_app.output_size_choices("wiro", "owner/model")
+        assert error is None
+        assert rows == [(MODEL_DEFAULT_LABEL, ""), ("auto", "auto")]
+
+    @patch("genimg.ui.gradio_app.load_cached_model_schema")
+    def test_pixel_schema_uses_the_fixed_list(self, mock_load: MagicMock) -> None:
+        mock_load.return_value = {
+            "tool": [
+                {
+                    "parameters": [
+                        {
+                            "items": [
+                                {"id": "width", "type": "number"},
+                                {"id": "height", "type": "number"},
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+        rows, error = gradio_app.output_size_choices("wiro", "owner/flux")
+        assert error is None
+        assert rows[1:] == [(ratio, ratio) for ratio in FIXED_ASPECT_RATIOS]
+
+    @patch("genimg.ui.gradio_app.load_cached_model_schema")
+    def test_api_error_keeps_the_fixed_list(self, mock_load: MagicMock) -> None:
+        mock_load.side_effect = APIError("schema unavailable")
+        rows, error = gradio_app.output_size_choices("wiro", "owner/missing")
+        assert rows[1:] == [(ratio, ratio) for ratio in FIXED_ASPECT_RATIOS]
+        assert error
+
+
+@pytest.mark.unit
+class TestRetainOutputSize:
+    def _choices(self) -> list[tuple[str, str]]:
+        return [(MODEL_DEFAULT_LABEL, "")] + [(ratio, ratio) for ratio in FIXED_ASPECT_RATIOS]
+
+    def test_keeps_a_ratio_that_is_still_present(self) -> None:
+        assert gradio_app.retain_output_size("16:9", 2048, self._choices()) == ("16:9", 2048)
+
+    def test_resets_when_the_ratio_is_absent(self) -> None:
+        choices = [(MODEL_DEFAULT_LABEL, ""), ("1:1", "1:1")]
+        assert gradio_app.retain_output_size("16:9", 2048, choices) == ("", None)
+
+    def test_model_default_keeps_the_extent(self) -> None:
+        assert gradio_app.retain_output_size("", 2048, self._choices()) == ("", 2048)
+
+    def test_auto_stays_distinct_from_model_default(self) -> None:
+        kept_aspect, kept_extent = gradio_app.retain_output_size("auto", 1024, self._choices())
+        assert kept_aspect == "auto"
+        assert kept_extent == 1024
+        assert kept_aspect != ""
+
+
+@pytest.mark.unit
+class TestRunGenerateOutputSize:
+    @patch("genimg.ui.gradio_app.generate_image")
+    @patch("genimg.ui.gradio_app.optimize_prompt")
+    @patch("genimg.ui.gradio_app.process_reference_image")
+    @patch("genimg.ui.gradio_app.validate_prompt")
+    @patch("genimg.ui.gradio_app.Config")
+    def test_forwards_the_size_pair(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_validate: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_optimize: MagicMock,
+        mock_generate: MagicMock,
+    ) -> None:
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.openrouter_api_key = "sk-test"
+        config.generation_timeout = 60
+        config.max_image_pixels = 2_000_000
+        mock_config_cls.from_env.return_value = config
+        config.validate.return_value = None
+        result = MagicMock()
+        result.image = Image.new("RGB", (10, 10), color="red")
+        result.generation_time = 1.0
+        mock_generate.return_value = result
+
+        _status, _img, msg = gradio_app._run_generate(
+            "a cat",
+            False,
+            None,
+            None,
+            None,
+            aspect_ratio="16:9",
+            max_extent=1024,
+        )
+        assert "Done" in msg
+        assert mock_generate.call_args.kwargs["aspect_ratio"] == "16:9"
+        assert mock_generate.call_args.kwargs["max_extent"] == 1024

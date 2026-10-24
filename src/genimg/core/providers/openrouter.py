@@ -304,8 +304,11 @@ class OpenRouterProvider:
         cancel_check: Callable[[], bool] | None,
         *,
         api_key_override: str | None = None,
+        aspect_ratio: str | None = None,
+        max_extent: int | None = None,
     ) -> GenerationResult:
         """Generate an image via OpenRouter API."""
+        del aspect_ratio, max_extent
         self._validate_config(config, api_key_override)
         api_key = api_key_override if api_key_override is not None else config.openrouter_api_key
         debug_api = getattr(config, "debug_api", False)

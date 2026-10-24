@@ -2,13 +2,14 @@
 
 A Python package for generating AI images with intelligent prompt optimization. Generate high-quality images from simple text descriptions using multiple AI models via OpenRouter (or local providers), with optional local prompt enhancement via the **Ollama HTTP API**.
 
-**Current version:** 0.17.0 (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
+**Current version:** 0.18.0 (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
 
 ## Features
 
 - 🎨 **Multiple AI Models & Providers**: Generate images via **OpenRouter** (cloud), **Wiro** (cloud), **Ollama** (local), or **Draw Things** (local gRPC on macOS). Choose provider and model in the UI or config.
 - ✨ **Prompt Optimization**: Automatically enhance prompts using local Ollama over **HTTP** (same `OLLAMA_BASE_URL` as Ollama image generation); optional in both CLI and web UI
 - 🖼️ **Reference Images**: Use reference images to guide style/generation (OpenRouter, Wiro, and Draw Things); process refs for optimization context (all providers). CLI and web UI.
+- 📐 **Output size**: Set aspect ratio and max extent together on the CLI, in `generate_image()`, and in the web UI. The longer side is 1024 through 2048. The saved image matches that request.
 - 📑 **Character turnaround (CLI)**: `genimg character` builds a turnaround-style sheet from one or more reference images (base prompt in bundled `prompts.yaml` under `character.template`, plus optional `--prompt` / `-p`).
 - 📷 **Reference Image Description**: In the web UI, describe a reference image (prose or tags via Florence/JoyTag) and optionally feed that into prompt optimization
 - 💻 **Dual Interface**: Both CLI and web UI (Gradio) interfaces
@@ -140,6 +141,7 @@ The web UI supports:
 - **Prompt & optimization**: Main prompt, optional enhancement (checkbox), and an editable optimized-prompt box. Use **Enhance Prompt** to run optimization, or **Generate** with optimization on to optimize then generate in one go.
 - **Reference image**: Upload a reference image. It is sent only when the selected provider supports references (OpenRouter, Wiro, and Draw Things). With **Ollama** it is used only as optimization context (not sent to the image model). Optional **Describe** (prose or tags) and **Use image description** feed description text into optimization.
 - **Provider & models**: Choose image provider (**OpenRouter**, **Wiro**, **Ollama**, or **Draw Things**) and pick image/optimization models from dropdowns.
+- **Output size**: Set aspect ratio and max extent together, or leave both at the model default. Max extent is 1024 through 2048. Wiro shows schema ratios when the model has them. The saved image matches the request.
 - **Generation**: **Generate** with progress, **Stop** to cancel, then view or download the result (JPG, timestamped filename).
 - **Browser notifications**: Optional alerts when generation or optimization completes (permission on first load; useful if the tab is in the background).
 - **Edits preserved**: Changes to the optimized prompt made while generation is running are kept when the run finishes.
@@ -193,6 +195,20 @@ genimg generate "a red sports car" --no-optimize --output car.png
 genimg generate "same car but in blue" --reference original.jpg --output blue_car.png
 ```
 
+**Output size** (pass both flags, or neither):
+
+```bash
+genimg generate "a red sports car" --aspect-ratio 16:9 --max-extent 1024 --no-optimize --output car.png
+genimg character "Rogue Pilot" ref.jpg --aspect-ratio 1:1 --max-extent 2048
+```
+
+`--aspect-ratio` is `auto` or a ratio such as `16:9`. `--max-extent` is the longer side in pixels, from 1024 through 2048. Omit both flags to keep the model default.
+
+- Wiro maps the pair to schema aspect options or to width and height. The model request is the nearest legal frame.
+- Draw Things snaps each side to a multiple of 64. `GENIMG_DRAW_THINGS_WIDTH_PX` and `GENIMG_DRAW_THINGS_HEIGHT_PX` apply only when the pair is omitted.
+- OpenRouter and Ollama have no size field. The saved image is still fitted to the request.
+- Reference image padding still uses `Config.aspect_ratio`.
+
 **Save optimized prompt for reproducibility:**
 
 ```bash
@@ -236,7 +252,7 @@ genimg character "Rogue Pilot" refs/front.jpg refs/side.jpg -o sheet.png
 genimg character "Rogue Pilot" ref.jpg   # timestamped file in the current directory
 ```
 
-- **Defaults:** same as `genimg generate` — provider and model come from config / `models.yaml` unless you pass `--provider` / `--model`. Reference images require **OpenRouter**, **Wiro**, or **Draw Things** (not Ollama).
+- **Defaults:** same as `genimg generate` — provider and model come from config / `models.yaml` unless you pass `--provider` / `--model`. `--aspect-ratio` and `--max-extent` work the same way as on `genimg generate`. Reference images require **OpenRouter**, **Wiro**, or **Draw Things** (not Ollama).
 - **Scripting:** on success, stdout is a single line (saved path). `--quiet` suppresses stderr progress/banner. `--api-key`, `-v` / `-vv`, `GENIMG_VERBOSITY`, and `--debug-api` are supported. Prefer **OpenRouter** unless your image provider accepts the references you pass (see [Reference images with Ollama](#reference-images-with-ollama)). Full detail: `genimg character --help`.
 
 ### As a Python Library
@@ -259,6 +275,10 @@ result = generate_image("a cat", provider="wiro", model="bytedance/seedream-v4-5
 
 # Or use Ollama for image generation
 result = generate_image("a cat", provider="ollama", model="llama3.2-vision")
+
+# Request a size. The saved image matches the pair.
+# The model request is the nearest legal frame.
+result = generate_image("a cat", aspect_ratio="16:9", max_extent=1024)
 
 # Save the image (result.image is a PIL Image; result.image_data is bytes)
 with open("output.png", "wb") as f:
@@ -374,6 +394,7 @@ genimg/
 - [EXAMPLES.md](docs/EXAMPLES.md) — Usage examples
 - [browser-notifications.md](docs/browser-notifications.md) — Web UI notification flow
 - [CHANGELOG.md](docs/CHANGELOG.md) — Change history
+- [releases/v0.18.0.md](docs/releases/v0.18.0.md) — v0.18.0 release notes (output size)
 - [releases/v0.17.0.md](docs/releases/v0.17.0.md) — v0.17.0 release notes (Wiro provider)
 
 ## Troubleshooting

@@ -51,6 +51,30 @@ def test_character_help_lists_draw_things_provider() -> None:
     assert "draw_things" in (result.output or "")
 
 
+@pytest.mark.unit
+def test_help_states_providers_size_pair_and_examples() -> None:
+    runner = CliRunner()
+    root = runner.invoke(cli, ["--help"])
+    generate = runner.invoke(cli, ["generate", "--help"])
+    character = runner.invoke(cli, ["character", "--help"])
+    assert root.exit_code == 0
+    assert generate.exit_code == 0
+    assert character.exit_code == 0
+    root_text = " ".join((root.output or "").split())
+    generate_text = " ".join((generate.output or "").split())
+    character_text = " ".join((character.output or "").split())
+    assert "Providers: OpenRouter, Wiro, Ollama, and Draw Things." in root_text
+    assert "Generate an image from a text prompt." in root_text
+    assert "Omit both flags for the model default." in generate_text
+    assert "Wiro sends the nearest schema frame." in generate_text
+    assert 'genimg generate -p "a red car" --no-optimize -o car.webp' in generate_text
+    assert "Requires --reference." in generate_text
+    assert "Wiro uses WIRO_API_KEY." in generate_text
+    assert "Reference images work with OpenRouter, Wiro, and Draw Things." in character_text
+    assert "``" not in character_text
+    assert 'genimg character "Rogue Pilot" ref.jpg' in character_text
+
+
 _CLI_MINIMAL_PNG_BUF = io.BytesIO()
 Image.new("RGB", (1, 1), color=(0, 0, 0)).save(_CLI_MINIMAL_PNG_BUF, format="PNG")
 _CLI_MINIMAL_PNG = _CLI_MINIMAL_PNG_BUF.getvalue()
@@ -1165,9 +1189,7 @@ class TestCharacterCommand:
         ref = tmp_path / "r.png"
         ref.write_bytes(b"\x89PNG\r\n\x1a\n")
 
-        result = _run_character(
-            "T", str(ref), "--quiet", "--out", str(tmp_path / "o.png")
-        )
+        result = _run_character("T", str(ref), "--quiet", "--out", str(tmp_path / "o.png"))
         assert result.exit_code != 0
         assert "reference" in result.output.lower()
 
@@ -1368,3 +1390,148 @@ class TestCharacterCommand:
         webp_path = tmp_path / "Stem-20260101_000000.webp"
         data = webp_path.read_bytes()
         assert data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+
+
+def _combined_output(result: Result) -> str:
+    return f"{result.output or ''}\n{result.stderr or ''}"
+
+
+def _option_names(help_text: str) -> set[str]:
+    import re
+
+    return set(re.findall(r"--[a-z0-9-]+", help_text))
+
+
+@pytest.mark.unit
+def test_size_flags_appear_in_help_without_pixel_options() -> None:
+    runner = CliRunner()
+    for command in ("generate", "character"):
+        result = runner.invoke(cli, [command, "--help"])
+        assert result.exit_code == 0
+        names = _option_names(result.output or "")
+        assert "--aspect-ratio" in names
+        assert "--max-extent" in names
+        assert "--width" not in names
+        assert "--height" not in names
+        assert "--resolution" not in names
+
+
+@pytest.mark.unit
+def test_size_options_have_no_envvar() -> None:
+    for command_name in ("generate", "character"):
+        params = {param.name: param for param in cli.commands[command_name].params}
+        assert params["aspect_ratio"].envvar is None
+        assert params["max_extent"].envvar is None
+
+
+@pytest.mark.unit
+class TestCliOutputSize:
+    def _config(self) -> MagicMock:
+        config = MagicMock()
+        config.default_image_provider = "openrouter"
+        config.default_image_model = "test/model"
+        config.generation_timeout = 30
+        config.validate.return_value = None
+        return config
+
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.Config")
+    def test_quiet_generate_forwards_the_pair(
+        self,
+        mock_config_cls: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_config_cls.from_env.return_value = self._config()
+        mock_generate.return_value = _png_generation_result()
+        out = tmp_path / "out.png"
+        result = _run_cli(
+            "--prompt",
+            "a cat",
+            "--no-optimize",
+            "--quiet",
+            "--out",
+            str(out),
+            "--aspect-ratio",
+            "16:9",
+            "--max-extent",
+            "2048",
+        )
+        assert result.exit_code == 0
+        assert mock_generate.call_args.kwargs["aspect_ratio"] == "16:9"
+        assert mock_generate.call_args.kwargs["max_extent"] == 2048
+
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.Config")
+    def test_blank_aspect_ratio_is_forwarded(
+        self,
+        mock_config_cls: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_config_cls.from_env.return_value = self._config()
+        mock_generate.return_value = _png_generation_result()
+        result = _run_cli(
+            "--prompt",
+            "a cat",
+            "--no-optimize",
+            "--quiet",
+            "--out",
+            str(tmp_path / "out.png"),
+            "--aspect-ratio",
+            "",
+        )
+        assert result.exit_code == 0, _combined_output(result)
+        assert mock_generate.call_args.kwargs["aspect_ratio"] in ("", None)
+        assert mock_generate.call_args.kwargs["max_extent"] is None
+
+    @patch("genimg.core.providers.openrouter.OpenRouterProvider.generate")
+    @patch("genimg.cli.commands.Config")
+    def test_partial_and_bad_extent_exit_before_the_provider(
+        self,
+        mock_config_cls: MagicMock,
+        mock_provider_generate: MagicMock,
+    ) -> None:
+        mock_config_cls.from_env.return_value = self._config()
+        cases = (
+            (["--aspect-ratio", "16:9"], "field: max_extent"),
+            (["--max-extent", "2048"], "field: aspect_ratio"),
+            (["--aspect-ratio", "1:1", "--max-extent", "1023"], "field: max_extent"),
+            (["--aspect-ratio", "1:1", "--max-extent", "2049"], "field: max_extent"),
+        )
+        for extra, marker in cases:
+            mock_provider_generate.reset_mock()
+            result = _run_cli("--prompt", "a cat", "--no-optimize", "--quiet", *extra)
+            assert result.exit_code == 2, _combined_output(result)
+            assert marker in _combined_output(result)
+            mock_provider_generate.assert_not_called()
+
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_character_forwards_the_pair(
+        self,
+        mock_config_cls: MagicMock,
+        mock_process_ref: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_config_cls.from_env.return_value = self._config()
+        mock_process_ref.return_value = ("b64x", "h1")
+        mock_generate.return_value = _png_generation_result(had_reference=True)
+        ref = tmp_path / "a.png"
+        ref.write_bytes(_CLI_MINIMAL_PNG)
+        result = _run_character(
+            "T",
+            str(ref),
+            "--quiet",
+            "--out",
+            str(tmp_path / "out.png"),
+            "--aspect-ratio",
+            "16:9",
+            "--max-extent",
+            "1024",
+        )
+        assert result.exit_code == 0, _combined_output(result)
+        assert mock_generate.call_args.kwargs["aspect_ratio"] == "16:9"
+        assert mock_generate.call_args.kwargs["max_extent"] == 1024

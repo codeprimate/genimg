@@ -3,18 +3,31 @@
 from __future__ import annotations
 
 import base64
+import math
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from genimg.core.output_size import (
+    AUTO_ASPECT_TOKEN,
+    MATCH_INPUT_IMAGE_TEXT,
+    MAX_OUTPUT_EXTENT,
+    MIN_OUTPUT_EXTENT,
+    NOMINAL_K_PIXELS,
+    WIRO_SIZE_FIELD_IDS,
+    ideal_pixel_size,
+    parse_aspect_ratio,
+    round_half_away_from_zero,
+)
 from genimg.utils.exceptions import ValidationError
 
 FILE_PARAM_TYPES = frozenset({"fileinput", "multifileinput", "combinefileinput"})
 
-# Wiro models often default aspectRatio to "auto" (or a landscape preset). Pin 1:1 to
-# match genimg defaults for both t2i and reference runs.
-WIRO_DEFAULT_ASPECT_RATIO = "1:1"
-WIRO_REFERENCE_SQUARE_SIZE = "1024"
+_FRAME_COLON_RE = re.compile(r"(\d+(?:\.\d+)?)([kK])\s*:\s*(\d+)\s*[x×]\s*(\d+)")
+_FRAME_PAREN_RE = re.compile(r"\((\d+(?:\.\d+)?)([kK])\)\s*(\d+)\s*[x×]\s*(\d+)")
+_NOMINAL_K_RE = re.compile(r"(?i)^(\d+(?:\.\d+)?)k$")
+_MSG_PARTIAL_SIZE = "aspect_ratio and max_extent must be set together."
 
 
 class ContentMode(str, Enum):
@@ -167,6 +180,11 @@ def _default_value_for_required_param(item: dict[str, Any]) -> str | None:
 
 
 def _select_option_values(item: dict[str, Any]) -> frozenset[str]:
+    """Return the ``value`` strings of a select parameter.
+
+    The size mapper does not call this helper. It remains so a later cleanup
+    can delete it in one place.
+    """
     options = item.get("options")
     if not isinstance(options, list):
         return frozenset()
@@ -177,33 +195,459 @@ def _select_option_values(item: dict[str, Any]) -> frozenset[str]:
     return frozenset(values)
 
 
-def _apply_output_sizing(
+def _items_by_id(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    found: dict[str, dict[str, Any]] = {}
+    for item in items:
+        param_id = item.get("id")
+        if isinstance(param_id, str) and param_id:
+            found[param_id] = item
+    return found
+
+
+def _positive_bound(value: object) -> int | None:
+    """Return a positive integer bound. Ignore ``0``, blanks, and bools."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float):
+        if math.isfinite(value) and value.is_integer() and value > 0:
+            return int(value)
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            number = int(text)
+            return number if number > 0 else None
+    return None
+
+
+def _defaultvalue_text(item: dict[str, Any]) -> str | None:
+    raw = item.get("defaultvalue")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
+def _option_dicts(item: dict[str, Any]) -> list[dict[str, Any]]:
+    options = item.get("options")
+    if not isinstance(options, list):
+        return []
+    return [option for option in options if isinstance(option, dict)]
+
+
+def _option_value_text(option: dict[str, Any]) -> str:
+    if "value" not in option or option.get("value") is None:
+        return ""
+    return str(option["value"])
+
+
+def _option_label_text(option: dict[str, Any]) -> str:
+    text = option.get("text")
+    if isinstance(text, str):
+        return text
+    return ""
+
+
+def _same_token(left: str, right: str) -> bool:
+    return left.strip().lower() == right.strip().lower()
+
+
+def _parse_ratio_token(token: str) -> tuple[int, int] | None:
+    try:
+        return parse_aspect_ratio(token)
+    except ValidationError:
+        return None
+
+
+def _numeric_option_ratio(option: dict[str, Any]) -> tuple[int, int] | None:
+    """Read ``W:H`` from ``value``, or from ``text`` when the value is not a ratio."""
+    value = _option_value_text(option).strip()
+    parsed = _parse_ratio_token(value)
+    if parsed is not None:
+        return parsed
+    return _parse_ratio_token(_option_label_text(option).strip())
+
+
+def _copy_size_defaults(
+    items_by_id: dict[str, dict[str, Any]],
+    fields: dict[str, str],
+) -> None:
+    """Copy in-range ``defaultvalue`` strings for the four size ids."""
+    for param_id in ("aspectRatio", "resolution"):
+        item = items_by_id.get(param_id)
+        if item is None:
+            continue
+        text = _defaultvalue_text(item)
+        if text is not None:
+            fields[param_id] = text
+
+    for param_id in ("width", "height"):
+        item = items_by_id.get(param_id)
+        if item is None:
+            continue
+        text = _defaultvalue_text(item)
+        if text is None:
+            continue
+        if _pixel_default_in_range(item, text):
+            fields[param_id] = text
+
+
+def _pixel_default_in_range(item: dict[str, Any], text: str) -> bool:
+    minimum = _positive_bound(item.get("minvalue"))
+    maximum = _positive_bound(item.get("maxvalue"))
+    if minimum is None and maximum is None:
+        return True
+    number = _positive_bound(text)
+    if number is None:
+        return False
+    if minimum is not None and number < minimum:
+        return False
+    return maximum is None or number <= maximum
+
+
+def _pixel_pair_breaks(
+    width: int,
+    height: int,
+    w_min: int | None,
+    w_max: int | None,
+    h_min: int | None,
+    h_max: int | None,
+) -> bool:
+    long_side = width if width >= height else height
+    if long_side < MIN_OUTPUT_EXTENT or long_side > MAX_OUTPUT_EXTENT:
+        return True
+    if w_min is not None and width < w_min:
+        return True
+    if w_max is not None and width > w_max:
+        return True
+    if h_min is not None and height < h_min:
+        return True
+    return h_max is not None and height > h_max
+
+
+def _scale_closest_to_one(lower: float, upper: float) -> float | None:
+    if lower > upper:
+        return None
+    if lower <= 1.0 <= upper:
+        return 1.0
+    if upper < 1.0:
+        return upper
+    return lower
+
+
+def _pixel_fallback(
+    width: int,
+    height: int,
+    w_min: int | None,
+    w_max: int | None,
+    h_min: int | None,
+    h_max: int | None,
+) -> tuple[int, int] | None:
+    """Schema max on the long side and schema min on the short side."""
+    if width >= height:
+        long_max, short_min = w_max, h_min
+        long_is_width = True
+    else:
+        long_max, short_min = h_max, w_min
+        long_is_width = False
+    if long_max is None or short_min is None:
+        return None
+    if long_is_width:
+        return long_max, short_min
+    return short_min, long_max
+
+
+def _fit_pixel_pair(
+    width: int,
+    height: int,
+    width_item: dict[str, Any],
+    height_item: dict[str, Any],
+) -> tuple[int, int]:
+    w_min = _positive_bound(width_item.get("minvalue"))
+    w_max = _positive_bound(width_item.get("maxvalue"))
+    h_min = _positive_bound(height_item.get("minvalue"))
+    h_max = _positive_bound(height_item.get("maxvalue"))
+    if width <= 0 or height <= 0:
+        fallback = _pixel_fallback(width, height, w_min, w_max, h_min, h_max)
+        return fallback if fallback is not None else (width, height)
+    if not _pixel_pair_breaks(width, height, w_min, w_max, h_min, h_max):
+        return width, height
+
+    long_side = width if width >= height else height
+    lower = MIN_OUTPUT_EXTENT / long_side
+    upper = MAX_OUTPUT_EXTENT / long_side
+    if w_max is not None:
+        upper = min(upper, w_max / width)
+    if h_max is not None:
+        upper = min(upper, h_max / height)
+    if w_min is not None:
+        lower = max(lower, w_min / width)
+    if h_min is not None:
+        lower = max(lower, h_min / height)
+
+    scale = _scale_closest_to_one(lower, upper)
+    if scale is not None:
+        scaled = (
+            round_half_away_from_zero(width * scale),
+            round_half_away_from_zero(height * scale),
+        )
+        if not _pixel_pair_breaks(scaled[0], scaled[1], w_min, w_max, h_min, h_max):
+            return scaled
+
+    fallback = _pixel_fallback(width, height, w_min, w_max, h_min, h_max)
+    if fallback is not None:
+        return fallback
+    return width, height
+
+
+def _apply_pixel_size(
+    items_by_id: dict[str, dict[str, Any]],
+    fields: dict[str, str],
+    aspect_ratio: str,
+    max_extent: int,
+) -> None:
+    width_item = items_by_id["width"]
+    height_item = items_by_id["height"]
+    width, height = ideal_pixel_size(aspect_ratio, max_extent)
+    fitted_w, fitted_h = _fit_pixel_pair(width, height, width_item, height_item)
+    fields.pop("aspectRatio", None)
+    fields.pop("resolution", None)
+    fields["width"] = str(fitted_w)
+    fields["height"] = str(fitted_h)
+
+
+def resolution_frames(text: str) -> list[tuple[str, int]]:
+    """Return ``(tier_token, long_side)`` for Seedream and Nano Banana frame text.
+
+    Colon form is ``2k: 2560x1440``. Parenthesis form is ``(1K)1376x768``.
+    ``x`` and ``×`` both count. Results follow the text order.
+    """
+    found: list[tuple[int, str, int]] = []
+    for pattern in (_FRAME_COLON_RE, _FRAME_PAREN_RE):
+        for match in pattern.finditer(text):
+            tier = f"{match.group(1)}{match.group(2)}"
+            long_side = max(int(match.group(3)), int(match.group(4)))
+            found.append((match.start(), tier, long_side))
+    found.sort(key=lambda item: item[0])
+    return [(tier, long_side) for _, tier, long_side in found]
+
+
+def _stored_value_for_token(options: list[dict[str, Any]], token: str) -> str | None:
+    for option in options:
+        if _same_token(_option_value_text(option), token):
+            return _option_value_text(option)
+    return None
+
+
+def _closest_labeled_side(
+    candidates: list[tuple[str, int, int]],
+    max_extent: int,
+) -> str | None:
+    """Pick a stored value. Each row is ``(stored_value, long_side, order)``."""
+    best: tuple[int, int, int, str] | None = None
+    for stored, long_side, order in candidates:
+        distance = abs(long_side - max_extent)
+        within = 0 if long_side <= max_extent else 1
+        rank = (distance, within, order, stored)
+        if best is None or rank < best:
+            best = rank
+    if best is None:
+        return None
+    return best[3]
+
+
+def _resolution_from_frames(
+    options: list[dict[str, Any]],
+    frames: list[tuple[str, int]],
+    max_extent: int,
+) -> str | None:
+    candidates: list[tuple[str, int, int]] = []
+    for order, (tier, long_side) in enumerate(frames):
+        stored = _stored_value_for_token(options, tier)
+        if stored is None:
+            continue
+        candidates.append((stored, long_side, order))
+    return _closest_labeled_side(candidates, max_extent)
+
+
+def _resolution_from_nominal_k(
+    options: list[dict[str, Any]],
+    max_extent: int,
+) -> str | None:
+    candidates: list[tuple[str, int, int]] = []
+    for order, option in enumerate(options):
+        raw = _option_value_text(option)
+        match = _NOMINAL_K_RE.fullmatch(raw.strip())
+        if match is None:
+            continue
+        long_side = round_half_away_from_zero(float(match.group(1)) * NOMINAL_K_PIXELS)
+        candidates.append((raw, long_side, order))
+    return _closest_labeled_side(candidates, max_extent)
+
+
+def _resolution_value(
+    resolution_item: dict[str, Any] | None,
+    aspect_option: dict[str, Any] | None,
+    max_extent: int,
+) -> str | None:
+    if resolution_item is None or resolution_item.get("type") != "select":
+        return None
+    if aspect_option is None:
+        return None
+    options = _option_dicts(resolution_item)
+    frames = resolution_frames(_option_label_text(aspect_option))
+    if frames:
+        return _resolution_from_frames(options, frames, max_extent)
+    return _resolution_from_nominal_k(options, max_extent)
+
+
+def _match_auto_option(options: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for option in options:
+        if _same_token(_option_value_text(option), AUTO_ASPECT_TOKEN):
+            return option
+    for option in options:
+        if _same_token(_option_label_text(option), AUTO_ASPECT_TOKEN):
+            return option
+    for option in options:
+        if _same_token(_option_label_text(option), MATCH_INPUT_IMAGE_TEXT):
+            return option
+    return None
+
+
+def _closest_aspect_option(
+    options: list[dict[str, Any]],
+    token: str,
+) -> dict[str, Any] | None:
+    parsed = _parse_ratio_token(token)
+    if parsed is None:
+        return None
+    caller_q = parsed[0] / parsed[1]
+    best: tuple[float, int, dict[str, Any]] | None = None
+    for index, option in enumerate(options):
+        ratio = _numeric_option_ratio(option)
+        if ratio is None:
+            continue
+        distance = abs(caller_q - (ratio[0] / ratio[1]))
+        rank = (distance, index, option)
+        if best is None or rank < best:
+            best = rank
+    if best is None:
+        return None
+    return best[2]
+
+
+def _select_aspect(
+    item: dict[str, Any],
+    token: str,
+) -> tuple[str, dict[str, Any] | None]:
+    """Return the aspect value to send and the option it came from, if any."""
+    options = _option_dicts(item)
+    if _same_token(token, AUTO_ASPECT_TOKEN):
+        matched = _match_auto_option(options)
+        if matched is not None:
+            return _option_value_text(matched), matched
+        return _aspect_fallback(item, options)
+
+    for option in options:
+        if _same_token(_option_value_text(option), token):
+            return _option_value_text(option), option
+
+    closest = _closest_aspect_option(options, token)
+    if closest is not None:
+        return _option_value_text(closest), closest
+    return _aspect_fallback(item, options)
+
+
+def _aspect_fallback(
+    item: dict[str, Any],
+    options: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any] | None]:
+    default = _defaultvalue_text(item)
+    if default is not None:
+        return default, None
+    if options:
+        return _option_value_text(options[0]), options[0]
+    return "", None
+
+
+def _apply_ratio_size(
+    items_by_id: dict[str, dict[str, Any]],
+    fields: dict[str, str],
+    aspect_ratio: str,
+    max_extent: int,
+) -> None:
+    aspect_item = items_by_id["aspectRatio"]
+    sent_value, aspect_option = _select_aspect(aspect_item, aspect_ratio)
+    fields.pop("width", None)
+    fields.pop("height", None)
+    fields["aspectRatio"] = sent_value
+    resolution = _resolution_value(items_by_id.get("resolution"), aspect_option, max_extent)
+    if resolution is None:
+        fields.pop("resolution", None)
+    else:
+        fields["resolution"] = resolution
+
+
+def apply_size_fields(
     items: list[dict[str, Any]],
     fields: dict[str, str],
-    *,
-    has_reference: bool,
+    aspect_ratio: str | None,
+    max_extent: int | None,
 ) -> dict[str, str]:
-    """Pin output to 1:1 when the schema allows it.
+    """Write the four size ids for one Run body.
 
-    With a reference image, also pin square width/height so models do not
-    inherit the input image ratio.
+    A set pair uses the pixel adapter or the ratio adapter and does not copy
+    ``defaultvalue``. An omitted pair copies non-empty in-range
+    ``defaultvalue`` strings only.
     """
     updated = dict(fields)
-    param_by_id = {
-        item.get("id"): item for item in items if isinstance(item.get("id"), str) and item.get("id")
-    }
+    items_by_id = _items_by_id(items)
+    if aspect_ratio is None and max_extent is None:
+        _copy_size_defaults(items_by_id, updated)
+        return updated
+    if aspect_ratio is None or max_extent is None:
+        missing = "aspect_ratio" if aspect_ratio is None else "max_extent"
+        raise ValidationError(_MSG_PARTIAL_SIZE, field=missing)
 
-    aspect_item = param_by_id.get("aspectRatio")
-    if aspect_item is not None and WIRO_DEFAULT_ASPECT_RATIO in _select_option_values(aspect_item):
-        updated["aspectRatio"] = WIRO_DEFAULT_ASPECT_RATIO
-
-    if has_reference and "width" in param_by_id and "height" in param_by_id:
-        if "width" not in updated:
-            updated["width"] = WIRO_REFERENCE_SQUARE_SIZE
-        if "height" not in updated:
-            updated["height"] = WIRO_REFERENCE_SQUARE_SIZE
-
+    aspect_item = items_by_id.get("aspectRatio")
+    if aspect_item is not None and aspect_item.get("type") == "select":
+        _apply_ratio_size(items_by_id, updated, aspect_ratio, max_extent)
+        return updated
+    if "width" in items_by_id and "height" in items_by_id:
+        _apply_pixel_size(items_by_id, updated, aspect_ratio, max_extent)
     return updated
+
+
+def aspect_choices_from_schema(schema: dict[str, Any]) -> list[tuple[str, str]] | None:
+    """Return ``(label, submit_value)`` rows for an ``aspectRatio`` select.
+
+    Returns ``None`` when the schema has no ``aspectRatio`` select. A blank
+    ``auto`` or ``Match Input Image`` value submits the token ``auto``.
+    """
+    aspect_item: dict[str, Any] | None = None
+    for item in flatten_param_items(schema):
+        if item.get("id") == "aspectRatio" and item.get("type") == "select":
+            aspect_item = item
+            break
+    if aspect_item is None:
+        return None
+
+    rows: list[tuple[str, str]] = []
+    for option in _option_dicts(aspect_item):
+        value = _option_value_text(option)
+        text = _option_label_text(option)
+        label = text.strip() if text.strip() else value.strip()
+        if value.strip():
+            submit = value.strip()
+        elif _same_token(text, AUTO_ASPECT_TOKEN) or _same_token(text, MATCH_INPUT_IMAGE_TEXT):
+            submit = AUTO_ASPECT_TOKEN
+        else:
+            continue
+        if not label:
+            label = submit
+        rows.append((label, submit))
+    return rows
 
 
 def _static_schema_fields(
@@ -219,6 +663,8 @@ def _static_schema_fields(
         if not isinstance(param_id, str) or not param_id:
             continue
         if param_id == prompt_field_id or param_id in file_slot_ids:
+            continue
+        if param_id in WIRO_SIZE_FIELD_IDS:
             continue
 
         explicit_default = item.get("default")
@@ -274,8 +720,15 @@ def build_run_plan(
     prompt: str,
     reference_images_b64: list[str] | None,
     model_label: str = "",
+    aspect_ratio: str | None = None,
+    max_extent: int | None = None,
 ) -> ModelRunPlan:
-    """Build JSON or multipart Run payload from Tool/Detail schema."""
+    """Build JSON or multipart Run payload from Tool/Detail schema.
+
+    ``aspect_ratio`` and ``max_extent`` are both set or both omitted. A set
+    pair is mapped onto the schema. An omitted pair copies size
+    ``defaultvalue`` strings and does not invent a square size.
+    """
     items = flatten_param_items(schema)
     prompt_field_id = _resolve_prompt_field_id(items)
     file_slots = _file_slots_from_items(items)
@@ -299,14 +752,15 @@ def build_run_plan(
 
     assignments = _assign_refs_to_slots(file_slots, refs)
     file_slot_ids = frozenset(slot.param_id for slot in file_slots)
-    static_fields = _apply_output_sizing(
+    static_fields = apply_size_fields(
         items,
         _static_schema_fields(
             items,
             prompt_field_id=prompt_field_id,
             file_slot_ids=file_slot_ids,
         ),
-        has_reference=bool(refs),
+        aspect_ratio,
+        max_extent,
     )
 
     if not assignments:

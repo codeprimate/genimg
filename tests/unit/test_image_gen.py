@@ -533,8 +533,7 @@ class TestGenerateImageValidation:
             generate_image("a cat", config=config, provider="wiro", model=None)
 
         assert (
-            mock_provider.generate.call_args.kwargs["model"]
-            == "bytedance/seedream-v4-5-uncensored"
+            mock_provider.generate.call_args.kwargs["model"] == "bytedance/seedream-v4-5-uncensored"
         )
 
     def test_draw_things_without_default_model_raises(self):
@@ -847,3 +846,81 @@ class TestGenerateImageMocked:
             with pytest.raises(CancellationError) as exc_info:
                 generate_image("x", config=config, cancel_check=slow_then_cancel)
         assert "cancelled" in str(exc_info.value).lower()
+
+
+def _size_provider_result(size: tuple[int, int]) -> GenerationResult:
+    return GenerationResult(
+        image=Image.new("RGB", size, color=(12, 34, 56)),
+        _format="png",
+        generation_time=0.01,
+        model_used="test-model",
+        prompt_used="a cat",
+        had_reference=False,
+    )
+
+
+@pytest.mark.unit
+class TestGenerateImageOutputSize:
+    def _config(self) -> Config:
+        return Config(openrouter_api_key="sk-ok", default_image_provider="openrouter")
+
+    def _run(
+        self, image_size: tuple[int, int], **kwargs: object
+    ) -> tuple[GenerationResult, MagicMock]:
+        config = self._config()
+        mock_provider = MagicMock()
+        mock_provider.supports_reference_image = True
+        mock_provider.generate.return_value = _size_provider_result(image_size)
+        with patch("genimg.core.image_gen.get_registry") as registry:
+            registry.return_value.get.return_value = mock_provider
+            result = generate_image("a cat", config=config, **kwargs)
+        return result, mock_provider
+
+    def test_omitted_pair_leaves_image_and_passes_none(self) -> None:
+        result, mock_provider = self._run((640, 480))
+        assert mock_provider.generate.call_args.kwargs["aspect_ratio"] is None
+        assert mock_provider.generate.call_args.kwargs["max_extent"] is None
+        assert result.image.size == (640, 480)
+
+    def test_legal_pair_is_forwarded_and_fitted(self) -> None:
+        result, mock_provider = self._run((800, 800), aspect_ratio="16:9", max_extent=1024)
+        assert mock_provider.generate.call_args.kwargs["aspect_ratio"] == "16:9"
+        assert mock_provider.generate.call_args.kwargs["max_extent"] == 1024
+        assert result.image.size == (1024, 576)
+
+    def test_auto_token_is_normalized_before_the_provider(self) -> None:
+        result, mock_provider = self._run((1000, 500), aspect_ratio="AUTO", max_extent=1024.0)
+        assert mock_provider.generate.call_args.kwargs["aspect_ratio"] == "auto"
+        assert mock_provider.generate.call_args.kwargs["max_extent"] == 1024
+        assert result.image.size == (1024, 512)
+
+    @pytest.mark.parametrize(
+        ("aspect_ratio", "max_extent", "field"),
+        [
+            ("16:9", 1023, "max_extent"),
+            ("16:9", 2049, "max_extent"),
+            ("16:9", None, "max_extent"),
+            (None, 2048, "aspect_ratio"),
+            ("wide", 1024, "aspect_ratio"),
+        ],
+    )
+    def test_illegal_pair_does_not_call_provider(
+        self,
+        aspect_ratio: str | None,
+        max_extent: int | None,
+        field: str,
+    ) -> None:
+        config = self._config()
+        mock_provider = MagicMock()
+        mock_provider.supports_reference_image = True
+        with patch("genimg.core.image_gen.get_registry") as registry:
+            registry.return_value.get.return_value = mock_provider
+            with pytest.raises(ValidationError) as exc_info:
+                generate_image(
+                    "a cat",
+                    config=config,
+                    aspect_ratio=aspect_ratio,
+                    max_extent=max_extent,
+                )
+        assert exc_info.value.field == field
+        mock_provider.generate.assert_not_called()

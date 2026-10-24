@@ -155,12 +155,15 @@ class OllamaProvider:
         cancel_check: Callable[[], bool] | None,
         *,
         api_key_override: str | None = None,
+        aspect_ratio: str | None = None,
+        max_extent: int | None = None,
     ) -> GenerationResult:
         """Generate an image via Ollama.
 
         Reference images are not supported; ``reference_images_b64`` must be
         unset or empty when using this provider (``generate_image`` enforces this).
         """
+        del aspect_ratio, max_extent
         if reference_images_b64:
             raise ValidationError(
                 "Reference images are not supported for provider 'ollama'. "

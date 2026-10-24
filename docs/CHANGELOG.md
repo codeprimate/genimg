@@ -11,10 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (none)
 
 ### Changed
-- **Wiro t2i:** Run payloads default `aspectRatio` to `1:1` when the model schema offers that option (same square default already used for reference runs).
+- (none)
 
 ### Fixed
 - (none)
+
+## [0.18.0] - 2026-10-24
+
+### Changed
+- **Output size:** `genimg generate` and `genimg character` take `--aspect-ratio` and `--max-extent` (1024 through 2048, both together). `generate_image()` takes the same pair. Gradio has an Output size block. Wiro maps the pair to schema aspect options or width and height. Draw Things snaps the canvas to 64-pixel steps. The saved image is fitted to the request. An omitted pair uses schema `defaultvalue`. It no longer forces `1:1` or a reference size of `1024`.
+- **CLI help:** `genimg --help` names OpenRouter, Wiro, Ollama, and Draw Things. `generate` and `character` show size examples, the omit-both default, and the per-provider size behavior. `--model` names the selected provider. `--api-key` states that Wiro uses `WIRO_API_KEY`. Character help states that reference images work with OpenRouter, Wiro, and Draw Things.
 
 ## [0.17.0] - 2026-06-27
 

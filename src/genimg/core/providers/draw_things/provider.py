@@ -13,7 +13,9 @@ from PIL import Image
 
 from genimg.core.config import Config
 from genimg.core.image_gen import GenerationResult
+from genimg.core.output_size import ideal_pixel_size
 from genimg.core.providers.draw_things.client import DrawThingsClient
+from genimg.core.providers.draw_things.config_builder import round_dimension_to_multiple_of_64
 from genimg.core.providers.draw_things.constants import (
     DEFAULT_DRAW_THINGS_HOST,
     DEFAULT_DRAW_THINGS_PORT,
@@ -144,6 +146,8 @@ class DrawThingsProvider:
         cancel_check: Callable[[], bool] | None,
         *,
         api_key_override: str | None = None,
+        aspect_ratio: str | None = None,
+        max_extent: int | None = None,
     ) -> GenerationResult:
         del api_key_override
         refs = [r for r in (reference_images_b64 or []) if r and str(r).strip()]
@@ -178,6 +182,10 @@ class DrawThingsProvider:
         insecure = getattr(config, "draw_things_insecure", self._insecure)
         shared_secret = getattr(config, "draw_things_shared_secret", None) or self._shared_secret
         tuning = self._resolve_tuning(config)
+        if aspect_ratio is not None and max_extent is not None:
+            ideal_width, ideal_height = ideal_pixel_size(aspect_ratio, max_extent)
+            tuning.width_px = round_dimension_to_multiple_of_64(ideal_width)
+            tuning.height_px = round_dimension_to_multiple_of_64(ideal_height)
 
         # Create a short-lived client per request to preserve thread-safe behavior.
         with DrawThingsClient(

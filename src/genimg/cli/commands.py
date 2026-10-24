@@ -74,9 +74,26 @@ lora_option = click.option(
     ),
 )
 
+_MODEL_ID_HELP = "Model ID for the selected provider. Draw Things uses the checkpoint name."
+_OPENROUTER_API_KEY_HELP = (
+    "OpenRouter API key (overrides OPENROUTER_API_KEY). Wiro uses WIRO_API_KEY."
+)
+_ASPECT_RATIO_HELP = (
+    "Frame as W:H, such as 16:9, or auto. "
+    "auto keeps the picture shape and scales the long side. "
+    "Pass this with --max-extent. Omit both flags for the model default."
+)
+_MAX_EXTENT_HELP = (
+    "Longer side in pixels, from 1024 through 2048. The saved image matches this size. "
+    "Wiro sends the nearest schema frame. Draw Things snaps each side to 64 pixels. "
+    "OpenRouter and Ollama change only the saved image."
+)
+
 
 @click.group(
-    help=f"""AI image generation with prompt optimization (OpenRouter + Ollama).
+    help=f"""AI image generation with prompt optimization.
+
+Providers: OpenRouter, Wiro, Ollama, and Draw Things.
 
 \b
 Version: {__version__}
@@ -98,9 +115,18 @@ def cli(ctx: click.Context) -> None:
 cli.add_command(draw_things_group)
 
 
-@cli.command()
+@cli.command(
+    help="""Generate an image from a text prompt.
+
+\b
+Examples:
+  genimg generate -p "a red car" --no-optimize -o car.webp
+  genimg generate -p "a red car" --aspect-ratio 16:9 --max-extent 1024 --provider wiro
+  genimg character "Rogue Pilot" ref.jpg --aspect-ratio 1:1 --max-extent 2048
+"""
+)
 @click.option("--prompt", "-p", required=True, help="Text description of the image to generate.")
-@click.option("--model", "-m", help="OpenRouter image model ID (default from config).")
+@click.option("--model", "-m", help=_MODEL_ID_HELP)
 @click.option(
     "--reference",
     "-r",
@@ -113,7 +139,12 @@ cli.add_command(draw_things_group)
     is_flag=True,
     help="Enable LLM thinking during prompt optimization (slower; default: off).",
 )
-@click.option("--out", "-o", type=click.Path(path_type=Path), help="Output file path.")
+@click.option(
+    "--out",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output file path. Default: a timestamped file in the current directory.",
+)
 @click.option(
     "--format",
     "output_format",
@@ -147,7 +178,7 @@ cli.add_command(draw_things_group)
 @click.option(
     "--api-key",
     envvar="OPENROUTER_API_KEY",
-    help="OpenRouter API key (overrides OPENROUTER_API_KEY environment variable).",
+    help=_OPENROUTER_API_KEY_HELP,
 )
 @click.option(
     "--quiet",
@@ -180,7 +211,10 @@ cli.add_command(draw_things_group)
 @click.option(
     "--use-reference-description",
     is_flag=True,
-    help="Use reference image description during optimization (describe then optimize with description; with Ollama the image is not sent).",
+    help=(
+        "Describe the reference image, then use that text during optimization. "
+        "Requires --reference. With Ollama the image is not sent to the image model."
+    ),
 )
 @click.option(
     "--reference-description-model",
@@ -193,6 +227,17 @@ cli.add_command(draw_things_group)
     type=click.Choice(["brief", "detailed", "more_detailed"], case_sensitive=False),
     default="detailed",
     help="Prose description verbosity (only for --reference-description-model prose). Default: detailed.",
+)
+@click.option(
+    "--aspect-ratio",
+    default=None,
+    help=_ASPECT_RATIO_HELP,
+)
+@click.option(
+    "--max-extent",
+    type=int,
+    default=None,
+    help=_MAX_EXTENT_HELP,
 )
 @lora_option
 def generate(
@@ -214,9 +259,11 @@ def generate(
     use_reference_description: bool,
     reference_description_model: str,
     reference_description_verbosity: str,
+    aspect_ratio: str | None,
+    max_extent: int | None,
     lora: tuple[str, ...],
 ) -> None:
-    """Generate an image from a text prompt (optionally with optimization and reference)."""
+    """Generate an image from a text prompt."""
     # Reset cancel event for this run (in case CLI is invoked again in same process)
     reset_cancellation()
 
@@ -330,6 +377,8 @@ def generate(
             "reference_images_b64": [ref_b64_to_send] if ref_b64_to_send else None,
             "config": config,
             "cancel_check": cancel_check,
+            "aspect_ratio": aspect_ratio,
+            "max_extent": max_extent,
         }
         if provider is not None:
             gen_kw["provider"] = provider
@@ -337,9 +386,7 @@ def generate(
         result: GenerationResult
         if not quiet:
             with progress.generation_progress(
-                model=model or resolve_default_image_model(
-                    provider_id=provider_eff, config=config
-                ),
+                model=model or resolve_default_image_model(provider_id=provider_eff, config=config),
                 reference_used=reference is not None,
                 optimized=not no_optimize,
             ):
@@ -414,16 +461,21 @@ Output: on success, stdout is exactly one line (the saved image path). Human-rea
 run context (banner, refs, timing) is printed to stderr unless --quiet.
 
 \b
-Defaults: when --provider or --model is omitted, uses ``GENIMG_DEFAULT_IMAGE_PROVIDER``
-and provider-specific defaults from config / ``models.yaml`` (same as ``genimg generate``).
-Reference images require a provider that supports them (OpenRouter or Draw Things).
+Defaults: when --provider or --model is omitted, uses GENIMG_DEFAULT_IMAGE_PROVIDER
+and provider-specific defaults from config / models.yaml (same as genimg generate).
+Reference images work with OpenRouter, Wiro, and Draw Things.
 
 \b
-Draw Things: uses ``GENIMG_DRAW_THINGS_PRESET`` (tuning) and ``GENIMG_DRAW_THINGS_DEFAULT_MODEL``
-or ``--model`` (checkpoint). LoRAs only when ``--lora`` is passed.
+Draw Things: uses GENIMG_DRAW_THINGS_PRESET (tuning) and GENIMG_DRAW_THINGS_DEFAULT_MODEL
+or --model (checkpoint). LoRAs only when --lora is passed.
 
 \b
 With -v / -vv: stderr shows full reference paths on the refs line and a longer --prompt preview.
+
+\b
+Examples:
+  genimg character "Rogue Pilot" ref.jpg
+  genimg character "Rogue Pilot" ref.jpg --aspect-ratio 1:1 --max-extent 2048
 """
 )
 @click.argument("title")
@@ -438,10 +490,7 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
     "--model",
     "-m",
     default=None,
-    help=(
-        "Image model checkpoint (Draw Things) or model ID (OpenRouter/Ollama). "
-        "Draw Things default from GENIMG_DRAW_THINGS_DEFAULT_MODEL when omitted."
-    ),
+    help=_MODEL_ID_HELP,
 )
 @click.option(
     "--provider",
@@ -453,7 +502,11 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
     ),
 )
 @click.option(
-    "--out", "-o", type=click.Path(path_type=Path), default=None, help="Output file path."
+    "--out",
+    "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output file path. Default: a timestamped file from TITLE in the current directory.",
 )
 @click.option(
     "--output",
@@ -475,7 +528,7 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
 @click.option(
     "--api-key",
     envvar="OPENROUTER_API_KEY",
-    help="OpenRouter API key (overrides OPENROUTER_API_KEY environment variable).",
+    help=_OPENROUTER_API_KEY_HELP,
 )
 @click.option(
     "--quiet",
@@ -495,6 +548,17 @@ With -v / -vv: stderr shows full reference paths on the refs line and a longer -
     is_flag=True,
     help="Log raw API request/response (image data truncated) for debugging.",
 )
+@click.option(
+    "--aspect-ratio",
+    default=None,
+    help=_ASPECT_RATIO_HELP,
+)
+@click.option(
+    "--max-extent",
+    type=int,
+    default=None,
+    help=_MAX_EXTENT_HELP,
+)
 @lora_option
 def character(
     title: str,
@@ -509,6 +573,8 @@ def character(
     quiet: bool,
     verbose_count: int,
     debug_api: bool,
+    aspect_ratio: str | None,
+    max_extent: int | None,
     lora: tuple[str, ...],
 ) -> None:
     """Generate a character turnaround sheet using reference images (Variation C output)."""
@@ -550,9 +616,7 @@ def character(
                 )
 
         model_for_generate = model
-        model_for_ui = model or resolve_default_image_model(
-            provider_id=provider_eff, config=config
-        )
+        model_for_ui = model or resolve_default_image_model(provider_id=provider_eff, config=config)
 
         path_list = list(paths)
         ref_b64_list: list[str] = []
@@ -583,6 +647,8 @@ def character(
             "config": config,
             "cancel_check": cancel_check,
             "provider": provider_eff,
+            "aspect_ratio": aspect_ratio,
+            "max_extent": max_extent,
         }
 
         result: GenerationResult

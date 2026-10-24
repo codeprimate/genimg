@@ -11,6 +11,7 @@ from pathlib import Path
 from PIL import Image
 
 from genimg.contrib.draw_things_poc.client import DrawThingsClient
+from genimg.contrib.draw_things_poc.config_builder import round_dimension_to_multiple_of_64
 from genimg.contrib.draw_things_poc.constants import (
     DEFAULT_DRAW_THINGS_HOST,
     DEFAULT_DRAW_THINGS_PORT,
@@ -21,6 +22,7 @@ from genimg.contrib.draw_things_poc.generated import imageService_pb2_grpc as pb
 from genimg.contrib.draw_things_poc.tensor_image import dt_tensor_bytes_to_pil
 from genimg.core.config import Config
 from genimg.core.image_gen import GenerationResult
+from genimg.core.output_size import ideal_pixel_size
 from genimg.logging_config import get_logger
 from genimg.utils.exceptions import APIError
 
@@ -71,6 +73,8 @@ class DrawThingsPoCProvider:
         cancel_check: Callable[[], bool] | None,
         *,
         api_key_override: str | None = None,
+        aspect_ratio: str | None = None,
+        max_extent: int | None = None,
     ) -> GenerationResult:
         del config, api_key_override
         refs = [r for r in (reference_images_b64 or []) if r and str(r).strip()]
@@ -94,12 +98,18 @@ class DrawThingsPoCProvider:
                 ) from e
 
         start = time.time()
+        width_px = self._width_px
+        height_px = self._height_px
+        if aspect_ratio is not None and max_extent is not None:
+            ideal_width, ideal_height = ideal_pixel_size(aspect_ratio, max_extent)
+            width_px = round_dimension_to_multiple_of_64(ideal_width)
+            height_px = round_dimension_to_multiple_of_64(ideal_height)
         with self._client:
             raw = self._client.generate_image_last_tensor(
                 prompt=prompt,
                 model=model,
-                width_px=self._width_px,
-                height_px=self._height_px,
+                width_px=width_px,
+                height_px=height_px,
                 steps=self._steps,
                 guidance_scale=self._guidance_scale,
                 seed=None,

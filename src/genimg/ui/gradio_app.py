@@ -48,8 +48,18 @@ from genimg.core.image_analysis import (
 from genimg.core.image_gen import resolve_default_image_model
 from genimg.core.models import (
     image_models as yaml_image_models,
+)
+from genimg.core.models import (
     merge_optimization_model_choices,
+)
+from genimg.core.models import (
     wiro_image_models as yaml_wiro_image_models,
+)
+from genimg.core.output_size import (
+    FIXED_ASPECT_RATIOS,
+    MAX_OUTPUT_EXTENT,
+    MIN_OUTPUT_EXTENT,
+    MODEL_DEFAULT_LABEL,
 )
 from genimg.core.provider_ids import (
     PROVIDER_DRAW_THINGS,
@@ -67,6 +77,8 @@ from genimg.core.providers.draw_things.lora_choices import (
     model_catalog_hint,
     model_dropdown_choices,
 )
+from genimg.core.providers.wiro import load_cached_model_schema
+from genimg.core.providers.wiro_schema import aspect_choices_from_schema
 from genimg.logging_config import get_logger, log_prompts
 
 logger = get_logger(__name__)
@@ -88,6 +100,8 @@ _GRADIO_IMAGE_PROVIDER_CHOICES: tuple[str, ...] = (
     PROVIDER_DRAW_THINGS,
     PROVIDER_WIRO,
 )
+OUTPUT_SIZE_ASPECT_SCALE = 2
+OUTPUT_SIZE_EXTENT_SCALE = 1
 
 
 def _page_title_with_status(status_tag: str) -> str:
@@ -289,7 +303,7 @@ def _checkpoint_ui_choices(
     catalog_pairs: list[tuple[str, str]],
 ) -> list[tuple[str, str]]:
     """Gradio dropdown choices as ``(display_label, checkpoint_filename)``."""
-    label_by_file = {file_name: label for file_name, label in catalog_pairs}
+    label_by_file = dict(catalog_pairs)
     choices: list[tuple[str, str]] = [("— select checkpoint —", _CHECKPOINT_NONE)]
     for file_name in filenames:
         label = label_by_file.get(file_name, file_name)
@@ -403,9 +417,7 @@ def _load_model_choices() -> tuple[
     if default_wiro and default_wiro not in wiro_image_models:
         wiro_image_models = [default_wiro] + wiro_image_models
     elif default_wiro and wiro_image_models:
-        wiro_image_models = [default_wiro] + [
-            m for m in wiro_image_models if m != default_wiro
-        ]
+        wiro_image_models = [default_wiro] + [m for m in wiro_image_models if m != default_wiro]
 
     ollama_image_models: list[str] = list_ollama_image_models()
     default_ollama = config.default_ollama_image_model
@@ -588,6 +600,8 @@ def _run_generate(
     cancel_check: Any | None = None,
     lora_files: Sequence[str | None] | None = None,
     lora_weights: Sequence[float] | None = None,
+    aspect_ratio: str = "",
+    max_extent: float | int | str | None = None,
 ) -> tuple[str | None, Any | None, str]:
     """
     Run the generate flow: validate, optional optimize, generate, return (status, image, status_msg).
@@ -655,6 +669,8 @@ def _run_generate(
             provider=provider,
             config=config,
             cancel_check=cancel_check,
+            aspect_ratio=aspect_ratio,
+            max_extent=max_extent,
         )
     except (
         ValidationError,
@@ -691,6 +707,8 @@ def _run_generate_stream(
     optimize_format: str = "prose",
     lora_files: Sequence[str | None] | None = None,
     lora_weights: Sequence[float] | None = None,
+    aspect_ratio: str = "",
+    max_extent: float | int | str | None = None,
 ) -> Generator[tuple[str, str | None, bool, bool, str, dict[str, Any], str, str], None, None]:
     """
     Generate flow: use Optimized prompt box only when it was produced for the current
@@ -917,6 +935,8 @@ def _run_generate_stream(
             provider=provider,
             config=config,
             cancel_check=cancel_check,
+            aspect_ratio=aspect_ratio,
+            max_extent=max_extent,
         )
     except (
         ValidationError,
@@ -973,6 +993,8 @@ def _generate_click_handler(
     lora_weight_0: float = DEFAULT_LORA_WEIGHT,
     lora_weight_1: float = DEFAULT_LORA_WEIGHT,
     lora_weight_2: float = DEFAULT_LORA_WEIGHT,
+    aspect_ratio: str = "",
+    max_extent: float | int | str | None = None,
 ) -> Generator[tuple[Any, ...], None, None]:
     """Generate button logic: clear cancel, run stream, yield updates. Used by UI and tests."""
     logger.debug("Generate clicked")
@@ -1009,6 +1031,8 @@ def _generate_click_handler(
             optimize_format=optimize_format,
             lora_files=(lora_file_0, lora_file_1, lora_file_2),
             lora_weights=(lora_weight_0, lora_weight_1, lora_weight_2),
+            aspect_ratio=aspect_ratio,
+            max_extent=max_extent,
         ):
             state = new_state
             yield (
@@ -1305,6 +1329,68 @@ def _run_optimize_only_stream(
 _REF_NOT_SUPPORTED_MSG = "Reference images are not supported for this provider."
 
 
+def _fixed_aspect_rows() -> list[tuple[str, str]]:
+    return [(ratio, ratio) for ratio in FIXED_ASPECT_RATIOS]
+
+
+def output_size_choices(
+    provider: str,
+    model: str | None,
+) -> tuple[list[tuple[str, str]], str | None]:
+    """Return aspect rows and an optional schema-load error.
+
+    The first row is Model default. Non-Wiro providers use the fixed list.
+    A Wiro schema with an ``aspectRatio`` select replaces that list.
+    """
+    rows = [(MODEL_DEFAULT_LABEL, "")]
+    fixed = _fixed_aspect_rows()
+    model_name = (model or "").strip()
+    if provider != PROVIDER_WIRO or not model_name:
+        return rows + fixed, None
+    try:
+        schema = load_cached_model_schema(Config.from_env(), model_name)
+    except (ValidationError, APIError, NetworkError, RequestTimeoutError) as exc:
+        return rows + fixed, _exception_to_message(exc)
+    schema_rows = aspect_choices_from_schema(schema)
+    if schema_rows is None:
+        return rows + fixed, None
+    return rows + schema_rows, None
+
+
+def retain_output_size(
+    aspect_value: str | None,
+    max_extent: float | int | str | None,
+    choices: list[tuple[str, str]],
+) -> tuple[str, object | None]:
+    """Keep the current pair when the aspect value is still a choice.
+
+    Model default is ``""``. A missing aspect resets the extent too, so the
+    form does not keep a partial pair.
+    """
+    choice_values = {value for _label, value in choices}
+    current = "" if aspect_value is None or aspect_value == "" else aspect_value
+    if current in choice_values:
+        return current, max_extent
+    return "", None
+
+
+def _on_output_model_change(
+    provider: str,
+    model: str | None,
+    aspect_value: str | None,
+    max_extent: float | int | str | None,
+) -> tuple[Any, Any, Any]:
+    """Rebuild aspect choices for the selected model and keep a still-valid pair."""
+    choices, error = output_size_choices(provider, model)
+    kept_aspect, kept_extent = retain_output_size(aspect_value, max_extent, choices)
+    status = _format_status(error, "error") if error else gr.update()
+    return (
+        gr.update(choices=choices, value=kept_aspect),
+        gr.update(value=kept_extent),
+        status,
+    )
+
+
 def _build_blocks() -> gr.Blocks:
     """Build the Gradio Blocks UI (layout + generate handler, no cancellation yet)."""
     (
@@ -1323,6 +1409,11 @@ def _build_blocks() -> gr.Blocks:
     lora_catalog_info = ""
     initial_lora_files, initial_lora_weights = _empty_lora_slots()
     initial_lora_visible = default_image_provider == PROVIDER_DRAW_THINGS
+    initial_size_choices, initial_size_error = output_size_choices(
+        default_image_provider,
+        default_image_model,
+    )
+    initial_status = _format_status(initial_size_error, "error") if initial_size_error else ""
 
     logo_img = ""
     logo_url = _logo_data_url(64)
@@ -1353,7 +1444,7 @@ def _build_blocks() -> gr.Blocks:
 
     with gr.Blocks(title=BASE_PAGE_TITLE) as app:
         gr.HTML(header_html)
-        status_html = gr.HTML(value="", visible=True)
+        status_html = gr.HTML(value=initial_status, visible=True)
         page_title = gr.Textbox(value=BASE_PAGE_TITLE, visible=False, elem_id="genimg-page-title")
         notify_msg = gr.Textbox(value="", visible=False, elem_id="genimg-notify-msg")
 
@@ -1466,55 +1557,75 @@ def _build_blocks() -> gr.Blocks:
                         else "Model for the selected provider. Type a model ID for another."
                     ),
                 )
-                ref_message = gr.HTML(
-                    value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
-                    visible=(not _provider_supports_reference(default_image_provider)),
+
+        gr.Markdown("Output size")
+        with gr.Row():
+            with gr.Column(scale=OUTPUT_SIZE_ASPECT_SCALE):
+                aspect_dd = gr.Dropdown(
+                    label="Aspect ratio",
+                    info="Model default keeps the provider size. A ratio needs a max extent.",
+                    choices=initial_size_choices,
+                    value="",
+                )
+            with gr.Column(scale=OUTPUT_SIZE_EXTENT_SCALE):
+                extent_nb = gr.Number(
+                    label="Max extent",
+                    info="Longer side, in pixels.",
+                    minimum=MIN_OUTPUT_EXTENT,
+                    maximum=MAX_OUTPUT_EXTENT,
+                    precision=0,
+                    value=None,
                 )
 
-                with gr.Column(visible=initial_lora_visible) as lora_section:
-                    lora_info = gr.Markdown(
-                        lora_catalog_info,
-                        visible=bool(lora_catalog_info.strip()),
-                    )
-                    lora_dd_0 = gr.Dropdown(
-                        label="LoRA 1",
-                        choices=lora_dd_choices,
-                        value=initial_lora_files[0],
-                        allow_custom_value=True,
-                    )
-                    lora_sl_0 = gr.Slider(
-                        label="Weight 1",
-                        minimum=0.0,
-                        maximum=1.0,
-                        step=0.05,
-                        value=initial_lora_weights[0],
-                    )
-                    lora_dd_1 = gr.Dropdown(
-                        label="LoRA 2",
-                        choices=lora_dd_choices,
-                        value=initial_lora_files[1],
-                        allow_custom_value=True,
-                    )
-                    lora_sl_1 = gr.Slider(
-                        label="Weight 2",
-                        minimum=0.0,
-                        maximum=1.0,
-                        step=0.05,
-                        value=initial_lora_weights[1],
-                    )
-                    lora_dd_2 = gr.Dropdown(
-                        label="LoRA 3",
-                        choices=lora_dd_choices,
-                        value=initial_lora_files[2],
-                        allow_custom_value=True,
-                    )
-                    lora_sl_2 = gr.Slider(
-                        label="Weight 3",
-                        minimum=0.0,
-                        maximum=1.0,
-                        step=0.05,
-                        value=initial_lora_weights[2],
-                    )
+        ref_message = gr.HTML(
+            value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
+            visible=(not _provider_supports_reference(default_image_provider)),
+        )
+
+        with gr.Column(visible=initial_lora_visible) as lora_section:
+            lora_info = gr.Markdown(
+                lora_catalog_info,
+                visible=bool(lora_catalog_info.strip()),
+            )
+            lora_dd_0 = gr.Dropdown(
+                label="LoRA 1",
+                choices=lora_dd_choices,
+                value=initial_lora_files[0],
+                allow_custom_value=True,
+            )
+            lora_sl_0 = gr.Slider(
+                label="Weight 1",
+                minimum=0.0,
+                maximum=1.0,
+                step=0.05,
+                value=initial_lora_weights[0],
+            )
+            lora_dd_1 = gr.Dropdown(
+                label="LoRA 2",
+                choices=lora_dd_choices,
+                value=initial_lora_files[1],
+                allow_custom_value=True,
+            )
+            lora_sl_1 = gr.Slider(
+                label="Weight 2",
+                minimum=0.0,
+                maximum=1.0,
+                step=0.05,
+                value=initial_lora_weights[1],
+            )
+            lora_dd_2 = gr.Dropdown(
+                label="LoRA 3",
+                choices=lora_dd_choices,
+                value=initial_lora_files[2],
+                allow_custom_value=True,
+            )
+            lora_sl_2 = gr.Slider(
+                label="Weight 3",
+                minimum=0.0,
+                maximum=1.0,
+                step=0.05,
+                value=initial_lora_weights[2],
+            )
 
         lora_slot_components: tuple[Any, ...] = (
             lora_dd_0,
@@ -1547,7 +1658,19 @@ def _build_blocks() -> gr.Blocks:
                 gr.update(value=weights[2]),
             )
 
-        def _on_provider_change(provider: str) -> tuple[Any, ...]:
+        def _on_provider_change(
+            provider: str,
+            aspect_value: str | None = None,
+            max_extent: float | int | str | None = None,
+        ) -> tuple[Any, ...]:
+            def size_updates(model: str | None) -> tuple[Any, Any]:
+                choices, _error = output_size_choices(provider, model)
+                kept_aspect, kept_extent = retain_output_size(aspect_value, max_extent, choices)
+                return (
+                    gr.update(choices=choices, value=kept_aspect),
+                    gr.update(value=kept_extent),
+                )
+
             if provider == PROVIDER_OLLAMA:
                 config = Config.from_env()
                 return (
@@ -1560,18 +1683,18 @@ def _build_blocks() -> gr.Blocks:
                         value=_format_status(_REF_NOT_SUPPORTED_MSG, "warning"),
                     ),
                     *_lora_slot_updates(visible=False, pairs=[]),
+                    *size_updates(config.default_ollama_image_model),
                 )
             if provider == PROVIDER_WIRO:
                 config = Config.from_env()
-                wiro_default = resolve_default_image_model(
-                    provider_id=PROVIDER_WIRO, config=config
-                )
+                wiro_default = resolve_default_image_model(provider_id=PROVIDER_WIRO, config=config)
                 if not wiro_default and wiro_image_models:
                     wiro_default = wiro_image_models[0]
                 return (
                     gr.update(choices=wiro_image_models, value=wiro_default),
                     gr.update(visible=False),
                     *_lora_slot_updates(visible=False, pairs=[]),
+                    *size_updates(wiro_default),
                 )
             if provider == PROVIDER_DRAW_THINGS:
                 models, catalog_pairs, lora_pairs, hint = _fetch_draw_things_ui_catalog()
@@ -1580,6 +1703,7 @@ def _build_blocks() -> gr.Blocks:
                     gr.update(choices=model_choices, value=_CHECKPOINT_NONE),
                     gr.update(visible=False),
                     *_lora_slot_updates(visible=True, pairs=lora_pairs, hint=hint),
+                    *size_updates(_CHECKPOINT_NONE),
                 )
             config = Config.from_env()
             openrouter_default = resolve_default_image_model(
@@ -1591,18 +1715,27 @@ def _build_blocks() -> gr.Blocks:
                 gr.update(choices=image_models, value=openrouter_default),
                 gr.update(visible=False),
                 *_lora_slot_updates(visible=False, pairs=[]),
+                *size_updates(openrouter_default),
             )
 
         provider_dd.change(
             fn=_on_provider_change,
-            inputs=[provider_dd],
+            inputs=[provider_dd, aspect_dd, extent_nb],
             outputs=[
                 model_dd,
                 ref_message,
                 lora_section,
                 lora_info,
                 *lora_slot_components,
+                aspect_dd,
+                extent_nb,
             ],
+        )
+
+        model_dd.change(
+            fn=_on_output_model_change,
+            inputs=[provider_dd, model_dd, aspect_dd, extent_nb],
+            outputs=[aspect_dd, extent_nb, status_html],
         )
 
         def _load_draw_things_catalog_if_selected(provider: str) -> tuple[Any, ...]:
@@ -1751,6 +1884,8 @@ def _build_blocks() -> gr.Blocks:
                 lora_sl_0,
                 lora_sl_1,
                 lora_sl_2,
+                aspect_dd,
+                extent_nb,
             ],
             outputs=_gen_outputs,
             concurrency_id=_UI_CONCURRENCY_ID,
