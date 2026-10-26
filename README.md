@@ -2,7 +2,7 @@
 
 A Python package for generating AI images with intelligent prompt optimization. Generate high-quality images from simple text descriptions using multiple AI models via OpenRouter (or local providers), with optional local prompt enhancement via the **Ollama HTTP API**.
 
-**Current version:** 0.18.0 (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
+**Current version:** 0.18.1 (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
 
 ## Features
 

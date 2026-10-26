@@ -50,7 +50,17 @@ class TestPromptsLoader:
         text = get_character_turnaround_prompt()
         assert isinstance(text, str)
         assert len(text.strip()) >= 3
-        assert "turnaround reference sheet" in text.lower()
+        lowered = text.lower()
+        assert "character turnaround" in lowered
+        assert "side by side" in lowered
+        assert "front view" in lowered
+        assert "profile view" in lowered
+        assert "rear view" in lowered
+        assert "face close-up" in lowered
+        assert "far right" in lowered
+        # "panel" and "horizontal" make image models draw stacked bands and rules.
+        assert "panel" not in lowered
+        assert "horizontal" not in lowered
 
     def test_get_optimization_template_json_returns_string_with_placeholder(self):
         template = get_optimization_template_json()

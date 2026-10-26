@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - (none)
 
+## [0.18.1] - 2026-10-26
+
+### Changed
+- **`genimg character` turnaround prompt:** the image now includes one large front-facing face close-up at the far right of the same row. The close-up matches the height of each body figure and shows the face from the hair to the chin.
+
+### Fixed
+- **`genimg character` turnaround prompt:** the layout text no longer says "panels" or "arranged horizontally". Those words made models draw three stacked bands with rules across the image. The prompt now asks for three figures side by side on one open white field.
+
 ## [0.18.0] - 2026-10-24
 
 ### Changed

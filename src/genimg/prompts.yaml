@@ -187,19 +187,27 @@ optimization:
 # Base prompt for `genimg character` (character turnaround sheet). Loaded via prompts_loader.
 character:
   template: |
-    High resolution turnaround reference sheet of the person shown in the reference image.
-    Use exact facial and hair likeness of the person in the reference image.
+    High resolution character turnaround of the person shown in the reference image.
+    Use the exact facial and hair likeness of the person in the reference image.
 
-    Three seamless panels arranged horizontally on a plain white background.
-    All panels at identical scale, height alignment, and lighting.
+    One continuous image on a plain white background.
+    Three full figures of the same person stand side by side in a single row.
+    Same scale. Same ground line. Same lighting. Open white space between the figures.
+    The figures share one open white field. Empty white space is the only separation.
 
-    Maintain exact likeness across all panels.
-    Left panel: front view, facing directly forward.
-    Middle panel: profile view, facing directly right.
-    Right panel: rear view, facing directly away.
+    Keep the exact likeness in every figure.
+    Left figure: front view, facing the camera.
+    Center figure: profile view, facing the right edge of the image.
+    Right figure: rear view, facing away from the camera.
 
-    Relaxed standing pose, arms slightly away from body.
-    View to thigh in all panels.
+    Relaxed standing pose. Arms slightly away from the body.
+    Each figure is visible from the head to the thigh.
 
-    Flat, even studio lighting, no cast shadows.
-    No background, no text, no labels in any panel. Clear, sharp, and clean image
+    Add one large front-facing face close-up of the same person.
+    Place it at the far right of the same row, after the rear-view figure.
+    The close-up shows only the face, from the top of the hair to the chin.
+    The close-up is as tall as each body figure.
+    Same likeness. Same lighting. Open white space around the close-up.
+
+    Flat, even studio lighting. No cast shadows.
+    No text. No labels. No borders. No frames. No gutters. Clear, sharp, and clean image.
