@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
+from genimg import APIError
 from genimg.core.config import Config
 from genimg.core.providers.openrouter import (
     OpenRouterProvider,
@@ -119,3 +120,51 @@ def test_extract_image_url_from_content_parts() -> None:
         ]
     }
     assert _extract_image_url_from_result(result) == url
+
+
+def _image_response(body: dict) -> MagicMock:
+    response = MagicMock()
+    response.headers = {"content-type": "application/json"}
+    response.json.return_value = body
+    return response
+
+
+@pytest.mark.unit
+def test_parse_response_carries_generation_id_and_cost() -> None:
+    data_url = "data:image/png;base64," + base64.b64encode(MINIMAL_PNG).decode()
+    body = {
+        "id": "gen-1",
+        "usage": {"cost": 0.0312},
+        "choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}],
+    }
+    result = OpenRouterProvider()._parse_response(_image_response(body), "m", "p", False)
+    assert result.generation_id == "gen-1"
+    assert result.cost == pytest.approx(0.0312)
+
+
+@pytest.mark.unit
+def test_parse_response_without_usage_leaves_cost_empty() -> None:
+    data_url = "data:image/png;base64," + base64.b64encode(MINIMAL_PNG).decode()
+    body = {"choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}]}
+    result = OpenRouterProvider()._parse_response(_image_response(body), "m", "p", False)
+    assert result.generation_id is None
+    assert result.cost is None
+
+
+@pytest.mark.unit
+def test_no_image_error_names_the_finish_reason_and_text() -> None:
+    body = {
+        "choices": [
+            {
+                "finish_reason": "content_filter",
+                "native_finish_reason": "IMAGE_SAFETY",
+                "message": {"content": "I can't draw that."},
+            }
+        ]
+    }
+    with pytest.raises(APIError) as caught:
+        OpenRouterProvider()._parse_response(_image_response(body), "m", "p", False)
+    message = str(caught.value)
+    assert "finish_reason=content_filter" in message
+    assert "native_finish_reason=IMAGE_SAFETY" in message
+    assert "I can't draw that." in message

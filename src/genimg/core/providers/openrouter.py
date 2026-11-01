@@ -30,6 +30,8 @@ from genimg.utils.exceptions import (
 
 logger = get_logger(__name__)
 
+NO_IMAGE_TEXT_LIMIT = 500
+
 _PROMPT_LOG_MAX = 50_000
 _DEBUG_TRUNCATE_THRESHOLD = 200
 _DEBUG_NEVER_TRUNCATE_KEYS = frozenset({"text", "message", "raw"})
@@ -114,6 +116,40 @@ def _extract_image_url_from_result(result: Any) -> str:
     return ""
 
 
+def _usage_fields(result: dict[str, Any]) -> tuple[str | None, float | None]:
+    """Return the generation id and reported cost from an OpenRouter JSON body."""
+    generation_id = result.get("id")
+    usage = result.get("usage")
+    cost = usage.get("cost") if isinstance(usage, dict) else None
+    return (
+        generation_id if isinstance(generation_id, str) else None,
+        float(cost) if isinstance(cost, (int, float)) else None,
+    )
+
+
+def _no_image_reason(result: Any) -> str:
+    """Say why a body holds no image: the finish reasons, an error, and any text the model sent."""
+    if not isinstance(result, dict):
+        return "the response is not an object"
+    parts: list[str] = []
+    error = result.get("error")
+    if error:
+        parts.append(f"error={error}")
+    choices = result.get("choices")
+    first = choices[0] if isinstance(choices, list) and choices else None
+    if isinstance(first, dict):
+        for field in ("finish_reason", "native_finish_reason"):
+            if first.get(field):
+                parts.append(f"{field}={first[field]}")
+        message = first.get("message")
+        if isinstance(message, dict):
+            for field in ("refusal", "content"):
+                text = message.get(field)
+                if isinstance(text, str) and text:
+                    parts.append(f"{field}={text[:NO_IMAGE_TEXT_LIMIT]}")
+    return ", ".join(parts) or "the response gives no reason"
+
+
 class OpenRouterProvider:
     """Image generation provider for the OpenRouter API."""
 
@@ -179,7 +215,8 @@ class OpenRouterProvider:
             image_url = _extract_image_url_from_result(result)
             if not image_url:
                 raise APIError(
-                    "No images in API response. The model may not support image generation.",
+                    "No images in API response. The model may not support image generation. "
+                    f"({_no_image_reason(result)})",
                     response=str(result),
                 )
             if image_url.startswith("data:"):
@@ -188,6 +225,7 @@ class OpenRouterProvider:
             else:
                 image_data = base64.b64decode(image_url)
             pil_image = Image.open(io.BytesIO(image_data)).copy()
+            generation_id, cost = _usage_fields(result)
             return GenerationResult(
                 image=pil_image,
                 _format="png",
@@ -195,6 +233,8 @@ class OpenRouterProvider:
                 model_used=model,
                 prompt_used=prompt,
                 had_reference=had_ref,
+                generation_id=generation_id,
+                cost=cost,
             )
         except (KeyError, IndexError, ValueError, AttributeError) as e:
             raise APIError(
@@ -292,6 +332,8 @@ class OpenRouterProvider:
             model_used=result.model_used,
             prompt_used=result.prompt_used,
             had_reference=result.had_reference,
+            generation_id=result.generation_id,
+            cost=result.cost,
         )
 
     def generate(

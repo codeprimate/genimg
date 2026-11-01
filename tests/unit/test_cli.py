@@ -1006,6 +1006,67 @@ class TestGenerateCommand:
 
 
 @pytest.mark.unit
+class TestGenerateJsonOutput:
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_success_is_one_json_line(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
+        mock_config_cls.from_env.return_value = config
+        mock_generate.return_value = _png_generation_result(generation_id="gen-1", cost=0.03)
+        out_file = tmp_path / "j.png"
+
+        result = _run_cli("--prompt", "x", "--no-optimize", "--out", str(out_file), "--json")
+
+        assert result.exit_code == 0
+        answer = json.loads(result.output.strip())
+        assert answer["ok"] is True
+        assert answer["path"] == str(out_file)
+        assert answer["generation_id"] == "gen-1"
+        assert answer["cost"] == 0.03
+
+    @patch("genimg.cli.commands.generate_image")
+    @patch("genimg.cli.commands.validate_prompt")
+    @patch("genimg.cli.commands.process_reference_image")
+    @patch("genimg.cli.commands.Config")
+    def test_failure_is_one_json_line_and_exits_nonzero(
+        self,
+        mock_config_cls: MagicMock,
+        _mock_ref: MagicMock,
+        _mock_validate: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        config = MagicMock()
+        config.default_image_model = "test/model"
+        config.default_image_provider = "openrouter"
+        mock_config_cls.from_env.return_value = config
+        mock_generate.side_effect = APIError("No images (finish_reason=stop)", status_code=200)
+
+        result = _run_cli(
+            "--prompt", "x", "--no-optimize", "--out", str(tmp_path / "j.png"), "--json"
+        )
+
+        assert result.exit_code != 0
+        answer = json.loads(result.output.strip())
+        assert answer == {
+            "ok": False,
+            "kind": "APIError",
+            "message": "No images (finish_reason=stop)",
+            "status": 200,
+        }
+
+
 class TestCharacterCommand:
     @patch("genimg.cli.commands.progress.print_success_result")
     @patch("genimg.cli.commands.generate_image")

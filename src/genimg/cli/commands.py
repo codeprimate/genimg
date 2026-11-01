@@ -5,6 +5,7 @@ This module contains the Click command group and all CLI commands
 (generate, ui, etc.).
 """
 
+import json
 import os
 from pathlib import Path
 from typing import cast
@@ -187,6 +188,13 @@ Examples:
     help="Minimize progress messages; only print result path or errors.",
 )
 @click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Print one JSON line on stdout, for scripts: the path, model, generation id, cost, "
+    "and time, or the failure. Implies --quiet.",
+)
+@click.option(
     "--verbose",
     "-v",
     "verbose_count",
@@ -254,6 +262,7 @@ def generate(
     api_key: str | None,
     provider: str | None,
     quiet: bool,
+    json_output: bool,
     verbose_count: int,
     debug_api: bool,
     use_reference_description: bool,
@@ -269,6 +278,7 @@ def generate(
 
     # Apply logging verbosity: CLI flags override GENIMG_VERBOSITY
     verbose_level = min(verbose_count, 2) if verbose_count > 0 else get_verbosity_from_env()
+    quiet = quiet or json_output
     configure_logging(verbose_level=verbose_level, quiet=quiet)
 
     def do_generate() -> None:
@@ -422,7 +432,22 @@ def generate(
         )
 
         # 9. Print result
-        if quiet:
+        if json_output:
+            click.echo(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "path": str(out_path),
+                        "model": result.model_used,
+                        "generation_id": result.generation_id,
+                        "cost": result.cost,
+                        "seconds": result.generation_time,
+                        "width": result.image.width,
+                        "height": result.image.height,
+                    }
+                )
+            )
+        elif quiet:
             # Quiet mode: only output path to stdout
             click.echo(str(out_path))
         else:
@@ -442,7 +467,7 @@ def generate(
     # Install SIGINT handler for cancellation
     old_sigint = install_sigint_handler()
     try:
-        run_with_error_handling(do_generate, quiet=quiet)
+        run_with_error_handling(do_generate, quiet=quiet, json_output=json_output)
     finally:
         restore_sigint_handler(old_sigint)
 

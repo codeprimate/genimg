@@ -5,6 +5,7 @@ This module provides utilities for handling exceptions, mapping them to
 appropriate exit codes, and managing cancellation via SIGINT signals.
 """
 
+import json
 import signal
 import sys
 import threading
@@ -69,15 +70,31 @@ def map_exception_to_exit(exc: BaseException) -> tuple[int, str]:
     return (EXIT_API_OR_NETWORK, str(exc) if exc.args else "An unexpected error occurred.")
 
 
+def emit_json_failure(exc: Exception, message: str) -> None:
+    """Print one JSON line describing a failed generation."""
+    click.echo(
+        json.dumps(
+            {
+                "ok": False,
+                "kind": type(exc).__name__,
+                "message": message,
+                "status": getattr(exc, "status_code", None),
+            }
+        )
+    )
+
+
 def run_with_error_handling(
     fn: Callable[[], None],
     *,
     quiet: bool = False,
     debug: bool = False,
+    json_output: bool = False,
 ) -> None:
     """
     Run fn(); on exception map to exit code and message, print and sys.exit.
     Used so the generate flow stays free of try/except for known errors.
+    With json_output, a failure is one JSON line on stdout, for scripts.
     """
     try:
         fn()
@@ -92,7 +109,9 @@ def run_with_error_handling(
         GenimgError,
     ) as e:
         code, msg = map_exception_to_exit(e)
-        if code == EXIT_CANCELLED:
+        if json_output:
+            emit_json_failure(e, msg)
+        elif code == EXIT_CANCELLED:
             if not quiet:
                 progress.print_warning(msg)
         else:
@@ -105,7 +124,9 @@ def run_with_error_handling(
         if debug:
             raise
         code, msg = map_exception_to_exit(e)
-        if quiet:
+        if json_output:
+            emit_json_failure(e, msg)
+        elif quiet:
             click.echo(msg, err=True)
         else:
             progress.print_error(msg)

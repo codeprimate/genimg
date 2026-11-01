@@ -342,6 +342,8 @@ class GenerationResult:
     model_used: str  # Model that generated the image
     prompt_used: str  # Prompt that was used
     had_reference: bool  # Whether a reference image was used
+    generation_id: str | None = None  # Provider's id for this generation, when it gives one
+    cost: float | None = None  # Provider-reported cost in credits, when it gives one
 
     @property
     def format(self) -> str:

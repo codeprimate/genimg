@@ -8,10 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- (none)
+- `genimg generate --json`: one JSON line on stdout, for scripts. Success gives the path, model, generation id, reported cost, time, and size. Failure gives the error kind, message, and status, and exits non-zero. Implies `--quiet`.
+- `GenerationResult` carries `generation_id` and `cost` when the provider reports them (OpenRouter).
 
 ### Changed
-- (none)
+- A no-image error from OpenRouter names the finish reasons, any error, and the model's text.
 
 ### Fixed
 - (none)
