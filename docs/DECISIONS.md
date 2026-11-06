@@ -612,6 +612,52 @@ Each decision record includes:
 
 ---
 
+## ADR-022: Ruff is the single formatter and linter
+
+**Date**: 2026-11-05
+
+**Decision**: Ruff formats and lints the project. Black is removed from the toolchain: the pre-commit hook is `ruff-format` (replacing `black`), `[tool.black]` is deleted from `pyproject.toml`, and `black` is dropped from the dev dependencies and `requirements-dev.txt`. The ruff pin in `requirements-dev.txt` and `pyproject.toml` is `>=0.15.1,<0.16`, which matches the `ruff-pre-commit` rev, so the hook and `make format` produce identical output.
+
+**Context**: Black and `ruff format` disagreed on 37 of 125 Python files. The pre-commit hook and `make format` therefore rewrote each other's work, and two configs had to be kept at the same line length. Ruff already formatted the tree through the Makefile.
+
+**Options Considered**:
+1. **Ruff only**: Chosen. One tool, one config, already wired into `make format` and `make lint`.
+2. **Black only**: Rejected. Would drop ruff's formatter while keeping ruff for lint, and would need the Makefile rewritten.
+3. **Keep both and patch the excludes**: Rejected. The two tools would still disagree on 37 files, so the churn would remain.
+
+**Rationale**:
+- One formatter makes the tree canonical under a single tool.
+- Pinning the ruff version in both places keeps local runs and the hook byte-identical.
+- Dropping black removes a dependency and a config section that no longer earn their place.
+
+**Consequences**:
+- The tree was reformatted once with `ruff format`; older commits differ in whitespace only.
+- When the ruff pin moves, update `requirements-dev.txt`, `pyproject.toml`, and the pre-commit rev together. Formatting output can change between versions.
+- `docs/PROJECT_INIT.md` still names black in its historical template. It records the 2026-02 initialization and was left as written.
+
+---
+
+## ADR-023: Generated stubs are excluded from lint, types, and coverage
+
+**Date**: 2026-11-05
+
+**Decision**: `src/genimg/core/providers/draw_things/generated/` is excluded from ruff (`[tool.ruff] exclude`), from mypy (`[tool.mypy] exclude`), and from coverage (`[tool.coverage.run] omit`). This matches the existing treatment of `src/genimg/contrib/draw_things_poc/generated/` and the vendored `_joytag_models.py`.
+
+**Context**: The generated FlatBuffers and protobuf stubs are not hand-edited; `tools/draw_things_codegen/regen.sh` regenerates them. They produced 536 of the repo's ruff errors, 383 of its 398 mypy errors, and 805 of its uncovered statements (1170 total), which held `make lint` red and pulled total coverage from 77.3% down to 69.4%.
+
+**Options Considered**:
+1. **Exclude the directory**: Chosen. One entry per tool, matching the existing generated-code entries.
+2. **Per-file ignores**: Rejected. Brittle, and the ignore list changes whenever codegen emits a new module.
+3. **Hand-fix or hand-format the stubs**: Rejected. The next regeneration discards the work.
+
+**Rationale**: Lint and coverage measure code the project maintains. Generated code is verified by regeneration and exercised through the provider tests.
+
+**Consequences**:
+- `make lint` reports only hand-written findings, and `make typecheck` drops from 398 errors to the hand-written remainder.
+- Coverage is 77.3% excluding generated code, still below the 80% floor in `pyproject.toml` `addopts`. Raising the floor or raising coverage is a separate decision.
+
+---
+
 ## Future Decisions to Document
 
 - Batch generation approach

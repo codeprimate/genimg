@@ -14,7 +14,7 @@ help:
 	@echo "  make publish       - Clean, build, check, then upload to PyPI"
 	@echo "  make uninstall    - Uninstall genimg from current environment"
 	@echo ""
-	@echo "  make format       - Format code with black"
+	@echo "  make format       - Format code with ruff"
 	@echo "  make lint         - Lint with ruff"
 	@echo "  make typecheck    - Type check with mypy"
 	@echo "  make test         - Run tests"
@@ -60,12 +60,14 @@ clean:
 # Linting and Code Quality
 # ==============================================================================
 
+# Format and lint the whole project (same scope as the pre-commit hooks).
+# Ruff skips .venv, build, dist, and gitignored paths via .gitignore.
 format:
-	.venv/bin/ruff format src/ tests/
-	.venv/bin/ruff check --fix src/ tests/
+	.venv/bin/ruff format .
+	.venv/bin/ruff check --fix .
 
 lint:
-	.venv/bin/ruff check src/ tests/
+	.venv/bin/ruff check .
 
 typecheck:
 	.venv/bin/mypy src/

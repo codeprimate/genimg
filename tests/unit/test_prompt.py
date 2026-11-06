@@ -74,8 +74,7 @@ class TestStripOllamaThinking:
         """Ollama pipes CSI erase/cursor sequences into stdout; strip so UI stays clean."""
         esc = "\x1b"
         raw = (
-            f"A warm morning in a bathroom, the walls painted a soft{esc}[4D{esc}[K"
-            "soft pale blue."
+            f"A warm morning in a bathroom, the walls painted a soft{esc}[4D{esc}[Ksoft pale blue."
         )
         assert _strip_ollama_thinking(raw) == (
             "A warm morning in a bathroom, the walls painted a softsoft pale blue."
@@ -629,14 +628,18 @@ class TestJsonOptimizationFormat:
                 },
                 "compositional_deconstruction": {
                     "background": "A sunny sidewalk.",
-                    "elements": [{"type": "obj", "desc": "A golden retriever on a red skateboard."}],
+                    "elements": [
+                        {"type": "obj", "desc": "A golden retriever on a red skateboard."}
+                    ],
                 },
             }
         )
 
     def test_json_format_adds_format_key_to_payload(self):
         """When optimize_format is 'json', Ollama payload includes format='json'."""
-        config = Config(openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json")
+        config = Config(
+            openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json"
+        )
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
             with patch("genimg.core.prompt.requests.post") as post:
                 resp = MagicMock(status_code=200)
@@ -662,7 +665,9 @@ class TestJsonOptimizationFormat:
         """Valid JSON response is parsed and returned as pretty-printed JSON."""
         import json as json_module
 
-        config = Config(openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json")
+        config = Config(
+            openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json"
+        )
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
             with patch("genimg.core.prompt.requests.post") as post:
                 resp = MagicMock(status_code=200)
@@ -677,7 +682,9 @@ class TestJsonOptimizationFormat:
 
     def test_json_format_invalid_json_falls_back_to_raw_text(self):
         """When JSON parse fails, raw Ollama text is returned (no exception raised)."""
-        config = Config(openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json")
+        config = Config(
+            openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json"
+        )
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
             with patch("genimg.core.prompt.requests.post") as post:
                 resp = MagicMock(status_code=200)
@@ -688,7 +695,9 @@ class TestJsonOptimizationFormat:
 
     def test_json_format_uses_json_template(self):
         """optimize_format='json' uses the JSON template, not the prose template."""
-        config = Config(openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json")
+        config = Config(
+            openrouter_api_key="sk-x", optimization_enabled=True, optimize_format="json"
+        )
         with patch("genimg.core.prompt.check_ollama_available", return_value=True):
             with patch("genimg.core.prompt.get_optimization_template_json") as mock_json_tpl:
                 mock_json_tpl.return_value = "json tpl {reference_image_instruction}"

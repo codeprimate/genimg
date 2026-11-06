@@ -186,8 +186,14 @@ class Config:
             "GENIMG_OPTIMIZE_THINKING",
             _bool_env("OLLAMA_OPTIMIZE_THINKING", False),
         )
-        optimize_format_env = os.getenv("GENIMG_OPTIMIZE_FORMAT", DEFAULT_OPTIMIZE_FORMAT).strip().lower()
-        optimize_format = optimize_format_env if optimize_format_env in KNOWN_OPTIMIZE_FORMATS else DEFAULT_OPTIMIZE_FORMAT
+        optimize_format_env = (
+            os.getenv("GENIMG_OPTIMIZE_FORMAT", DEFAULT_OPTIMIZE_FORMAT).strip().lower()
+        )
+        optimize_format = (
+            optimize_format_env
+            if optimize_format_env in KNOWN_OPTIMIZE_FORMATS
+            else DEFAULT_OPTIMIZE_FORMAT
+        )
         default_image_provider = os.getenv("GENIMG_DEFAULT_IMAGE_PROVIDER", DEFAULT_IMAGE_PROVIDER)
         ollama_base_url = (
             os.getenv("OLLAMA_BASE_URL")
@@ -311,14 +317,16 @@ class Config:
                 raise ConfigurationError(
                     f"Draw Things port must be between 1 and 65535, got {self.draw_things_port}."
                 )
-            if self.draw_things_use_tls and not self.draw_things_insecure:
-                if self.draw_things_root_ca_pem_path is not None and (
-                    not self.draw_things_root_ca_pem_path.is_file()
-                ):
-                    raise ConfigurationError(
-                        "Draw Things root CA PEM path does not exist or is not a file: "
-                        f"{self.draw_things_root_ca_pem_path}"
-                    )
+            if (
+                self.draw_things_use_tls
+                and not self.draw_things_insecure
+                and self.draw_things_root_ca_pem_path is not None
+                and not self.draw_things_root_ca_pem_path.is_file()
+            ):
+                raise ConfigurationError(
+                    "Draw Things root CA PEM path does not exist or is not a file: "
+                    f"{self.draw_things_root_ca_pem_path}"
+                )
         elif provider == PROVIDER_WIRO:
             if not self.wiro_api_key.strip():
                 raise ConfigurationError(

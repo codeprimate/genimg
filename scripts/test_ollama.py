@@ -23,19 +23,14 @@ def main() -> None:
 
     # Check if Ollama is in PATH
     try:
-        result = subprocess.run(
-            ["ollama", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        
+        result = subprocess.run(["ollama", "--version"], capture_output=True, text=True, timeout=5)
+
         if result.returncode == 0:
             print(f"✓ Ollama found: {result.stdout.strip()}")
         else:
             print("❌ Ollama command failed")
             sys.exit(1)
-            
+
     except FileNotFoundError:
         print("❌ Ollama not found in PATH")
         print("Install from: https://ollama.ai")
@@ -43,21 +38,16 @@ def main() -> None:
     except subprocess.TimeoutExpired:
         print("❌ Ollama command timed out")
         sys.exit(1)
-    
+
     # List installed models
     print()
     print("Installed models:")
     try:
-        result = subprocess.run(
-            ["ollama", "list"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        
+        result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
+
         if result.returncode == 0:
             print(result.stdout)
-            
+
             # Check for recommended model
             if DEFAULT_OPTIMIZATION_MODEL in result.stdout:
                 print(f"✓ Recommended model ({DEFAULT_OPTIMIZATION_MODEL}) is installed")
@@ -67,11 +57,11 @@ def main() -> None:
         else:
             print("❌ Failed to list models")
             sys.exit(1)
-            
+
     except subprocess.TimeoutExpired:
         print("❌ List command timed out")
         sys.exit(1)
-    
+
     print()
     print("✅ Ollama is installed and working!")
 

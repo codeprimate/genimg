@@ -5,19 +5,19 @@ Built-in providers are registered lazily on first get_registry() call to avoid
 circular imports with core.image_gen.
 """
 
-from genimg.core.providers.base import ImageGenerationProvider as ImageGenerationProvider
-from genimg.core.providers.registry import (
-    ProviderRegistry,
-)
-from genimg.core.providers.registry import (
-    get_registry as _get_registry_impl,
-)
 from genimg.core.provider_ids import (
     KNOWN_IMAGE_PROVIDER_IDS,
     PROVIDER_DRAW_THINGS,
     PROVIDER_OLLAMA,
     PROVIDER_OPENROUTER,
     PROVIDER_WIRO,
+)
+from genimg.core.providers.base import ImageGenerationProvider as ImageGenerationProvider
+from genimg.core.providers.registry import (
+    ProviderRegistry,
+)
+from genimg.core.providers.registry import (
+    get_registry as _get_registry_impl,
 )
 
 KNOWN_IMAGE_PROVIDERS = KNOWN_IMAGE_PROVIDER_IDS
@@ -30,9 +30,9 @@ def _register_builtins(reg: ProviderRegistry) -> None:
     global _builtins_registered
     if _builtins_registered:
         return
+    from genimg.core.providers.draw_things.provider import DrawThingsProvider
     from genimg.core.providers.ollama import OllamaProvider
     from genimg.core.providers.openrouter import OpenRouterProvider
-    from genimg.core.providers.draw_things.provider import DrawThingsProvider
     from genimg.core.providers.wiro import WiroProvider
 
     reg.register(PROVIDER_OPENROUTER, OpenRouterProvider())

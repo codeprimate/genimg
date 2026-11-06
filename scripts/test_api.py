@@ -6,7 +6,6 @@ Usage:
     python scripts/test_api.py
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -24,41 +23,41 @@ def main() -> None:
 
     # Check for API key
     config = Config.from_env()
-    
+
     if not config.openrouter_api_key:
         print("❌ OPENROUTER_API_KEY not set")
         print("Set it in .env file or environment variable")
         sys.exit(1)
-    
+
     print(f"✓ API key found: {config.openrouter_api_key[:20]}...")
-    
+
     try:
         config.validate()
         print("✓ API key validated")
     except Exception as e:
         print(f"❌ Validation failed: {e}")
         sys.exit(1)
-    
+
     # Test simple generation
     print()
     print("Testing image generation (this may take 10-30 seconds)...")
-    
+
     try:
         result = generate_image(
             prompt="a simple test image: blue circle on white background",
             api_key=config.openrouter_api_key,
-            model=config.default_image_model
+            model=config.default_image_model,
         )
-        
-        print(f"✓ Generation successful!")
+
+        print("✓ Generation successful!")
         print(f"  - Model: {result.model_used}")
         print(f"  - Time: {result.generation_time:.2f}s")
         print(f"  - Image size: {len(result.image_data)} bytes")
-        
+
     except Exception as e:
         print(f"❌ Generation failed: {e}")
         sys.exit(1)
-    
+
     print()
     print("✅ All tests passed! OpenRouter API is working correctly.")
 

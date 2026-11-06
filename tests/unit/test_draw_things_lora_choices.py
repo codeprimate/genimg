@@ -40,9 +40,7 @@ def test_parse_lora_spec_empty_raises() -> None:
 
 @pytest.mark.unit
 def test_parse_lora_stack_preserves_order_and_dedupes() -> None:
-    stack = parse_lora_stack(
-        ("a.ckpt:0.5", "b.ckpt", "", "a.ckpt:0.9", "c.ckpt:0.2")
-    )
+    stack = parse_lora_stack(("a.ckpt:0.5", "b.ckpt", "", "a.ckpt:0.9", "c.ckpt:0.2"))
     assert stack == (
         ("a.ckpt", pytest.approx(0.5)),
         ("b.ckpt", DEFAULT_LORA_WEIGHT),
@@ -109,7 +107,7 @@ def test_fetch_loras_retries_until_catalog_populated(monkeypatch: pytest.MonkeyP
     calls = {"n": 0}
 
     class _FakeClient:
-        def __enter__(self) -> "_FakeClient":
+        def __enter__(self) -> _FakeClient:
             return self
 
         def __exit__(self, *args: object) -> None:
@@ -118,7 +116,9 @@ def test_fetch_loras_retries_until_catalog_populated(monkeypatch: pytest.MonkeyP
         def wait_for_ready(self, timeout_seconds: float = 10.0) -> None:
             del timeout_seconds
 
-        def echo_catalog_loras(self, *, timeout_seconds: float = 5.0) -> tuple[tuple[LoraInfo, ...], bool]:
+        def echo_catalog_loras(
+            self, *, timeout_seconds: float = 5.0
+        ) -> tuple[tuple[LoraInfo, ...], bool]:
             del timeout_seconds
             calls["n"] += 1
             if calls["n"] < 3:
@@ -141,7 +141,7 @@ def test_fetch_loras_stops_when_override_empty(monkeypatch: pytest.MonkeyPatch) 
     calls = {"n": 0}
 
     class _FakeClient:
-        def __enter__(self) -> "_FakeClient":
+        def __enter__(self) -> _FakeClient:
             return self
 
         def __exit__(self, *args: object) -> None:
@@ -150,7 +150,9 @@ def test_fetch_loras_stops_when_override_empty(monkeypatch: pytest.MonkeyPatch) 
         def wait_for_ready(self, timeout_seconds: float = 10.0) -> None:
             del timeout_seconds
 
-        def echo_catalog_loras(self, *, timeout_seconds: float = 5.0) -> tuple[tuple[LoraInfo, ...], bool]:
+        def echo_catalog_loras(
+            self, *, timeout_seconds: float = 5.0
+        ) -> tuple[tuple[LoraInfo, ...], bool]:
             del timeout_seconds
             calls["n"] += 1
             return (), True
@@ -165,6 +167,7 @@ def test_fetch_loras_stops_when_override_empty(monkeypatch: pytest.MonkeyPatch) 
     assert calls["n"] == 1
     assert loras == ()
 
+
 @pytest.mark.unit
 def test_lora_catalog_hint_no_override() -> None:
     hint = lora_catalog_hint(
@@ -173,6 +176,7 @@ def test_lora_catalog_hint_no_override() -> None:
         port=7859,
     )
     assert "Model Browser" in hint
+
 
 @pytest.mark.unit
 def test_lora_catalog_hint_with_loras() -> None:

@@ -16,13 +16,7 @@ Image.new("RGB", (1, 1), color=(0, 0, 0)).save(_MINIMAL_PNG_BUF, format="PNG")
 MINIMAL_PNG = _MINIMAL_PNG_BUF.getvalue()
 
 SCHEMA = {
-    "tool": [
-        {
-            "parameters": [
-                {"items": [{"id": "prompt", "type": "textarea", "required": True}]}
-            ]
-        }
-    ]
+    "tool": [{"parameters": [{"items": [{"id": "prompt", "type": "textarea", "required": True}]}]}]
 }
 
 
@@ -59,9 +53,7 @@ class TestWiroProvider:
             socketaccesstoken="tok",
             status="task_postprocess_end",
             pexit="0",
-            outputs=(
-                {"url": "https://cdn.example/out.png", "contenttype": "image/png"},
-            ),
+            outputs=({"url": "https://cdn.example/out.png", "contenttype": "image/png"},),
         )
         mock_client.download_url.return_value = MINIMAL_PNG
 

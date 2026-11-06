@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "genimg"
-version = "0.18.1"
+version = "0.19.0"
 description = "AI image generation tool with prompt optimization"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -59,8 +59,8 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "responses>=0.24.0",
     # Code Quality
-    "black>=23.0.0",
-    "ruff>=0.1.0",
+    # Keep the ruff pin in step with the ruff-pre-commit rev in .pre-commit-config.yaml.
+    "ruff>=0.15.1,<0.16",
     "mypy>=1.5.0",
     # Type stubs
     "types-requests>=2.31.0",
@@ -124,6 +124,7 @@ omit = [
     "src/genimg/__main__.py",
     "src/genimg/core/image_analysis/backends/_joytag_models.py",
     "src/genimg/contrib/draw_things_poc/generated/*",
+    "src/genimg/core/providers/draw_things/generated/*",
 ]
 
 [tool.coverage.report]
@@ -136,20 +137,6 @@ exclude_lines = [
     "if TYPE_CHECKING:",
 ]
 
-[tool.black]
-line-length = 100
-target-version = ["py310", "py311", "py312", "py313"]
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.git
-  | \.venv
-  | build
-  | dist
-  | _joytag_models\.py
-)/
-'''
-
 [tool.ruff]
 target-version = "py310"
 line-length = 100
@@ -160,6 +147,7 @@ exclude = [
     "dist",
     "src/genimg/core/image_analysis/backends/_joytag_models.py",  # vendored; do not lint/format
     "src/genimg/contrib/draw_things_poc/generated",
+    "src/genimg/core/providers/draw_things/generated",  # generated FlatBuffers/protobuf stubs
 ]
 
 [tool.ruff.lint]
@@ -177,7 +165,7 @@ select = [
     "TID", # flake8-tidy-imports
 ]
 ignore = [
-    "E501",  # line too long (handled by black)
+    "E501",  # line too long (handled by the formatter)
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -198,7 +186,10 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
-exclude = ["src/genimg/core/image_analysis/backends/_joytag_models.py"]
+exclude = [
+    "src/genimg/core/image_analysis/backends/_joytag_models.py",
+    "src/genimg/core/providers/draw_things/generated/.*",  # generated FlatBuffers/protobuf stubs
+]
 
 [[tool.mypy.overrides]]
 module = [
@@ -207,11 +198,16 @@ module = [
     "pillow_heif.*",
     "torch.*",
     "torchvision.*",
+    "fpzip.*",
 ]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["genimg.contrib.draw_things_poc.generated.*"]
+module = [
+    "genimg.contrib.draw_things_poc.generated.*",
+    # mypy follows imports into generated stubs, so `exclude` alone does not silence them.
+    "genimg.core.providers.draw_things.generated.*",
+]
 ignore_errors = true
 
 [[tool.mypy.overrides]]

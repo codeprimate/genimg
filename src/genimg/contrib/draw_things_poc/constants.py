@@ -72,7 +72,7 @@ CLI_COMMAND_GENERATE: str = "generate"
 # Human-oriented ``list-assets`` section titles (what to pass where).
 CLI_LIST_RULE: str = "=" * 64
 CLI_LIST_BANNER: str = "Draw Things server catalog  ({host}:{port})"
-CLI_LIST_FOOTER: str = "Use a checkpoint line verbatim as:  genimg-draw-things generate --model \"…\""
+CLI_LIST_FOOTER: str = 'Use a checkpoint line verbatim as:  genimg-draw-things generate --model "…"'
 CLI_LIST_SECTION_MODELS: str = "CHECKPOINTS  (--model uses the file name below)"
 CLI_LIST_SECTION_LORAS: str = "LORAS  (GenerationConfiguration.loras[].file in Draw Things)"
 CLI_LIST_SECTION_CONTROL_NETS: str = "CONTROLNETS  (controls[].file)"
@@ -81,5 +81,5 @@ CLI_LIST_SECTION_UPSCALERS: str = "UPSCALERS  (GenerationConfiguration.upscaler 
 CLI_LIST_SECTION_SAMPLERS: str = (
     "SAMPLERS  (--sampler: FlatBuffers ``SamplerType`` name or integer wire value)"
 )
-CLI_LIST_SAMPLERS_FOOTER: str = 'Example:  genimg-draw-things generate ... --sampler EulerA'
+CLI_LIST_SAMPLERS_FOOTER: str = "Example:  genimg-draw-things generate ... --sampler EulerA"
 CLI_LIST_EMPTY: str = "(none)"

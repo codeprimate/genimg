@@ -370,7 +370,9 @@ def optimize_prompt_with_ollama(
         logger.info("Optimized in %.1fs model=%s", elapsed, model)
         if log_prompts():
             truncated = (
-                optimized if len(optimized) <= _PROMPT_LOG_MAX else optimized[:_PROMPT_LOG_MAX] + "..."
+                optimized
+                if len(optimized) <= _PROMPT_LOG_MAX
+                else optimized[:_PROMPT_LOG_MAX] + "..."
             )
             logger.info("Optimized prompt: %s", truncated)
         return optimized

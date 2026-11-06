@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from PIL import Image
 from PIL.ExifTags import Base
@@ -303,9 +303,10 @@ def save_generation_cli(
         user_prompt=user_prompt,
     )
     kw = dict(pillow_save_kwargs_for_cli_output(fmt))
+    save_kw: dict[str, Any]
     if fmt == "jpg":
         im = _flatten_image_to_rgb_white(result.image)
-        save_kw: dict[str, object] = {"format": "JPEG", **kw}
+        save_kw = {"format": "JPEG", **kw}
         if exif_bytes is not None:
             save_kw["exif"] = exif_bytes
         im.save(p, **save_kw)
@@ -317,7 +318,7 @@ def save_generation_cli(
     software = _cli_embedded_software_string(
         genimg_version=genimg_version, provider=provider, result=result
     )
-    save_kw: dict[str, object] = {
+    save_kw = {
         "format": "WEBP",
         **kw,
         "xmp": _build_cli_xmp_bytes(software=software),

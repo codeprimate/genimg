@@ -23,7 +23,7 @@ class TestModelsLoader:
     def test_defaults_match_bundled_yaml(self):
         assert default_image_model() == "bytedance-seed/seedream-4.5"
         assert default_ollama_image_model() == "x/z-image-turbo"
-        assert default_optimization_model() == "huihui_ai/qwen3.5-abliterated:4b"
+        assert default_optimization_model() == "huihui_ai/gemma-4-abliterated:e4b"
         assert default_wiro_image_model() == "bytedance/seedream-v4-5-uncensored"
 
     def test_wiro_image_models_is_non_empty_list(self):

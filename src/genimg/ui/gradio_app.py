@@ -463,7 +463,7 @@ def _image_model_choices_for_provider(
     image_models: list[str],
     ollama_image_models: list[str],
     wiro_image_models: list[str],
-) -> list[str]:
+) -> list[str] | list[tuple[str, str]]:
     """Return model dropdown choices for the selected image provider."""
     if provider == PROVIDER_OPENROUTER:
         return image_models

@@ -11,8 +11,8 @@ from PIL import Image
 
 from genimg.cli.commands import cli
 from genimg.core.image_gen import GenerationResult
-from genimg.core.providers.draw_things.types import LoraInfo
 from genimg.core.providers.draw_things.lora_choices import LoraCatalogResult
+from genimg.core.providers.draw_things.types import LoraInfo
 
 
 @pytest.mark.unit

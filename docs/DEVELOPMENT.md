@@ -81,7 +81,7 @@ Or run the venv's executables directly (e.g. in CI or without activating):
 .venv/bin/pip install -e .
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest tests/
-.venv/bin/ruff check src/ tests/
+.venv/bin/ruff check .
 .venv/bin/mypy src/
 ```
 
@@ -440,7 +440,7 @@ def test_ollama_optimize(_mock_avail, mock_post):
 make format
 
 # Check formatting without changes
-black --check src/ tests/
+ruff format --check .
 ```
 
 ### Linting
@@ -450,7 +450,7 @@ black --check src/ tests/
 make lint
 
 # Lint without fixes
-ruff check src/ tests/
+ruff check .
 
 # Lint specific file
 ruff check src/genimg/core/config.py

@@ -481,7 +481,7 @@ def generate_cmd(
             ctx, "upscaler_scale"
         ):
             upscaler_scale = bundle.default_upscaler_scale_factor
-    elif strength is None:
+    if strength is None:
         strength = DEFAULT_STRENGTH
 
     loras_cli = tuple(_parse_lora_option(x) for x in lora) if lora else ()

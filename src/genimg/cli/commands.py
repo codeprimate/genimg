@@ -123,6 +123,7 @@ cli.add_command(draw_things_group)
 Examples:
   genimg generate -p "a red car" --no-optimize -o car.webp
   genimg generate -p "a red car" --aspect-ratio 16:9 --max-extent 1024 --provider wiro
+  genimg generate -p "a red car" --json
   genimg character "Rogue Pilot" ref.jpg --aspect-ratio 1:1 --max-extent 2048
 """
 )

@@ -68,6 +68,7 @@ def test_help_states_providers_size_pair_and_examples() -> None:
     assert "Omit both flags for the model default." in generate_text
     assert "Wiro sends the nearest schema frame." in generate_text
     assert 'genimg generate -p "a red car" --no-optimize -o car.webp' in generate_text
+    assert 'genimg generate -p "a red car" --json' in generate_text
     assert "Requires --reference." in generate_text
     assert "Wiro uses WIRO_API_KEY." in generate_text
     assert "Reference images work with OpenRouter, Wiro, and Draw Things." in character_text

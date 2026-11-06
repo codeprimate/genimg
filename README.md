@@ -2,7 +2,7 @@
 
 A Python package for generating AI images with intelligent prompt optimization. Generate high-quality images from simple text descriptions using multiple AI models via OpenRouter (or local providers), with optional local prompt enhancement via the **Ollama HTTP API**.
 
-**Current version:** 0.18.1 (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
+**Current version:** 0.19.0 (see [CHANGELOG](docs/CHANGELOG.md) for recent changes).
 
 ## Features
 
@@ -20,6 +20,7 @@ A Python package for generating AI images with intelligent prompt optimization. 
 - 📝 **Structured Logging**: Default stderr is quiet for routine logs (WARNING+); `-v` for activity and prompts, `-vv` for API/cache detail; `GENIMG_VERBOSITY` and `set_verbosity()` for library/UI
 - 🔑 **API Key Override**: Pass `--api-key` to CLI (`generate`, `character`, or `ui`) to override environment without editing `.env`
 - 💾 **Save Optimized Prompt**: Use `--save-prompt <path>` to write the optimized prompt to a file for reproducibility
+- 🤖 **Scriptable output**: `genimg generate --json` prints one JSON line to stdout — the saved path, model, generation id, reported cost, time, and image size — for pipelines and scripts
 
 ## Installation
 
@@ -221,12 +222,21 @@ This saves the optimized prompt to a file, allowing you to:
 - Version control your prompts
 - Use in automated workflows
 
-**Quiet mode** (machine-readable output, no progress):
+**Quiet mode** (the path only, no progress):
 
 ```bash
 genimg generate "a landscape" --output out.png --quiet
 # Output: out.png
 ```
+
+**JSON mode** (machine-readable: one result line on stdout):
+
+```bash
+genimg generate "a landscape" --output out.png --json
+# {"ok": true, "path": "out.png", "model": "bytedance-seed/seedream-4.5", "generation_id": "gen-abc", "cost": 0.04, "seconds": 12.3, "width": 1024, "height": 1024}
+```
+
+`--json` implies `--quiet`. On success the line holds `ok`, `path`, `model`, `generation_id`, `cost`, `seconds`, `width`, and `height`. On failure it holds `ok` (false), `kind` (the exception name), `message`, and `status` (the HTTP status, when the provider sent one), and the command still exits non-zero. `generation_id` and `cost` are `null` when the provider reports nothing; OpenRouter reports both today. Only `genimg generate` takes `--json`.
 
 **Verbosity and logging:**
 

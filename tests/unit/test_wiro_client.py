@@ -77,7 +77,9 @@ class TestWiroClientTaskDetail:
                 }
             ],
         }
-        with patch("genimg.core.providers.wiro_client.requests.request", return_value=mock_response):
+        with patch(
+            "genimg.core.providers.wiro_client.requests.request", return_value=mock_response
+        ):
             task = client.get_task(tasktoken="tok")
         assert task is not None
         assert task.status == "task_postprocess_end"

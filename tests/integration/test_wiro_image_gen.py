@@ -18,7 +18,9 @@ from genimg.core.reference import process_reference_image
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _TMP_DIR = _PROJECT_ROOT / "tmp"
-_FIXTURE_REF = Path(__file__).resolve().parent.parent / "fixtures" / "wiro_cat_keyboard_reference.png"
+_FIXTURE_REF = (
+    Path(__file__).resolve().parent.parent / "fixtures" / "wiro_cat_keyboard_reference.png"
+)
 _SMOKE_OUTPUT = _TMP_DIR / "wiro_smoke_latest.png"
 _DOG_EDIT_OUTPUT = _TMP_DIR / "wiro_dog_edit_latest.png"
 
@@ -65,13 +67,14 @@ class TestWiroImageGeneration:
     @pytest.fixture(autouse=True)
     def _require_api_key(self) -> None:
         if not os.getenv("WIRO_API_KEY", "").strip():
-            pytest.skip(
-                "WIRO_API_KEY not set. Set in .env or environment to run this test."
-            )
+            pytest.skip("WIRO_API_KEY not set. Set in .env or environment to run this test.")
 
     def test_wiro_text_to_image_smoke(self) -> None:
         config = Config.from_env()
-        model = os.getenv("GENIMG_WIRO_INTEGRATION_MODEL", "").strip() or config.default_wiro_image_model
+        model = (
+            os.getenv("GENIMG_WIRO_INTEGRATION_MODEL", "").strip()
+            or config.default_wiro_image_model
+        )
         prompt = "A single red circle on a white background."
         result = generate_image(
             prompt,

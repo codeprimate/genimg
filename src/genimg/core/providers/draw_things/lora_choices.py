@@ -190,7 +190,9 @@ def _draw_things_client_from_config(config: Config) -> DrawThingsClient:
 def fetch_draw_things_catalog(config: Config) -> DrawThingsCatalogResult:
     """Fetch checkpoints and LoRAs from Draw Things ``Echo`` in one probe."""
     target = f"{config.draw_things_host}:{config.draw_things_port}"
-    logger.debug("Draw Things catalog fetch start target=%s attempts=%d", target, _LORA_FETCH_ATTEMPTS)
+    logger.debug(
+        "Draw Things catalog fetch start target=%s attempts=%d", target, _LORA_FETCH_ATTEMPTS
+    )
     t0 = time.monotonic()
     catalog_published = False
     try:

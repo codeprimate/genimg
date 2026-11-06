@@ -1,4 +1,8 @@
-"""gRPC client for Draw Things ``Echo`` and ``GenerateImage``."""
+"""gRPC client for Draw Things ``Echo`` and ``GenerateImage``.
+
+protobuf 6 fills the ``imageService_pb2`` names at runtime, so mypy cannot see them and the
+import below carries an ``attr-defined`` suppression.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +32,7 @@ from genimg.core.providers.draw_things.constants import (
     SCALE_FACTOR_DEFAULT,
 )
 from genimg.core.providers.draw_things.generated import imageService_pb2_grpc as pb2_grpc
-from genimg.core.providers.draw_things.generated.imageService_pb2 import (
+from genimg.core.providers.draw_things.generated.imageService_pb2 import (  # type: ignore[attr-defined]
     DeviceType,
     EchoReply,
     EchoRequest,

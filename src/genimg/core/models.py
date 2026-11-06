@@ -61,7 +61,9 @@ def _load_models() -> dict[str, Any]:
     try:
         ModelsSchema(**data)
     except PydanticValidationError as e:
-        errors = "\n".join([f"  - {'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in e.errors()])
+        errors = "\n".join(
+            [f"  - {'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in e.errors()]
+        )
         raise ConfigurationError(
             f"Invalid models.yaml structure:\n{errors}\n"
             "Expected default_image_model, default_ollama_image_model, "

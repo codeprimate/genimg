@@ -36,7 +36,9 @@ def pil_to_dt_tensor_bytes(image: Image.Image, width_px: int, height_px: int) ->
     rgb = image.convert("RGB").resize((rw, rh), resample=Image.Resampling.LANCZOS)
     u8 = np.asarray(rgb, dtype=np.uint8)
     if u8.ndim != 3 or u8.shape[2] != 3:
-        raise APIError(MSG_DECODE_FAILED, response=f"expected HxWx3 uint8 after RGB resize, got {u8.shape}")
+        raise APIError(
+            MSG_DECODE_FAILED, response=f"expected HxWx3 uint8 after RGB resize, got {u8.shape}"
+        )
     h, w, _c = u8.shape
     f64 = u8.astype(np.float64) / 127.0 - 1.0
     f16 = np.clip(f64, -1.0, 1.0).astype("<f2")
@@ -67,7 +69,9 @@ def _float_tensor_to_u8_hwc(arr: np.ndarray) -> np.ndarray:
     if a.ndim == 4 and a.shape[0] == 1:
         a = a[0]
     if a.ndim != 3:
-        raise APIError(MSG_DECODE_FAILED, response=f"expected HWC float tensor, got shape {arr.shape}")
+        raise APIError(
+            MSG_DECODE_FAILED, response=f"expected HWC float tensor, got shape {arr.shape}"
+        )
     return np.clip((a + 1.0) * 127.0, 0.0, 255.0).astype(np.uint8)
 
 
@@ -97,7 +101,7 @@ def dt_tensor_bytes_to_pil(data: bytes) -> Image.Image:
 
     if magic == DRAW_THINGS_TENSOR_COMPRESSED_MAGIC:
         try:
-            import fpzip  # type: ignore[import-untyped]
+            import fpzip
         except ImportError as e:
             raise APIError(MSG_FPZIP_IMPORT, response=str(e)) from e
         comp = bytes(memoryview(data)[TENSOR_HEADER_BYTE_LEN:])

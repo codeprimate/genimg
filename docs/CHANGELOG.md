@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-05
+
 ### Added
 - `genimg generate --json`: one JSON line on stdout, for scripts. Success gives the path, model, generation id, reported cost, time, and size. Failure gives the error kind, message, and status, and exits non-zero. Implies `--quiet`.
 - `GenerationResult` carries `generation_id` and `cost` when the provider reports them (OpenRouter).
@@ -14,8 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - A no-image error from OpenRouter names the finish reasons, any error, and the model's text.
 
-### Fixed
-- (none)
+### Documentation
+- Added `AGENTS.md`: an agent guide with the test and lint commands, conventions, and constraints. It replaces `AGENT.md`.
+- README documents JSON mode, and `genimg generate --help` shows a `--json` example. The "Quiet mode" heading no longer calls a bare path the machine-readable output.
+
+### Developer experience
+- **Ruff is the only formatter and linter.** `black` is gone from the pre-commit hook, `pyproject.toml`, and the dev dependencies. One `ruff format` pass reformatted 13 files. The ruff pin and the pre-commit rev are kept in step so both produce the same output. See ADR-022.
+- **Generated stubs are excluded from lint, types, and coverage.** `core/providers/draw_things/generated/` joins the other generated code in `[tool.ruff] exclude`, `[tool.mypy] exclude`, and `[tool.coverage.run] omit`. `make lint` went from 536 errors to none. See ADR-023.
+- **`make typecheck` is green.** It reported 398 errors, 383 of them in the generated stubs. The hand-written remainder is fixed: the Pillow save kwargs in `core/image_gen.py` are typed, the protobuf import in the Draw Things client carries an `attr-defined` suppression for names that protobuf 6 builds at runtime, `fpzip` is exempt from the missing-import check, the Draw Things strength default applies on both paths, and the model-choice helper declares the wider choice type. No behavior changed.
+- **`tests/unit/test_models.py` expects the bundled optimization default** (`huihui_ai/gemma-4-abliterated:e4b`). It had asserted the older `qwen3.5` ID since before 0.17.0, which kept the suite red.
 
 ## [0.18.1] - 2026-10-26
 
