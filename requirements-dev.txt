@@ -9,7 +9,8 @@ responses>=0.24.0
 # Ruff is the single formatter and linter. Keep this pin in step with the
 # ruff-pre-commit rev in .pre-commit-config.yaml so both produce the same output.
 ruff>=0.15.1,<0.16
-mypy>=1.5.0
+# The pre-commit mypy hook runs this venv's mypy, so the pin fixes what it checks.
+mypy>=1.19.1,<1.20
 
 # Type stubs
 types-requests>=2.31.0

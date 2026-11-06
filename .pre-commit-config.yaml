@@ -8,8 +8,15 @@ repos:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+  # mypy runs from the project venv: the same binary and the same scope as
+  # `make typecheck` (see ADR-024). An isolated hook environment has none of the
+  # runtime dependencies, so it reports import-related errors the project never sees.
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests, types-Pillow]
+        name: mypy (project venv, src only)
+        entry: .venv/bin/mypy src/
+        language: system
+        types: [python]
+        files: ^src/.*\.py$
+        pass_filenames: false

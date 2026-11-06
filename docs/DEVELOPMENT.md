@@ -480,6 +480,10 @@ pre-commit install
 pre-commit run --all-files
 ```
 
+The hooks run `ruff-format` and `ruff` over the whole project, then `mypy src/` using the
+project venv. They need `.venv` to exist. Wire them up once per clone with
+`pre-commit install`; without that, committing runs no hooks at all.
+
 ## Debugging
 
 ### Enable Debug Logging

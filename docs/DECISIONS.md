@@ -658,6 +658,29 @@ Each decision record includes:
 
 ---
 
+## ADR-024: The pre-commit mypy hook runs the project venv
+
+**Date**: 2026-11-05
+
+**Decision**: The mypy pre-commit hook is a `local` hook with `language: system` that runs `.venv/bin/mypy src/` with `pass_filenames: false`, scoped to `^src/.*\.py$`. It replaces the `pre-commit/mirrors-mypy` hook pinned at `rev: v1.8.0`. The `mypy` dev dependency is pinned to `>=1.19.1,<1.20` so the version both the hook and `make typecheck` run is reproducible.
+
+**Context**: The mirrors-mypy hook pinned mypy 1.8.0 while `make typecheck` ran mypy 1.19.1 from the venv, and the hook had no file scoping, so pre-commit also handed it tests and scripts. Running it as configured produced 449 errors in 30 files. Those included `no-any-return` findings in `ui/gradio_app.py` that appear only because Gradio is absent from the hook's isolated environment. The project already requires the venv for every Python tool (`.cursor/rules/venv.mdc`), so the isolated environment contradicts that rule and cannot see the runtime dependencies.
+
+**Options Considered**:
+1. **Local hook running the venv mypy**: Chosen. Same binary, same scope, and same config as `make typecheck`, so it cannot drift.
+2. **Bump mirrors-mypy to a matching rev**: Rejected. The isolated environment still lacks click, requests, PyYAML, pydantic, rich, and grpc, so mypy would report import findings the project never sees unless every runtime dependency is duplicated into `additional_dependencies`.
+3. **Leave the hook as it was**: Rejected. It fails on every commit with 449 errors.
+
+**Rationale**: A hook earns its place only when it agrees with the command developers run by hand. Pointing it at the project venv makes that agreement structural instead of maintained.
+
+**Consequences**:
+- `.venv` must exist before committing. Without it, pre-commit reports the missing executable.
+- The hook runs only when a file under `src/` is staged, and then checks all of `src/`.
+- Upgrading mypy means moving the pin in `pyproject.toml` and `requirements-dev.txt` and re-running `make typecheck`.
+- `pre-commit install` is still a per-clone step. This repo ships the config without wiring it into `.git/hooks`.
+
+---
+
 ## Future Decisions to Document
 
 - Batch generation approach

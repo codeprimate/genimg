@@ -64,7 +64,8 @@ GENIMG_RUN_INTEGRATION_TESTS=1 .venv/bin/pytest -m integration --run-slow
 - Type hints on every function. `mypy` runs with `disallow_untyped_defs`.
 - Line length 100. **`ruff format` is the only formatter** and `ruff check` is the only linter.
   This matches `make format`, `make lint`, and the pre-commit hooks. The ruff pin in
-  `requirements-dev.txt` and the `ruff-pre-commit` rev are kept in step so both agree.
+  `requirements-dev.txt` and the `ruff-pre-commit` rev are kept in step so both agree. The
+  mypy hook runs the venv's mypy over `src/`, matching `make typecheck` (ADR-024).
 - Tests: `tests/unit/` mocks all external services. `tests/integration/` hits real APIs and is
   opt-in. Name tests as behavior statements. Mark with `unit`, `integration`, or `slow`.
 - Docs on change: `docs/CHANGELOG.md` (Keep a Changelog, Unreleased section),
